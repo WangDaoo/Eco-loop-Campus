@@ -9,7 +9,7 @@ Trạng thái đã xác nhận:
 - Frontend test command: `npm test -- --watchAll=false --runInBand --silent`
 - Frontend baseline hiện tại: `203 passed`, `16 test suites passed` sau module Reports + Feedback + Bins + AI Tester + Ecopoints + Users + Dashboard + Auth + Model settings + Shared UI components + Supabase client env config + Supabase store mapper/integration + storage localStorage fallback hardening + CSV export + fallback save/update cases + CampusMap malformed data guard + Dashboard bin attention KPI/status guard + Dashboard dirty prediction bin group count guard + Dashboard model threshold low-confidence guard + Ecopoints fallback alert + Ecopoints invalid UI timestamp guard + Users create/edit fallback + Users success toast tone reset + Model threshold invalid UI + AI Tester camera capture + AI Tester camera permission/no-support guards + AI Tester invalid confidence guard + Supabase per-table fallback service test + Users edit duplicate email guard + Users invalid email format guard + Users search trim guard + Users dirty group filter guard + Users dirty status normalization guard + StatusBadge dirty status normalization guard + DataTable missing rows guard + Modal Escape close + Toast dirty tone normalization + storage non-array JSON guard + storage threshold NaN load/save guard + Supabase blank env trim guard + NEXT_PUBLIC_SUPABASE_URL fallback + Auth blank credentials guard + Auth invalid email format guard + Auth listener registration sync failure guard + Auth dirty role/status/email profile normalization guard + Supabase user points NaN guard + Supabase user points read guard + Scan approval fallback malformed user points guard + Scan dirty point rule classKeys guard + Scan duplicate approval point guard + Reward redemption live fallback update guard + Reward redemption malformed cost guard + Reward redemption dirty pending status guard + Reward request malformed user points guard + Point history malformed points guard + Reports malformed point metrics guard + Reports open feedback status guard + Reports malformed bin capacity CSV guard + Reports dirty full bin status guard + Reports dirty full bin grouped table guard + Reports dirty building/binGroup filter guard + Reports dirty query UI normalization guard + Ecopoints malformed point leaderboard guard + Ecopoints dirty group/binGroup filter guard + Ecopoints dirty query UI normalization guard + Ecopoints manual point fallback malformed user points guard + Bins duplicate station id/QR guards + Bins required field trim guard + Bins edit giữ ID/update fields + Bins attention filter + Bins dirty status attention guard + Bins dirty status query filter guard + Bins giữ QR chính mình khi edit + CampusMap dirty station status summary guard + Feedback invalid timestamp guard + Feedback status filters + Feedback dirty status open filter guard + Feedback dirty status query filter guard + Feedback dirty priority filter/label guard + Feedback unknown status/priority fallback guard + Feedback blank sender fallback + Scans non-string class guard + Scans dirty status pending filter/action guard + Scans dirty query filter guard + Waste class dirty key normalization + Model settings class_count fallback guard + Bin group dirty label color guard + Mobile handoff operation-first document guard + DataTable malformed cell guard + Logout signOut failure navigation guard + Sidebar missing items/icon guards + StatCard dirty tone/invalid icon guard + ChartPanel missing data/options guard + CSV missing rows guard + storage savePredictions missing array guard + AI Tester upload source while camera on guard + AI Tester non-image upload guard + AI Tester camera capture blob error guard + AI Tester backend confidence range guard.
 - Backend test command: `backend\.venv\Scripts\python.exe -m pytest -q`
-- Backend baseline: `8 passed`, `8 warnings` sau endpoint tests + model output class count guard.
+- Backend baseline: `9 passed`, `9 warnings` sau endpoint tests + model output class count/range guard.
 - Fix đã làm: thêm `pytest` vào `backend\requirements.txt` vì venv đúng Python 3.10/TensorFlow thiếu test runner.
 
 Gate:
@@ -483,6 +483,7 @@ Case cần test backend:
 - `/predict` khi model None -> `{error: Model not loaded}`.
 - `/predict` ảnh hợp lệ -> class/confidence.
 - `/predict` model output sai số lớp AI -> trả lỗi an toàn, không map nhầm class.
+- `/predict` model output có score ngoài khoảng `0..1` -> trả lỗi an toàn, không trả confidence sai contract.
 - `/predict` file không phải ảnh -> error image processing.
 - `/chat` trả reply hoặc local AI error an toàn.
 
@@ -507,6 +508,7 @@ Test hiện có:
 - Backend endpoint tests cho health, model missing, valid image, invalid image, chat.
 - Backend `/predict` trả error an toàn khi model output có `NaN/Inf`, không crash JSON response.
 - Backend `/predict` trả error an toàn khi model output không khớp 10 class, không trả nhầm `battery` từ output ngắn.
+- Backend `/predict` trả error an toàn khi model output có confidence ngoài `0..1`, không trả payload `{ class, confidence }` sai contract.
 
 Fix đã làm:
 
@@ -522,6 +524,7 @@ Fix đã làm:
 - Browser không có `navigator.mediaDevices.getUserMedia` cũng báo toast danger rõ ràng.
 - `backend.app.predict` ép output model thành `numpy` float array và chặn output rỗng hoặc không hữu hạn trước khi trả JSON.
 - `backend.app.predict` flatten scores và bắt buộc `scores.size == len(classes)` trước `argmax`, tránh output sai shape/class count.
+- `backend.app.predict` chặn score `< 0` hoặc `> 1` trước khi chọn class/confidence.
 
 Gaps còn lại:
 

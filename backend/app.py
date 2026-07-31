@@ -152,6 +152,8 @@ async def predict(file: UploadFile = File(...)):
             raise ValueError("Prediction failed: model output class count mismatch")
         if not np.isfinite(scores).all():
             raise ValueError("Prediction failed: model output contains invalid values")
+        if ((scores < 0) | (scores > 1)).any():
+            raise ValueError("Prediction failed: model output confidence out of range")
 
         index = int(np.argmax(scores))
         confidence = float(np.max(scores))

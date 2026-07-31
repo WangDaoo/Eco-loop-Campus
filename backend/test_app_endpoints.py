@@ -25,6 +25,13 @@ class ShortWasteModel:
         return np.array([[0.95]])
 
 
+
+class OutOfRangeWasteModel:
+    def predict(self, image_batch):
+        output = np.zeros((1, len(app.classes)))
+        output[0, app.classes.index("plastic")] = 1.4
+        return output
+
 def make_image_bytes():
     buffer = io.BytesIO()
     Image.new("RGB", (16, 16), color=(20, 120, 80)).save(buffer, format="JPEG")
@@ -102,6 +109,18 @@ class AppEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Prediction failed", response.json()["error"])
+
+    def test_predict_returns_error_for_out_of_range_model_output(self):
+        app.model = OutOfRangeWasteModel()
+
+        response = self.client.post(
+            "/predict",
+            files={"file": ("waste.jpg", make_image_bytes(), "image/jpeg")},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Prediction failed", response.json()["error"])
+
     def test_chat_returns_safe_reply(self):
         app.ask_local_ai = lambda message: f"reply: {message}"
 
