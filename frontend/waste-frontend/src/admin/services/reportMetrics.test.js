@@ -187,3 +187,10 @@ test("report summary returns zero metrics for malformed collection inputs", () =
 
   expect(summary).toEqual({ totalScans: 0, totalPoints: 0, openFeedback: 0, fullBins: 0 });
 });
+
+test("daily report data returns empty chart for malformed collection inputs", () => {
+  const chart = makeDailyReportData({ predictions: "bad-predictions", feedback: "bad-feedback", pointHistory: "bad-points" });
+
+  expect(chart.labels).toEqual([]);
+  expect(chart.datasets.map(dataset => dataset.data)).toEqual([[], [], []]);
+});

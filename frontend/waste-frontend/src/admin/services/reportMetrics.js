@@ -87,15 +87,15 @@ export function makeDailyReportData(data) {
     return dayMap.get(date);
   };
 
-  (data.predictions || []).forEach(item => {
+  rows(data.predictions).forEach(item => {
     const row = ensure(item.timestamp);
     if (row) row.scans += 1;
   });
-  (data.pointHistory || []).forEach(item => {
+  rows(data.pointHistory).forEach(item => {
     const row = ensure(item.timestamp || item.createdAt);
     if (row) row.points += safeNumber(item.points);
   });
-  (data.feedback || []).forEach(item => {
+  rows(data.feedback).forEach(item => {
     const row = ensure(item.timestamp);
     if (row) row.feedback += 1;
   });
