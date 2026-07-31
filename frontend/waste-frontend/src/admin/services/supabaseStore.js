@@ -398,7 +398,7 @@ export async function setPredictionStatus(record, status) {
       const history = await listPointHistory();
       const alreadyAwarded = hasPointHistoryForPrediction(history.data, record.id);
       const rules = await listPointRules();
-      const rule = rules.data.find(item => item.enabled && ruleMatchesClass(item, record.class));
+      const rule = rules.data.find(item => normalizedEnabled(item.enabled) && ruleMatchesClass(item, record.class));
       if (!alreadyAwarded && rule && rule.points > 0) {
         const pointRecord = buildPointHistoryRecord(record, rule);
         const insertResponse = await client().from("point_history").insert([toPointHistory(pointRecord)]);
@@ -419,7 +419,7 @@ export async function setPredictionStatus(record, status) {
       : [localStore.savePredictionRecord(nextRecord), ...storedPredictions];
     if (status === "approved" && record.userId && record.binId) {
       const alreadyAwarded = hasPointHistoryForPrediction(localStore.getPointHistory(), record.id);
-      const rule = localStore.getPointRules().find(item => item.enabled && ruleMatchesClass(item, record.class));
+      const rule = localStore.getPointRules().find(item => normalizedEnabled(item.enabled) && ruleMatchesClass(item, record.class));
       if (!alreadyAwarded && rule && rule.points > 0) {
         const pointRecord = buildPointHistoryRecord(record, rule);
         localStore.savePointHistoryRecord(pointRecord);

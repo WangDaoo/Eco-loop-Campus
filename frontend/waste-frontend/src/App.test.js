@@ -2348,6 +2348,30 @@ test("approve update failure stores approved scan and awarded points in local fa
   expect(storedUsers).toEqual(expect.arrayContaining([expect.objectContaining({ id: "SV001", points: 253 })]));
 });
 
+test("scan approve update fallback treats string false local point rules as disabled", async () => {
+  const localRules = mockTables.point_rules.map(rule => ({
+    id: rule.id,
+    label: rule.label,
+    classKeys: rule.class_keys,
+    binGroup: rule.bin_group,
+    points: rule.points,
+    enabled: rule.id === "hazard" ? " false " : rule.enabled,
+  }));
+  localStorage.setItem("ecoGuardianPointRules", JSON.stringify(localRules));
+  window.location.hash = "#/scans";
+
+  render(<App />);
+
+  const scanRow = (await screen.findByText("scan-low")).closest("tr");
+  mockSupabaseUpdateFailure = true;
+  fireEvent.click(within(scanRow).getAllByRole("button")[0]);
+
+  await waitFor(() => expect(JSON.parse(localStorage.getItem("smartWastePredictions") || "[]")).toEqual(expect.arrayContaining([expect.objectContaining({ id: "scan-low", status: "approved" })])));
+  const storedHistory = JSON.parse(localStorage.getItem("ecoGuardianPointHistory") || "[]");
+  expect(storedHistory).not.toEqual(expect.arrayContaining([expect.objectContaining({ predictionId: "scan-low" })]));
+  const storedUsers = JSON.parse(localStorage.getItem("ecoGuardianUsers") || "[]");
+  expect(storedUsers).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "SV001", points: 253 })]));
+});
 test("approve update fallback treats malformed local user points as zero", async () => {
   mockTables.users = mockTables.users.map(user => user.id === "SV001" ? { ...user, points: "bad-points" } : user);
   localStorage.setItem("ecoGuardianUsers", JSON.stringify(mockTables.users));
