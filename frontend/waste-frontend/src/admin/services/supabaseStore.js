@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from "../../supabaseClient";
 import {
+  BIN_GROUPS,
   DEFAULT_POINT_RULES,
   WASTE_CLASSES,
   getBinGroup,
@@ -38,6 +39,11 @@ function normalizePercent(value, fallback = null) {
   const parsed = normalizeNumber(value, fallback);
   if (parsed === null || parsed === undefined) return parsed;
   return Math.max(0, Math.min(100, parsed));
+}
+
+function normalizedBinGroup(value) {
+  const normalized = typeof value === "string" ? value.trim().toLocaleLowerCase("vi-VN") : "";
+  return (BIN_GROUPS.find(group => group.label.toLocaleLowerCase("vi-VN") === normalized) || {}).label || "";
 }
 
 const PREDICTION_STATUSES = ["pending", "approved", "rejected"];
@@ -537,12 +543,14 @@ export async function saveBin(bin) {
   const id = typeof bin.id === "string" ? bin.id.trim() : "";
   const name = typeof bin.name === "string" ? bin.name.trim() : "";
   const location = typeof bin.location === "string" ? bin.location.trim() : "";
+  const binGroup = normalizedBinGroup(bin.binGroup);
   const status = normalizedBinStatusAction(bin.status || "active");
-  if (!id || !name || !location || !status) return result(null, LOCAL, new Error("Invalid bin station"));
+  if (!id || !name || !location || !binGroup || !status) return result(null, LOCAL, new Error("Invalid bin station"));
   const payload = {
     ...bin,
     id,
     name,
+    binGroup,
     location,
     status,
     building: typeof bin.building === "string" ? bin.building.trim() : bin.building,

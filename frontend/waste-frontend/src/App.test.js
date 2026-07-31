@@ -503,6 +503,28 @@ test("saveBin rejects unsupported statuses before writing bins", async () => {
   expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
 });
 
+test("saveBin rejects unsupported bin groups before writing bins", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingBins = JSON.stringify(mockTables.bins);
+  const invalidBins = [
+    { id: "BIN-BLANK-GROUP", name: "Trạm thiếu nhóm", binGroup: "   ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 },
+    { id: "BIN-UNKNOWN-GROUP", name: "Trạm nhóm lạ", binGroup: "Nhóm lạ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 },
+  ];
+
+  const results = [];
+  for (const bin of invalidBins) {
+    results.push(await store.saveBin(bin));
+  }
+
+  results.forEach(response => {
+    expect(response.data).toBeNull();
+    expect(response.error).toEqual(expect.any(Error));
+  });
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("bins");
+  expect(JSON.stringify(mockTables.bins)).toBe(existingBins);
+  expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
+});
+
 test("savePredictionRecord rejects invalid scan fields before writing predictions", async () => {
   const store = require("./admin/services/supabaseStore");
   const existingPredictions = JSON.stringify(mockTables.predictions);
