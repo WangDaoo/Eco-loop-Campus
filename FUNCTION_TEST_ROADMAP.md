@@ -447,6 +447,7 @@ Test hiện có:
 - Prediction `class` không phải string không làm crash Scans; fallback nhãn `Rác còn lại`, nhóm `Còn lại`, confidence vẫn hiển thị đúng.
 - Prediction `status` bẩn như ` PENDING ` vẫn lọc đúng `pending` và vẫn hiện action duyệt/từ chối.
 - Query filter bẩn như `#/scans?status= PENDING &confidence= LOW ` được normalize về `pending/low`, không làm bảng rỗng sai.
+- `setPredictionStatus` từ chối status ngoài `approved/rejected`, không gọi Supabase update, không ghi localStorage fallback và trả lỗi rõ.
 
 Fix đã làm cho Scans:
 
@@ -456,6 +457,7 @@ Fix đã làm cho Scans:
 - `supabaseStore.addPoints` cộng điểm an toàn, non-number ở user/rule fallback `0`, dùng cho approval Supabase path và local fallback.
 - `supabaseStore` normalize `point_rules.classKeys` bằng trim/lower và dùng `ruleMatchesClass` cho cả Supabase/local approval path.
 - `setPredictionStatus` kiểm tra `point_history` theo `predictionId` trước khi award, tránh double-click/retry approve cộng điểm nhiều lần.
+- `setPredictionStatus` normalize action status qua allowlist `approved/rejected`; status lạ trả lỗi và giữ record hiện tại để không làm bẩn `predictions.status`.
 
 Gaps còn lại:
 

@@ -284,6 +284,21 @@ test("setPredictionStatus awards points once when approval is repeated", async (
   expect(awardedRows).toHaveLength(1);
   expect(student.points).toBe(253);
 });
+
+test("setPredictionStatus rejects unsupported statuses before writing predictions", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const predictions = await store.listPredictions();
+  const scan = predictions.data.find(item => item.id === "scan-low");
+
+  const result = await store.setPredictionStatus(scan, " archived ");
+
+  expect(result.data.status).toBe("pending");
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("predictions", expect.objectContaining({ status: " archived " }));
+  expect(mockTables.predictions.find(item => item.id === "scan-low").status).toBe("pending");
+  expect(localStorage.getItem("smartWastePredictions")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;

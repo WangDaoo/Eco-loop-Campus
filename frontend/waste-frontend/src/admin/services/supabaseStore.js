@@ -27,6 +27,13 @@ function normalizedStatus(value, fallback = "pending") {
   return status || fallback;
 }
 
+const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
+
+function normalizedPredictionStatusAction(value) {
+  const status = normalizedStatus(value, "");
+  return PREDICTION_STATUS_ACTIONS.includes(status) ? status : "";
+}
+
 function normalizedEnabled(value) {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value === 1;
@@ -390,11 +397,14 @@ export async function savePredictionRecord(record) {
 }
 
 export async function setPredictionStatus(record, status) {
-  const nextRecord = { ...record, status };
+  const nextStatus = normalizedPredictionStatusAction(status);
+  const currentRecord = { ...record, status: normalizedStatus(record.status) };
+  if (!nextStatus) return result(currentRecord, LOCAL, new Error("Invalid prediction status"));
+  const nextRecord = { ...record, status: nextStatus };
   try {
-    const response = await client().from("predictions").update({ status }).eq("id", record.id);
+    const response = await client().from("predictions").update({ status: nextStatus }).eq("id", record.id);
     if (response.error) throw response.error;
-    if (status === "approved" && record.userId && record.binId) {
+    if (nextStatus === "approved" && record.userId && record.binId) {
       const history = await listPointHistory();
       const alreadyAwarded = hasPointHistoryForPrediction(history.data, record.id);
       const rules = await listPointRules();
@@ -415,9 +425,9 @@ export async function setPredictionStatus(record, status) {
   } catch (error) {
     const storedPredictions = localStore.getStoredPredictions();
     const updated = storedPredictions.some(item => item.id === record.id)
-      ? localStore.updatePredictionStatus(record.id, status)
+      ? localStore.updatePredictionStatus(record.id, nextStatus)
       : [localStore.savePredictionRecord(nextRecord), ...storedPredictions];
-    if (status === "approved" && record.userId && record.binId) {
+    if (nextStatus === "approved" && record.userId && record.binId) {
       const alreadyAwarded = hasPointHistoryForPrediction(localStore.getPointHistory(), record.id);
       const rule = localStore.getPointRules().find(item => normalizedEnabled(item.enabled) && ruleMatchesClass(item, record.class));
       if (!alreadyAwarded && rule && rule.points > 0) {
