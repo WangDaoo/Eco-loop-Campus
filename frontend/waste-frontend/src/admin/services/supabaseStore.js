@@ -28,6 +28,7 @@ function normalizedStatus(value, fallback = "pending") {
   return status || fallback;
 }
 
+const PREDICTION_STATUSES = ["pending", "approved", "rejected"];
 const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
 const REWARD_STATUSES = ["pending", "approved", "rejected"];
 const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
@@ -426,10 +427,11 @@ export async function savePredictionRecord(record) {
   const classKey = rawClass.trim().toLowerCase();
   const source = typeof record?.source === "string" ? record.source.trim() : "";
   const confidence = Number(record?.confidence);
-  if (!classKey || !source || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+  const status = normalizedStatus(record?.status, "pending");
+  if (!classKey || !source || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 || !PREDICTION_STATUSES.includes(status)) {
     return result(null, LOCAL, new Error("Invalid prediction record"));
   }
-  const appRecord = fromPrediction({ ...record, class: classKey, source, confidence });
+  const appRecord = fromPrediction({ ...record, class: classKey, source, confidence, status });
   return upsert("predictions", toPrediction(appRecord), appRecord, payload => localStore.savePredictionRecord(payload));
 }
 
