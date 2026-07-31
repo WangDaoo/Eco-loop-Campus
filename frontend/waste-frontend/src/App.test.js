@@ -429,6 +429,29 @@ test("saveFeedbackItem rejects blank messages before writing feedback", async ()
   expect(localStorage.getItem("ecoGuardianFeedback")).toBeNull();
 });
 
+test("saveUser rejects invalid profile fields before writing users", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingUsers = JSON.stringify(mockTables.users);
+  const invalidUsers = [
+    { id: "SV-BLANK-NAME", name: "   ", email: "blankname@school.edu.vn", role: "student", group: "CNTT K19", points: 0, status: "active" },
+    { id: "SV-BLANK-EMAIL", name: "Người dùng lỗi", email: "   ", role: "student", group: "CNTT K19", points: 0, status: "active" },
+    { id: "SV-BAD-EMAIL", name: "Người dùng lỗi", email: "bad-email", role: "student", group: "CNTT K19", points: 0, status: "active" },
+  ];
+
+  const results = [];
+  for (const user of invalidUsers) {
+    results.push(await store.saveUser(user));
+  }
+
+  results.forEach(response => {
+    expect(response.data).toBeNull();
+    expect(response.error).toEqual(expect.any(Error));
+  });
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("users");
+  expect(JSON.stringify(mockTables.users)).toBe(existingUsers);
+  expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;

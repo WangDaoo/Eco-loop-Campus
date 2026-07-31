@@ -12,6 +12,7 @@ import * as localStore from "./storage";
 
 const SUPABASE = "supabase";
 const LOCAL = "local";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function result(data, source = SUPABASE, error = null) {
   return { data, source, error };
@@ -475,7 +476,10 @@ export async function listUsers() {
 }
 
 export async function saveUser(user) {
-  const payload = fromUser({ ...user, createdAt: user.createdAt || new Date().toISOString() });
+  const name = typeof user.name === "string" ? user.name.trim() : "";
+  const email = typeof user.email === "string" ? user.email.trim() : "";
+  if (!name || !EMAIL_PATTERN.test(email)) return result(null, LOCAL, new Error("Invalid user profile"));
+  const payload = fromUser({ ...user, name, email, group: typeof user.group === "string" ? user.group.trim() : user.group, createdAt: user.createdAt || new Date().toISOString() });
   return upsert("users", toUser(payload), payload, item => {
     const users = localStore.getUsers();
     const next = [item, ...users.filter(user => user.id !== item.id)];
