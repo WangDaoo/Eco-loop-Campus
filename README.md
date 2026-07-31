@@ -1,8 +1,8 @@
-# Eco-loop Campus / EcoGuardian
+# Eco-loop Campus – Mô hình phân loại và tái chế rác thải trong Trường Đại học Sư phạm Kỹ thuật Hưng Yên theo hướng kinh tế tuần hoàn
 
-Eco-loop Campus is a school-focused circular economy platform for waste sorting, collection, recycling operations, Ecopoint rewards, and campus waste reporting. The current repository contains the EcoGuardian admin web, FastAPI AI backend, Supabase Auth/Database integration, GIS campus map, and mobile handoff documentation.
+Eco-loop Campus là mô hình phân loại, thu gom và tái chế rác thải trong khuôn viên Trường Đại học Sư phạm Kỹ thuật Hưng Yên theo hướng kinh tế tuần hoàn. Repository này chứa web quản trị, backend AI FastAPI, Supabase Auth/Database, bản đồ GIS campus và tài liệu bàn giao để phát triển app mobile.
 
-The project uses AI as a support layer, not as the only workflow. The main operation flow is: student submits recyclable waste, the app creates a QR transaction, a volunteer verifies the real waste at the station, Ecopoint is recorded, and admin monitors reports.
+Dự án dùng AI như một lớp hỗ trợ, không phải toàn bộ nghiệp vụ. Luồng chính là sinh viên gửi rác tái chế, app tạo QR giao dịch, tình nguyện viên xác nhận rác thật tại trạm, hệ thống ghi nhận Ecopoint và admin theo dõi báo cáo.
 
 ![Project Status](https://img.shields.io/badge/Status-Active-success)
 ![Python](https://img.shields.io/badge/Python-3.10-blue)
@@ -74,7 +74,7 @@ The core business problem is not only image classification. The project needs an
 flowchart LR
   StudentApp[Mobile App - Student] --> SupabaseAuth[Supabase Auth]
   VolunteerApp[Mobile App - Volunteer] --> SupabaseAuth
-  AdminWeb[EcoGuardian Admin Web] --> SupabaseAuth
+  AdminWeb[Eco-loop Campus Admin Web] --> SupabaseAuth
 
   StudentApp --> SupabaseDB[Supabase Database]
   VolunteerApp --> SupabaseDB
