@@ -223,6 +223,7 @@ Case cần test:
 Test hiện có:
 
 - Dashboard KPI loads.
+- Dashboard clamp capacity bẩn vượt `100` trước khi tính KPI `Mức độ đầy trung bình`, không render `150%`.
 - Point history KPI.
 - Priority cards navigate.
 - Operations panel.
@@ -238,6 +239,7 @@ Fix đã làm:
 
 - `DashboardPage.formatDate` kiểm tra `Invalid Date` và trả `Không rõ`.
 - `DashboardPage.formatPercent` dùng `safeNumber`, invalid -> `0%`.
+- Dashboard dùng `safePercent` để clamp `bins.capacity` về `0..100` cho avg capacity và attention threshold.
 - KPI điểm, avg capacity, avg confidence và point history table dùng số an toàn.
 - `seedDefaults` seed theo từng bảng và chỉ upsert record mặc định còn thiếu, không return sớm khi `users` đã có admin.
 - `saveBin` failure path qua CampusMap lưu fallback localStorage khi Supabase update lỗi.

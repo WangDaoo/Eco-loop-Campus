@@ -1167,6 +1167,24 @@ test("dashboard normalizes dirty prediction bin groups before counting group car
   expect(within(recycleCard).getByText("1")).toBeInTheDocument();
 });
 
+
+test("dashboard clamps malformed bin capacity before summary metrics", async () => {
+  mockTables.predictions = [];
+  mockTables.feedback = [];
+  mockTables.point_history = [];
+  mockTables.bins = [
+    { id: "BIN-CAPACITY-DIRTY", name: "Trạm sức chứa bẩn", bin_group: "Tái chế", location: "Nhà A", building: "A", floor: "1", qr_code: "QR-CAPACITY-DIRTY", status: "active", capacity: 150, map_x: 20, map_y: 20 },
+  ];
+  window.location.hash = "#/dashboard";
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /tổng quan quản trị/i })).toBeInTheDocument();
+  const capacityMetric = screen.getByText(/mức độ đầy trung bình/i).closest("article");
+  await waitFor(() => expect(within(capacityMetric).getByText("100%")).toBeInTheDocument());
+  expect(screen.queryByText("150%")).not.toBeInTheDocument();
+});
+
 test("dashboard seed button fills empty operation tables when admin user already exists", async () => {
   mockTables.users = [
     { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },

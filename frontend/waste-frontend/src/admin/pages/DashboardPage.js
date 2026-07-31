@@ -19,6 +19,8 @@ const safeNumber = value => {
   return Number.isFinite(number) ? number : 0;
 };
 
+const safePercent = value => Math.min(100, Math.max(0, safeNumber(value)));
+
 const formatDate = value => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "Không rõ" : dateFormatter.format(date);
@@ -29,7 +31,7 @@ const groupCode = value => String(value || "").trim().toLocaleLowerCase("vi-VN")
 const normalizeBinGroup = value => BIN_GROUPS.find(group => groupCode(group.label) === groupCode(value))?.label || String(value || "").trim();
 const isPendingScan = item => statusCode(item.status) === "pending";
 const isMaintenanceBin = bin => statusCode(bin.status) === "maintenance";
-const isBinAttention = bin => isMaintenanceBin(bin) || statusCode(bin.status) === "full" || safeNumber(bin.capacity) >= BIN_CAPACITY_WARNING;
+const isBinAttention = bin => isMaintenanceBin(bin) || statusCode(bin.status) === "full" || safePercent(bin.capacity) >= BIN_CAPACITY_WARNING;
 
 function countBy(items, getKey) {
   return items.reduce((acc, item) => {
@@ -190,7 +192,7 @@ export default function DashboardPage() {
   const binAttentionCount = bins.filter(isBinAttention).length;
   const totalUserPoints = users.reduce((sum, user) => sum + safeNumber(user.points), 0);
   const totalAwardedPoints = pointHistory.reduce((sum, item) => sum + safeNumber(item.points), 0);
-  const avgCapacity = bins.length ? Math.round(bins.reduce((sum, bin) => sum + safeNumber(bin.capacity), 0) / bins.length) : 0;
+  const avgCapacity = bins.length ? Math.round(bins.reduce((sum, bin) => sum + safePercent(bin.capacity), 0) / bins.length) : 0;
   const avgConfidence = predictions.length ? Math.round(predictions.reduce((sum, item) => sum + safeNumber(item.confidence), 0) / predictions.length * 100) : 0;
   const latestScans = predictions.slice(0, 6);
   const latestPointHistory = pointHistory.slice(0, 6);
