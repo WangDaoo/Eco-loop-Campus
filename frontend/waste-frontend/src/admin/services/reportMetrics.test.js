@@ -172,3 +172,12 @@ test("report summary treats dirty full bin status as full", () => {
 
   expect(summary.fullBins).toBe(1);
 });
+
+test("report filters return empty rows for malformed collection inputs", () => {
+  const result = filterReportData(
+    { predictions: "bad-predictions", bins: "bad-bins", feedback: "bad-feedback", pointHistory: "bad-points" },
+    { building: "A1", binGroup: "Tái chế" }
+  );
+
+  expect(result).toEqual({ predictions: [], pointHistory: [], feedback: [], bins: [] });
+});

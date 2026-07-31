@@ -19,6 +19,10 @@ function labelCode(value) {
   return typeof value === "string" ? value.trim().toLocaleLowerCase("vi-VN") : "";
 }
 
+function rows(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function formatDayLabel(dateKey) {
   const [, month, day] = dateKey.split("-");
   return `${day}/${month}`;
@@ -47,16 +51,16 @@ function getLinkedBinId(item) {
 }
 
 export function filterReportData(data, filters = {}) {
-  const allBins = data.bins || [];
+  const allBins = rows(data.bins);
   const hasBinFilter = Boolean(filters.building || filters.binGroup);
   const bins = hasBinFilter ? allBins.filter(bin => binMatches(bin, filters)) : allBins;
   const binIds = new Set(bins.map(bin => bin.id));
   const matchBin = item => !hasBinFilter || binIds.has(getLinkedBinId(item));
 
   return {
-    predictions: (data.predictions || []).filter(item => inDateRange(item.timestamp, filters) && matchBin(item)),
-    pointHistory: (data.pointHistory || []).filter(item => inDateRange(item.timestamp || item.createdAt, filters) && matchBin(item)),
-    feedback: (data.feedback || []).filter(item => inDateRange(item.timestamp, filters) && matchBin(item)),
+    predictions: rows(data.predictions).filter(item => inDateRange(item.timestamp, filters) && matchBin(item)),
+    pointHistory: rows(data.pointHistory).filter(item => inDateRange(item.timestamp || item.createdAt, filters) && matchBin(item)),
+    feedback: rows(data.feedback).filter(item => inDateRange(item.timestamp, filters) && matchBin(item)),
     bins,
   };
 }
