@@ -38,7 +38,8 @@ export function filterPointHistory(history, users, filters = {}) {
 }
 
 export function buildUserLeaderboard(users, history) {
-  return (users || []).map(user => {
+  const userRows = Array.isArray(users) ? users : [];
+  return userRows.map(user => {
     const rows = (history || []).filter(item => item.userId === user.id);
     return {
       userId: user.id,

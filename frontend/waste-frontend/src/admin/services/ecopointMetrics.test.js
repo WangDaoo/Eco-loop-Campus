@@ -93,3 +93,9 @@ test("filterPointHistory handles malformed users input", () => {
 
   expect(result.map(item => item.id)).toEqual([1]);
 });
+
+test("buildUserLeaderboard returns empty rows for malformed users", () => {
+  const result = buildUserLeaderboard("bad-users", history);
+
+  expect(result).toEqual([]);
+});
