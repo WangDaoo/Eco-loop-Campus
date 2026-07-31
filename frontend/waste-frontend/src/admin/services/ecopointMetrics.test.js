@@ -111,3 +111,9 @@ test("buildGroupLeaderboard handles malformed users input", () => {
 
   expect(result[0]).toEqual(expect.objectContaining({ group: "Chưa phân nhóm", totalPoints: 8, scanCount: 2 }));
 });
+
+test("buildGroupLeaderboard returns empty rows for malformed history", () => {
+  const result = buildGroupLeaderboard(users, "bad-history");
+
+  expect(result).toEqual([]);
+});

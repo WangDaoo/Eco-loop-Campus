@@ -55,9 +55,10 @@ export function buildUserLeaderboard(users, history) {
 export function buildGroupLeaderboard(users, history) {
   const userRows = Array.isArray(users) ? users : [];
   const userMap = new Map(userRows.map(user => [user.id, user]));
+  const historyRows = Array.isArray(history) ? history : [];
   const groups = new Map();
 
-  (history || []).forEach(item => {
+  historyRows.forEach(item => {
     const group = userMap.get(item.userId)?.group || "Chưa phân nhóm";
     const current = groups.get(group) || { group, totalPoints: 0, scanCount: 0 };
     current.totalPoints += safeNumber(item.points);
