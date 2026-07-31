@@ -353,6 +353,19 @@ test("updateFeedbackStatus rejects unsupported statuses before writing feedback"
   expect(localStorage.getItem("ecoGuardianFeedback")).toBeNull();
 });
 
+test("updateFeedbackItem rejects unsupported priority updates before writing feedback", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const feedback = { id: "FB001", userName: "Nguyen Minh Anh", category: "Thung day", message: "Thung tai che A1 gan day.", status: "unread", priority: "high", binId: "BIN-A1-RECYCLE", adminNote: "", timestamp: "2026-07-07T07:20:00.000Z" };
+
+  const result = await store.updateFeedbackItem(feedback, { priority: " urgent " });
+
+  expect(result.data.priority).toBe("high");
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("feedback", expect.objectContaining({ priority: " urgent " }));
+  expect(mockTables.feedback.find(item => item.id === "FB001").priority).toBe("high");
+  expect(localStorage.getItem("ecoGuardianFeedback")).toBeNull();
+});
+
 test("savePointRules rejects non-array rules before writing point rules", async () => {
   const store = require("./admin/services/supabaseStore");
   const existingRules = JSON.stringify(mockTables.point_rules);

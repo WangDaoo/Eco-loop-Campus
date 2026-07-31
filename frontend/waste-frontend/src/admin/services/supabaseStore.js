@@ -628,9 +628,12 @@ export async function saveFeedbackItem(feedback) {
 export async function updateFeedbackItem(feedback, updates) {
   const currentFeedback = normalizeFeedback(feedback);
   const hasStatusUpdate = Object.prototype.hasOwnProperty.call(updates, "status");
+  const hasPriorityUpdate = Object.prototype.hasOwnProperty.call(updates, "priority");
   const nextStatus = hasStatusUpdate ? normalizedFeedbackStatusAction(updates.status) : "";
+  const nextPriority = hasPriorityUpdate ? normalizedFeedbackPriorityAction(updates.priority) : "";
   if (hasStatusUpdate && !nextStatus) return result(currentFeedback, LOCAL, new Error("Invalid feedback status"));
-  const nextFeedback = normalizeFeedback({ ...feedback, ...updates, ...(hasStatusUpdate ? { status: nextStatus } : {}) });
+  if (hasPriorityUpdate && !nextPriority) return result(currentFeedback, LOCAL, new Error("Invalid feedback priority"));
+  const nextFeedback = normalizeFeedback({ ...feedback, ...updates, ...(hasStatusUpdate ? { status: nextStatus } : {}), ...(hasPriorityUpdate ? { priority: nextPriority } : {}) });
   try {
     const response = await client().from("feedback").update(toFeedback(nextFeedback)).eq("id", feedback.id);
     if (response.error) throw response.error;
