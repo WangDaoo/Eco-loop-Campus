@@ -366,6 +366,32 @@ test("savePointRules rejects non-array rules before writing point rules", async 
   expect(localStorage.getItem("ecoGuardianPointRules")).toBeNull();
 });
 
+test("saveManualPointHistory rejects invalid manual point records before writing point history", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const invalidRecords = [
+    { userId: "", action: "Nộp rác sự kiện", points: 5 },
+    { userId: "SV001", action: "   ", points: 5 },
+    { userId: "SV001", action: "Điều chỉnh sai", points: 0 },
+    { userId: "SV001", action: "Điều chỉnh sai", points: "bad-points" },
+  ];
+
+  const results = [];
+  for (const record of invalidRecords) {
+    results.push(await store.saveManualPointHistory(record));
+  }
+
+  results.forEach(response => {
+    expect(response.data).toBeNull();
+    expect(response.error).toEqual(expect.any(Error));
+  });
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("point_history");
+  expect(mockSupabaseInsert).not.toHaveBeenCalledWith("point_history", expect.anything());
+  expect(mockTables.point_history).toHaveLength(1);
+  expect(mockTables.users.find(user => user.id === "SV001").points).toBe(245);
+  expect(localStorage.getItem("ecoGuardianPointHistory")).toBeNull();
+  expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;

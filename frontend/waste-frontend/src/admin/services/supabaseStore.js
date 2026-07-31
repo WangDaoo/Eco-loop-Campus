@@ -614,15 +614,21 @@ export async function listPointHistory() {
 }
 
 export async function saveManualPointHistory(record) {
+  const userId = typeof record.userId === "string" ? record.userId.trim() : "";
+  const action = typeof record.action === "string" ? record.action.trim() : "";
+  const points = Number(record.points);
+  if (!userId || !action || !Number.isFinite(points) || points === 0) {
+    return result(null, LOCAL, new Error("Invalid manual point record"));
+  }
   const timestamp = new Date().toISOString();
   const pointRecord = fromPointHistory({
     predictionId: null,
-    userId: record.userId,
+    userId,
     binId: record.binId || null,
     class: "manual_adjustment",
     binGroup: record.binGroup || "Điều chỉnh",
-    action: record.action,
-    points: Number(record.points || 0),
+    action,
+    points,
     timestamp,
     createdAt: timestamp,
     source: "manual_adjustment",
