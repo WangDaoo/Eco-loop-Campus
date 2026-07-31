@@ -541,8 +541,11 @@ export async function listFeedback() {
 }
 
 export async function saveFeedbackItem(feedback) {
+  const message = typeof feedback.message === "string" ? feedback.message.trim() : "";
+  if (!message) return result(null, LOCAL, new Error("Invalid feedback message"));
   const payload = normalizeFeedback({
     ...feedback,
+    message,
     id: feedback.id || `FB-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     status: feedback.status || "unread",
     timestamp: feedback.timestamp || new Date().toISOString(),

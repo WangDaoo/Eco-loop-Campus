@@ -416,6 +416,19 @@ test("saveRewardRedemption rejects invalid reward requests before writing reward
   expect(localStorage.getItem("ecoGuardianRewardRedemptions")).toBeNull();
 });
 
+test("saveFeedbackItem rejects blank messages before writing feedback", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingFeedback = JSON.stringify(mockTables.feedback);
+
+  const result = await store.saveFeedbackItem({ userName: "Giám thị A1", category: "Khác", message: "   ", status: "unread", priority: "medium" });
+
+  expect(result.data).toBeNull();
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("feedback");
+  expect(JSON.stringify(mockTables.feedback)).toBe(existingFeedback);
+  expect(localStorage.getItem("ecoGuardianFeedback")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;
