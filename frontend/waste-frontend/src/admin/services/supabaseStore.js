@@ -33,6 +33,24 @@ function addPoints(currentPoints, deltaPoints) {
   return (Number.isFinite(current) ? current : 0) + (Number.isFinite(delta) ? delta : 0);
 }
 
+function normalizedClassKey(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function normalizeClassKeys(keys) {
+  return Array.isArray(keys) ? keys.map(normalizedClassKey).filter(Boolean) : [];
+}
+
+function ruleMatchesClass(rule, className) {
+  const classKey = normalizedClassKey(className);
+  return Boolean(classKey) && normalizeClassKeys(rule.classKeys).includes(classKey);
+}
+
+function hasPointHistoryForPrediction(history, predictionId) {
+  const targetId = String(predictionId || "");
+  return Boolean(targetId) && history.some(item => String(item.predictionId || item.prediction_id || "") === targetId);
+}
+
 function fromBin(row) {
   const { bin_group: binGroupSnake, qr_code: qrCodeSnake, map_x: mapXSnake, map_y: mapYSnake, ...rest } = row;
   return {
@@ -114,7 +132,7 @@ function fromPointRule(row) {
   const { class_keys: classKeysSnake, bin_group: binGroupSnake, ...rest } = row;
   return {
     ...rest,
-    classKeys: row.classKeys || classKeysSnake || [],
+    classKeys: normalizeClassKeys(row.classKeys || classKeysSnake || []),
     binGroup: row.binGroup || binGroupSnake,
   };
 }
@@ -123,7 +141,7 @@ function toPointRule(rule) {
   return {
     id: rule.id,
     label: rule.label,
-    class_keys: rule.classKeys,
+    class_keys: normalizeClassKeys(rule.classKeys),
     bin_group: rule.binGroup,
     points: rule.points,
     enabled: rule.enabled,
@@ -365,9 +383,11 @@ export async function setPredictionStatus(record, status) {
     const response = await client().from("predictions").update({ status }).eq("id", record.id);
     if (response.error) throw response.error;
     if (status === "approved" && record.userId && record.binId) {
+      const history = await listPointHistory();
+      const alreadyAwarded = hasPointHistoryForPrediction(history.data, record.id);
       const rules = await listPointRules();
-      const rule = rules.data.find(item => item.enabled && item.classKeys.includes(record.class));
-      if (rule && rule.points > 0) {
+      const rule = rules.data.find(item => item.enabled && ruleMatchesClass(item, record.class));
+      if (!alreadyAwarded && rule && rule.points > 0) {
         const pointRecord = buildPointHistoryRecord(record, rule);
         const insertResponse = await client().from("point_history").insert([toPointHistory(pointRecord)]);
         if (insertResponse.error) throw insertResponse.error;
@@ -386,8 +406,9 @@ export async function setPredictionStatus(record, status) {
       ? localStore.updatePredictionStatus(record.id, status)
       : [localStore.savePredictionRecord(nextRecord), ...storedPredictions];
     if (status === "approved" && record.userId && record.binId) {
-      const rule = localStore.getPointRules().find(item => item.enabled && item.classKeys.includes(record.class));
-      if (rule && rule.points > 0) {
+      const alreadyAwarded = hasPointHistoryForPrediction(localStore.getPointHistory(), record.id);
+      const rule = localStore.getPointRules().find(item => item.enabled && ruleMatchesClass(item, record.class));
+      if (!alreadyAwarded && rule && rule.points > 0) {
         const pointRecord = buildPointHistoryRecord(record, rule);
         localStore.savePointHistoryRecord(pointRecord);
         const users = localStore.getUsers();

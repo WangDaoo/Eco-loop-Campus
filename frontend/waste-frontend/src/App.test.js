@@ -270,6 +270,20 @@ test("Supabase store save and update functions use table-specific snake_case pay
     expect.objectContaining({ tableName: "reward_redemptions", payload: expect.objectContaining({ status: "approved", admin_note: "Đã nhận" }) }),
   ]));
 });
+
+test("setPredictionStatus awards points once when approval is repeated", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const predictions = await store.listPredictions();
+  const scan = predictions.data.find(item => item.id === "scan-low");
+
+  await store.setPredictionStatus(scan, "approved");
+  await store.setPredictionStatus(scan, "approved");
+
+  const awardedRows = (mockTables.point_history || []).filter(row => row.prediction_id === "scan-low");
+  const student = mockTables.users.find(user => user.id === "SV001");
+  expect(awardedRows).toHaveLength(1);
+  expect(student.points).toBe(253);
+});
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;
@@ -2253,6 +2267,22 @@ test("approve update fallback treats malformed local user points as zero", async
   expect(JSON.stringify(storedUsers)).not.toContain("NaN");
 });
 test("approving a scan updates Supabase and writes point history", async () => {
+  window.location.hash = "#/scans";
+
+  render(<App />);
+
+  await screen.findByRole("heading", { name: /duyệt kết quả ai/i });
+  fireEvent.click(await screen.findByRole("button", { name: /duyệt scan-low/i }));
+
+  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("predictions", expect.objectContaining({ status: "approved" })));
+  expect(mockSupabaseInsert).toHaveBeenCalledWith("point_history", expect.arrayContaining([expect.objectContaining({ prediction_id: "scan-low", points: 8 })]));
+  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("users", expect.objectContaining({ points: 253 })));
+});
+
+test("approving a scan matches dirty point rule class keys", async () => {
+  mockTables.point_rules = [
+    { id: "hazard-dirty", label: "Pin bẩn key", class_keys: [" Battery "], bin_group: "Pin / nguy hại", points: 8, enabled: true },
+  ];
   window.location.hash = "#/scans";
 
   render(<App />);
