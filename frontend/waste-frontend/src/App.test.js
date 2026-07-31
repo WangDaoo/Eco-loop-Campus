@@ -2035,6 +2035,39 @@ test("AI tester captures camera frames and saves camera predictions", async () =
     HTMLCanvasElement.prototype.toBlob = originalToBlob;
   }
 });
+test("AI tester saves uploaded files as upload source even when camera is on", async () => {
+  const axios = require("axios");
+  const originalMediaDevices = navigator.mediaDevices;
+
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: jest.fn().mockResolvedValue({ getTracks: () => [{ stop: jest.fn() }] }),
+    },
+  });
+  axios.post.mockResolvedValueOnce({ data: { class: "paper", confidence: 0.86 } });
+  window.location.hash = "#/ai-test";
+
+  try {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /camera/i }));
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+
+    const file = new File(["paper"], "paper.jpg", { type: "image/jpeg" });
+    fireEvent.change(document.querySelector('input[type="file"]'), { target: { files: [file] } });
+    fireEvent.click(document.querySelectorAll("button.eg-primary-btn")[0]);
+
+    await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      class: "paper",
+      source: "upload",
+      image_name: "paper.jpg",
+      status: "pending",
+    })));
+  } finally {
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: originalMediaDevices });
+  }
+});
 test("AI tester keeps upload prediction disabled until a file is selected", async () => {
   const axios = require("axios");
   window.location.hash = "#/ai-test";

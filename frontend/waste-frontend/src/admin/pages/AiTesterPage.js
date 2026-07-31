@@ -39,7 +39,7 @@ export default function AiTesterPage() {
     };
   }, [qrBinId]);
 
-  const runPrediction = async blob => {
+  const runPrediction = async (blob, sourceType = "upload") => {
     const formData = new FormData();
     formData.append("file", blob);
     setLoading(true);
@@ -71,7 +71,7 @@ export default function AiTesterPage() {
       const record = await savePredictionRecord({
         class: className,
         confidence,
-        source: cameraOn ? "camera" : "upload",
+        source: sourceType,
         timestamp: new Date().toISOString(),
         status: "pending",
         binId: qrBinId || undefined,
@@ -132,7 +132,7 @@ export default function AiTesterPage() {
     canvas.height = video.videoHeight || 480;
     canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob(blob => {
-      if (blob) runPrediction(new File([blob], "camera-capture.jpg", { type: "image/jpeg" }));
+      if (blob) runPrediction(new File([blob], "camera-capture.jpg", { type: "image/jpeg" }), "camera");
     }, "image/jpeg");
   };
 
@@ -170,7 +170,7 @@ export default function AiTesterPage() {
             <input type="file" accept="image/*" onChange={handleFileChange} />
           </label>
           {preview && <img className="eg-preview-image" src={preview} alt="Ảnh kiểm thử" />}
-          <button type="button" className="eg-primary-btn" onClick={() => file && runPrediction(file)} disabled={!file || loading}>
+          <button type="button" className="eg-primary-btn" onClick={() => file && runPrediction(file, "upload")} disabled={!file || loading}>
             {loading ? "Đang nhận diện" : "Nhận diện thử"}
           </button>
         </section>
