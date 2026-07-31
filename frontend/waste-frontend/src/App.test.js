@@ -299,6 +299,20 @@ test("setPredictionStatus rejects unsupported statuses before writing prediction
   expect(localStorage.getItem("smartWastePredictions")).toBeNull();
 });
 
+
+test("updateRewardRedemption rejects unsupported statuses before writing rewards", async () => {
+  const store = require("./admin/services/supabaseStore");
+  mockTables.reward_redemptions = [{ id: "RW-BAD-STATUS", user_id: "SV001", reward_label: "Voucher căn tin", cost_points: 100, status: "pending", requested_at: "2026-07-07T10:00:00.000Z" }];
+
+  const result = await store.updateRewardRedemption({ id: "RW-BAD-STATUS", userId: "SV001", rewardLabel: "Voucher căn tin", costPoints: 100, status: "pending", requestedAt: "2026-07-07T10:00:00.000Z" }, { status: " archived " });
+
+  expect(result.data.status).toBe("pending");
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("reward_redemptions", expect.objectContaining({ status: " archived " }));
+  expect(mockTables.reward_redemptions.find(item => item.id === "RW-BAD-STATUS").status).toBe("pending");
+  expect(localStorage.getItem("ecoGuardianRewardRedemptions")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;

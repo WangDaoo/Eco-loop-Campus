@@ -28,10 +28,22 @@ function normalizedStatus(value, fallback = "pending") {
 }
 
 const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
+const REWARD_STATUSES = ["pending", "approved", "rejected"];
+const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
 
 function normalizedPredictionStatusAction(value) {
   const status = normalizedStatus(value, "");
   return PREDICTION_STATUS_ACTIONS.includes(status) ? status : "";
+}
+
+function normalizedRewardStatus(value, fallback = "pending") {
+  const status = normalizedStatus(value, "");
+  return REWARD_STATUSES.includes(status) ? status : fallback;
+}
+
+function normalizedRewardStatusAction(value) {
+  const status = normalizedStatus(value, "");
+  return REWARD_STATUS_ACTIONS.includes(status) ? status : "";
 }
 
 function normalizedEnabled(value) {
@@ -229,7 +241,7 @@ function fromRewardRedemption(row) {
     userId: row.userId || userIdSnake,
     rewardLabel: row.rewardLabel || rewardLabelSnake,
     costPoints: Number.isFinite(costPoints) ? costPoints : 0,
-    status: normalizedStatus(row.status),
+    status: normalizedRewardStatus(row.status),
     requestedAt: row.requestedAt || requestedAtSnake,
     reviewedAt: row.reviewedAt || reviewedAtSnake,
     adminNote: row.adminNote || adminNoteSnake || "",
@@ -636,7 +648,12 @@ export async function saveRewardRedemption(item) {
 }
 
 export async function updateRewardRedemption(item, updates) {
-  const nextItem = fromRewardRedemption({ ...item, ...updates });
+  const currentItem = fromRewardRedemption(item);
+  const hasStatusUpdate = Object.prototype.hasOwnProperty.call(updates, "status");
+  if (hasStatusUpdate && !normalizedRewardStatusAction(updates.status)) {
+    return result(currentItem, LOCAL, new Error("Invalid reward status"));
+  }
+  const nextItem = fromRewardRedemption({ ...item, ...updates, ...(hasStatusUpdate ? { status: normalizedRewardStatusAction(updates.status) } : {}) });
   try {
     const response = await client().from("reward_redemptions").update(toRewardRedemption(nextItem)).eq("id", item.id);
     if (response.error) throw response.error;

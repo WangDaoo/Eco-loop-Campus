@@ -633,6 +633,7 @@ Test hiện có:
 - Manual adjustment âm được lưu đúng như điều chỉnh trừ điểm, hiển thị `-15` thay vì `+-15`.
 - Reward reject path cập nhật trạng thái `rejected`.
 - Reward redemption `status` bẩn như ` PENDING ` vẫn hiện action duyệt/từ chối và duyệt được.
+- `updateRewardRedemption` từ chối status ngoài `approved/rejected`, không gọi Supabase update, không ghi localStorage fallback và giữ status hiện tại.
 - Reward request với user không đủ điểm bị chặn, không ghi redemption.
 - Reward request với `users.points` malformed/non-number bị xem như `0`, không bypass kiểm đủ điểm.
 - Invalid timestamp/date filter trong `ecopointMetrics` không crash và không lọc sai toàn bộ dữ liệu.
@@ -658,6 +659,7 @@ Fix đã làm:
 - `ecopointMetrics.labelCode` trim/lower theo locale `vi-VN` cho filter lớp/khoa và nhóm rác, tránh dữ liệu Supabase bẩn bị loại khỏi lịch sử điểm.
 - `EcoPointsPage` canonicalize query `group`/`binGroup` bằng `labelCode` theo `users.group` và `BIN_GROUPS`, không giữ raw query bẩn trong select.
 - `fromRewardRedemption` normalize `status` trim/lower trước khi đưa vào UI, nên action pending không bị ẩn bởi dữ liệu bẩn.
+- `fromRewardRedemption` dùng allowlist `pending/approved/rejected`; `updateRewardRedemption` chỉ nhận action `approved/rejected` để không làm bẩn trạng thái đổi thưởng.
 - `fromUser` normalize `points` non-number về `0` ngay khi đọc dữ liệu, tránh `NaN` làm bypass đổi thưởng hoặc lan sang UI.
 - `saveManualPointHistory` dùng `addPoints` cho cả Supabase path và local fallback path, tránh `NaN` khi điểm user hoặc delta bẩn.
 
