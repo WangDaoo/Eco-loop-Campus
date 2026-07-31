@@ -81,3 +81,9 @@ test("filterPointHistory handles missing users array", () => {
 
   expect(result.map(item => item.id)).toEqual(["POINT-RECYCLE"]);
 });
+
+test("filterPointHistory returns empty rows for malformed history", () => {
+  const result = filterPointHistory("bad-history", users, { binGroup: "Tái chế" });
+
+  expect(result).toEqual([]);
+});
