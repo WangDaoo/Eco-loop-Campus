@@ -34,6 +34,10 @@ function normalizeStoredThreshold(value) {
   return Number.isFinite(threshold) ? threshold : 0.65;
 }
 
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 export function getStoredPredictions() {
   return readJson(LOCAL_PREDICTIONS_KEY, []).map(normalizePrediction);
 }
@@ -59,7 +63,7 @@ export function getUsers() {
 }
 
 export function saveUsers(users) {
-  return writeJson(USERS_KEY, users);
+  return writeJson(USERS_KEY, safeArray(users));
 }
 
 export function getBins() {
@@ -67,7 +71,7 @@ export function getBins() {
 }
 
 export function saveBins(bins) {
-  return writeJson(BINS_KEY, bins);
+  return writeJson(BINS_KEY, safeArray(bins));
 }
 
 export function getFeedback() {
@@ -75,7 +79,7 @@ export function getFeedback() {
 }
 
 export function saveFeedback(feedback) {
-  return writeJson(FEEDBACK_KEY, feedback);
+  return writeJson(FEEDBACK_KEY, safeArray(feedback));
 }
 
 export function getPointRules() {
@@ -83,7 +87,7 @@ export function getPointRules() {
 }
 
 export function savePointRules(rules) {
-  return writeJson(POINT_RULES_KEY, rules);
+  return writeJson(POINT_RULES_KEY, safeArray(rules));
 }
 
 export function getPointHistory() {
@@ -91,7 +95,7 @@ export function getPointHistory() {
 }
 
 export function savePointHistory(history) {
-  return writeJson(POINT_HISTORY_KEY, history);
+  return writeJson(POINT_HISTORY_KEY, safeArray(history));
 }
 
 export function savePointHistoryRecord(record) {
@@ -105,7 +109,7 @@ export function getRewardRedemptions() {
 }
 
 export function saveRewardRedemptions(items) {
-  return writeJson(REWARD_REDEMPTIONS_KEY, items);
+  return writeJson(REWARD_REDEMPTIONS_KEY, safeArray(items));
 }
 
 export function saveRewardRedemption(item) {
