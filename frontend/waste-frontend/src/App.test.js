@@ -452,6 +452,29 @@ test("saveUser rejects invalid profile fields before writing users", async () =>
   expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
 });
 
+test("saveBin rejects invalid station fields before writing bins", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingBins = JSON.stringify(mockTables.bins);
+  const invalidBins = [
+    { id: "   ", name: "Trạm thiếu mã", binGroup: "Tái chế", location: "Nhà A1", status: "active", capacity: 10 },
+    { id: "BIN-BLANK-NAME", name: "   ", binGroup: "Tái chế", location: "Nhà A1", status: "active", capacity: 10 },
+    { id: "BIN-BLANK-LOCATION", name: "Trạm thiếu vị trí", binGroup: "Tái chế", location: "   ", status: "active", capacity: 10 },
+  ];
+
+  const results = [];
+  for (const bin of invalidBins) {
+    results.push(await store.saveBin(bin));
+  }
+
+  results.forEach(response => {
+    expect(response.data).toBeNull();
+    expect(response.error).toEqual(expect.any(Error));
+  });
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("bins");
+  expect(JSON.stringify(mockTables.bins)).toBe(existingBins);
+  expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;

@@ -512,7 +512,20 @@ export async function listBins() {
 }
 
 export async function saveBin(bin) {
-  return upsert("bins", toBin(bin), bin, item => {
+  const id = typeof bin.id === "string" ? bin.id.trim() : "";
+  const name = typeof bin.name === "string" ? bin.name.trim() : "";
+  const location = typeof bin.location === "string" ? bin.location.trim() : "";
+  if (!id || !name || !location) return result(null, LOCAL, new Error("Invalid bin station"));
+  const payload = {
+    ...bin,
+    id,
+    name,
+    location,
+    building: typeof bin.building === "string" ? bin.building.trim() : bin.building,
+    floor: typeof bin.floor === "string" ? bin.floor.trim() : bin.floor,
+    qrCode: typeof bin.qrCode === "string" ? bin.qrCode.trim() : bin.qrCode,
+  };
+  return upsert("bins", toBin(payload), payload, item => {
     const bins = localStore.getBins();
     const next = [item, ...bins.filter(bin => bin.id !== item.id)];
     localStore.saveBins(next);
