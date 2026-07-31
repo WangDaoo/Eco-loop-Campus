@@ -53,7 +53,8 @@ export function buildUserLeaderboard(users, history) {
 }
 
 export function buildGroupLeaderboard(users, history) {
-  const userMap = new Map((users || []).map(user => [user.id, user]));
+  const userRows = Array.isArray(users) ? users : [];
+  const userMap = new Map(userRows.map(user => [user.id, user]));
   const groups = new Map();
 
   (history || []).forEach(item => {
