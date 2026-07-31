@@ -194,3 +194,9 @@ test("daily report data returns empty chart for malformed collection inputs", ()
   expect(chart.labels).toEqual([]);
   expect(chart.datasets.map(dataset => dataset.data)).toEqual([[], [], []]);
 });
+
+test("report csv rows return empty rows for malformed collection inputs", () => {
+  const csvRows = makeReportCsvRows({ predictions: "bad-predictions", bins: "bad-bins", feedback: "bad-feedback", pointHistory: "bad-points" });
+
+  expect(csvRows).toEqual([]);
+});

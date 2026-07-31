@@ -112,9 +112,9 @@ export function makeDailyReportData(data) {
 }
 
 export function makeReportCsvRows(data) {
-  const scanRows = (data.predictions || []).map(item => ({ loai: "scan", ma: item.id, nhom: item.binGroup, trang_thai: item.status, diem: "", thoi_gian: item.timestamp }));
-  const pointRows = (data.pointHistory || []).map(item => ({ loai: "point", ma: item.id, nhom: item.binGroup, trang_thai: item.action, diem: item.points, thoi_gian: item.timestamp || item.createdAt }));
-  const feedbackRows = (data.feedback || []).map(item => ({ loai: "feedback", ma: item.id, nhom: item.category, trang_thai: item.status, diem: "", thoi_gian: item.timestamp }));
-  const binRows = (data.bins || []).map(item => ({ loai: "bin", ma: item.id, nhom: item.binGroup, trang_thai: item.status, diem: "", thoi_gian: `${safeNumber(item.capacity)}%` }));
+  const scanRows = rows(data.predictions).map(item => ({ loai: "scan", ma: item.id, nhom: item.binGroup, trang_thai: item.status, diem: "", thoi_gian: item.timestamp }));
+  const pointRows = rows(data.pointHistory).map(item => ({ loai: "point", ma: item.id, nhom: item.binGroup, trang_thai: item.action, diem: item.points, thoi_gian: item.timestamp || item.createdAt }));
+  const feedbackRows = rows(data.feedback).map(item => ({ loai: "feedback", ma: item.id, nhom: item.category, trang_thai: item.status, diem: "", thoi_gian: item.timestamp }));
+  const binRows = rows(data.bins).map(item => ({ loai: "bin", ma: item.id, nhom: item.binGroup, trang_thai: item.status, diem: "", thoi_gian: `${safeNumber(item.capacity)}%` }));
   return [...scanRows, ...pointRows, ...feedbackRows, ...binRows];
 }
