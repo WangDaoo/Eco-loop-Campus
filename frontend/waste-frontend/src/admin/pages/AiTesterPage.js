@@ -8,6 +8,12 @@ import { listBins, savePredictionRecord, sourceText } from "../services/supabase
 
 const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
 const formatPercent = value => `${Math.round(Number(value || 0) * 100)}%`;
+const IMAGE_FILE_EXTENSIONS = /\.(avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i;
+const isImageUpload = selected => {
+  if (!selected) return false;
+  if (typeof selected.type === "string" && selected.type.startsWith("image/")) return true;
+  return IMAGE_FILE_EXTENSIONS.test(selected.name || "");
+};
 
 export default function AiTesterPage() {
   const location = useLocation();
@@ -93,9 +99,18 @@ export default function AiTesterPage() {
   const handleFileChange = event => {
     const selected = event.target.files?.[0];
     if (!selected) return;
+    setResult(null);
+    if (!isImageUpload(selected)) {
+      setFile(null);
+      setPreview("");
+      setToastTone("danger");
+      setToast("Chỉ chọn file ảnh để kiểm thử AI");
+      event.target.value = "";
+      return;
+    }
     setFile(selected);
     setPreview(URL.createObjectURL(selected));
-    setResult(null);
+    setToast("");
   };
 
   const startCamera = async () => {

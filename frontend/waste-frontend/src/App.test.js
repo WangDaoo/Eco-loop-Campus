@@ -2086,6 +2086,23 @@ test("AI tester keeps upload prediction disabled until a file is selected", asyn
   expect(predictButton).not.toBeDisabled();
 });
 
+test("AI tester rejects non-image upload files before calling backend", async () => {
+  const axios = require("axios");
+  window.location.hash = "#/ai-test";
+
+  render(<App />);
+
+  await screen.findByRole("button", { name: /camera/i });
+  const file = new File(["not image"], "notes.txt", { type: "text/plain" });
+  fireEvent.change(document.querySelector('input[type="file"]'), { target: { files: [file] } });
+
+  expect(await screen.findByText(/chỉ chọn file ảnh/i)).toBeInTheDocument();
+  expect(document.querySelector(".eg-preview-image")).toBeNull();
+  const predictButton = document.querySelectorAll("button.eg-primary-btn")[0];
+  expect(predictButton).toBeDisabled();
+  fireEvent.click(predictButton);
+  expect(axios.post).not.toHaveBeenCalled();
+});
 test("AI tester maps unknown backend classes to the fallback bin group", async () => {
   const axios = require("axios");
   axios.post.mockResolvedValueOnce({ data: { class: "styrofoam", confidence: 0.77 } });
