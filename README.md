@@ -269,12 +269,15 @@ Smart-Waste-Detection-and-Segregation-Platform/
 ## 🤝 Credits & Acknowledgements
 
 - **Dataset:** Garbage Dataset
-- **Supervisor:** Dr. Amit Kumar
+- **Supervisor:** Nguyễn Thị Tươi, Ngô Quang Hiệp
 
 ### Team Members
 
-- Tanvi Utreja (221030037)
-- Mehak Sharma (221030157)
-- Mahua Vaidya (221030396)
+- Phạm Thanh Hương (11425064)
+- Nguyễn Phương Thảo 11425159
+- Đào Minh Quang (10123264)
+- Phan Văn Khánh (12523037)
+
+
 
 ---
