@@ -132,7 +132,7 @@ Mục tiêu mobile:
 Root project:
 
 ```text
-D:\Project\NỔ NỔ\Eco-loop-Campus
+<project-root>
 ```
 
 Nguồn nghiệp vụ Eco-loop:
@@ -144,13 +144,13 @@ D:\Project\NỔ NỔ\eco_loop_campus_tong_hop_day_du.md
 Frontend admin:
 
 ```text
-D:\Project\NỔ NỔ\Eco-loop-Campus\frontend\eco-loop-campus-admin
+<project-root>\frontend\eco-loop-campus-admin
 ```
 
 Backend AI:
 
 ```text
-D:\Project\NỔ NỔ\Eco-loop-Campus\backend
+<project-root>\backend
 ```
 
 Cách bật local:
