@@ -1,4 +1,10 @@
-import { __testing } from "./supabaseStore";
+import { USERS_KEY } from "../data/wasteConfig";
+import { getUsers } from "./storage";
+import { __testing, saveManualPointHistory } from "./supabaseStore";
+
+beforeEach(() => {
+  localStorage.clear();
+});
 
 test("maps Supabase users created_at into admin user createdAt", () => {
   expect(__testing.fromUser({
@@ -443,4 +449,28 @@ test("maps non-numeric model class count to the configured AI class count", () =
   });
 
   expect(payload.class_count).toBe(10);
+});
+
+test("manual point fallback treats malformed local user points as zero", async () => {
+  localStorage.setItem(USERS_KEY, JSON.stringify([
+    {
+      id: "SV-BAD-LOCAL-POINTS",
+      name: "Người dùng lỗi điểm local",
+      email: "bad-local-points@school.edu.vn",
+      role: "student",
+      group: "CNTT K20",
+      points: "bad-points",
+      status: "active",
+    },
+  ]));
+
+  const response = await saveManualPointHistory({
+    userId: "SV-BAD-LOCAL-POINTS",
+    points: 12,
+    action: "Điều chỉnh dữ liệu lỗi",
+    adminNote: "Kiểm tra fallback",
+  });
+
+  expect(response.source).toBe("local");
+  expect(getUsers()[0].points).toBe(12);
 });

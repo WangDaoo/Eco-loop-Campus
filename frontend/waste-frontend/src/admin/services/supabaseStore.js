@@ -552,14 +552,14 @@ export async function saveManualPointHistory(record) {
     const users = await listUsers();
     const user = users.data.find(item => item.id === pointRecord.userId);
     if (user) {
-      const userResponse = await client().from("users").update({ points: Number(user.points || 0) + Number(pointRecord.points || 0) }).eq("id", user.id);
+      const userResponse = await client().from("users").update({ points: addPoints(user.points, pointRecord.points) }).eq("id", user.id);
       if (userResponse.error) throw userResponse.error;
     }
     return result(pointRecord, SUPABASE);
   } catch (error) {
     localStore.savePointHistoryRecord(pointRecord);
     const users = localStore.getUsers();
-    localStore.saveUsers(users.map(user => user.id === pointRecord.userId ? { ...user, points: Number(user.points || 0) + Number(pointRecord.points || 0) } : user));
+    localStore.saveUsers(users.map(user => user.id === pointRecord.userId ? { ...user, points: addPoints(user.points, pointRecord.points) } : user));
     return result(pointRecord, LOCAL, error);
   }
 }

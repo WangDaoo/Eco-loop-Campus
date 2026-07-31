@@ -22,6 +22,16 @@ function priorityCode(priority) {
   return typeof priority === "string" ? priority.trim().toLowerCase() : "";
 }
 
+function safeStatusCode(status, fallback = "unread") {
+  const normalized = statusCode(status);
+  return Object.prototype.hasOwnProperty.call(FEEDBACK_STATUSES, normalized) ? normalized : fallback;
+}
+
+function safePriorityCode(priority, fallback = "medium") {
+  const normalized = priorityCode(priority);
+  return Object.prototype.hasOwnProperty.call(FEEDBACK_PRIORITIES, normalized) ? normalized : fallback;
+}
+
 export function normalizeFeedback(item = {}) {
   return {
     ...item,
@@ -29,8 +39,8 @@ export function normalizeFeedback(item = {}) {
     userName: item.userName || item.user_name || "Người dùng",
     category: item.category || "Khác",
     message: item.message || "",
-    status: statusCode(item.status) || "unread",
-    priority: priorityCode(item.priority) || "medium",
+    status: safeStatusCode(item.status),
+    priority: safePriorityCode(item.priority),
     binId: item.binId || item.bin_id || "",
     adminNote: item.adminNote || item.admin_note || "",
     resolvedAt: item.resolvedAt || item.resolved_at || "",
@@ -39,14 +49,13 @@ export function normalizeFeedback(item = {}) {
 }
 
 export function isOpenFeedback(item) {
-  return OPEN_FEEDBACK_STATUSES.includes(statusCode(item?.status) || "unread");
+  return OPEN_FEEDBACK_STATUSES.includes(safeStatusCode(item?.status));
 }
 
 export function getFeedbackStatusLabel(status) {
-  const normalizedStatus = statusCode(status);
-  return FEEDBACK_STATUSES[normalizedStatus] || status || "Không rõ";
+  return FEEDBACK_STATUSES[safeStatusCode(status)] || "Không rõ";
 }
 
 export function getFeedbackPriorityLabel(priority) {
-  return FEEDBACK_PRIORITIES[priorityCode(priority)] || FEEDBACK_PRIORITIES.medium;
+  return FEEDBACK_PRIORITIES[safePriorityCode(priority)] || FEEDBACK_PRIORITIES.medium;
 }
