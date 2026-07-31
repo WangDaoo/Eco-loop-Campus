@@ -87,3 +87,9 @@ test("filterPointHistory returns empty rows for malformed history", () => {
 
   expect(result).toEqual([]);
 });
+
+test("filterPointHistory handles malformed users input", () => {
+  const result = filterPointHistory(history, "bad-users", { binGroup: "Tái chế" });
+
+  expect(result.map(item => item.id)).toEqual([1]);
+});
