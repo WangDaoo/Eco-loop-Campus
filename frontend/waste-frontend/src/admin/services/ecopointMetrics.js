@@ -25,7 +25,7 @@ function inDateRange(value, filters = {}) {
 }
 
 export function filterPointHistory(history, users, filters = {}) {
-  const userMap = new Map(users.map(user => [user.id, user]));
+  const userMap = new Map((users || []).map(user => [user.id, user]));
   return (history || []).filter(item => {
     const user = userMap.get(item.userId);
     if (filters.userId && item.userId !== filters.userId) return false;

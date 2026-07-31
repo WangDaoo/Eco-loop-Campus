@@ -53,6 +53,7 @@ test("leaderboards treat malformed point values as zero", () => {
   expect(buildUserLeaderboard(users, dirtyHistory)[0]).toEqual(expect.objectContaining({ userId: "SV001", totalPoints: 4 }));
   expect(buildGroupLeaderboard(users, dirtyHistory)[0]).toEqual(expect.objectContaining({ group: "CNTT K18", totalPoints: 4 }));
 });
+
 test("filters point history ignore invalid dates instead of crashing", () => {
   const dirtyHistory = [
     ...history,
@@ -68,4 +69,15 @@ test("filters point history ignore invalid date filter bounds", () => {
   const rows = filterPointHistory(history, users, { dateFrom: "bad", dateTo: "also-bad" });
 
   expect(rows.map(row => row.id)).toEqual([1, 2]);
+});
+
+test("filterPointHistory handles missing users array", () => {
+  const dirtyHistory = [
+    { id: "POINT-RECYCLE", userId: "SV-MISSING", binGroup: "Tái chế", points: 5, timestamp: "2026-07-07T08:00:00.000Z" },
+    { id: "POINT-ORGANIC", userId: "SV-MISSING", binGroup: "Hữu cơ", points: 3, timestamp: "2026-07-07T09:00:00.000Z" },
+  ];
+
+  const result = filterPointHistory(dirtyHistory, undefined, { binGroup: " TÁI CHẾ " });
+
+  expect(result.map(item => item.id)).toEqual(["POINT-RECYCLE"]);
 });
