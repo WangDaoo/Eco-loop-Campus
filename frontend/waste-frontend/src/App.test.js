@@ -2035,6 +2035,39 @@ test("AI tester captures camera frames and saves camera predictions", async () =
     HTMLCanvasElement.prototype.toBlob = originalToBlob;
   }
 });
+test("AI tester warns when camera capture cannot create an image", async () => {
+  const axios = require("axios");
+  const originalMediaDevices = navigator.mediaDevices;
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+  const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: jest.fn().mockResolvedValue({ getTracks: () => [{ stop: jest.fn() }] }),
+    },
+  });
+  HTMLCanvasElement.prototype.getContext = jest.fn(() => ({ drawImage: jest.fn() }));
+  HTMLCanvasElement.prototype.toBlob = jest.fn(callback => callback(null));
+  window.location.hash = "#/ai-test";
+
+  try {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /camera/i }));
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    fireEvent.click(document.querySelectorAll("button.eg-primary-btn")[1]);
+
+    expect(await screen.findByText(/không chụp được ảnh từ camera/i)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveClass("tone-danger");
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ source: "camera", status: "pending" }));
+  } finally {
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: originalMediaDevices });
+    HTMLCanvasElement.prototype.getContext = originalGetContext;
+    HTMLCanvasElement.prototype.toBlob = originalToBlob;
+  }
+});
 test("AI tester saves uploaded files as upload source even when camera is on", async () => {
   const axios = require("axios");
   const originalMediaDevices = navigator.mediaDevices;

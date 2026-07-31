@@ -139,15 +139,37 @@ export default function AiTesterPage() {
     setCameraOn(false);
   };
 
+  const showCaptureError = () => {
+    setToastTone("danger");
+    setToast("Không chụp được ảnh từ camera");
+  };
+
   const captureCamera = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return;
+    if (!video || !canvas) {
+      showCaptureError();
+      return;
+    }
+    const context = canvas.getContext("2d");
+    if (!context) {
+      showCaptureError();
+      return;
+    }
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
-    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    try {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    } catch {
+      showCaptureError();
+      return;
+    }
     canvas.toBlob(blob => {
-      if (blob) runPrediction(new File([blob], "camera-capture.jpg", { type: "image/jpeg" }), "camera");
+      if (!blob) {
+        showCaptureError();
+        return;
+      }
+      runPrediction(new File([blob], "camera-capture.jpg", { type: "image/jpeg" }), "camera");
     }, "image/jpeg");
   };
 
