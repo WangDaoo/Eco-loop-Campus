@@ -327,6 +327,19 @@ test("updateUserStatus rejects unsupported statuses before writing users", async
   expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
 });
 
+test("updateBinStatus rejects unsupported statuses before writing bins", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const bin = { id: "BIN-A1-RECYCLE", name: "Thùng tái chế A1", binGroup: "Tái chế", location: "Nhà A1", building: "A1", floor: "1", qrCode: "QR-A1", status: "active", capacity: 54, mapX: 30, mapY: 78 };
+
+  const result = await store.updateBinStatus(bin, " archived ");
+
+  expect(result.data.status).toBe("active");
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("bins", { status: " archived " });
+  expect(mockTables.bins.find(item => item.id === "BIN-A1-RECYCLE").status).toBe("active");
+  expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;

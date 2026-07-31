@@ -31,6 +31,7 @@ const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
 const REWARD_STATUSES = ["pending", "approved", "rejected"];
 const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
 const USER_STATUS_ACTIONS = ["active", "locked"];
+const BIN_STATUS_ACTIONS = ["active", "full", "maintenance"];
 
 function normalizedPredictionStatusAction(value) {
   const status = normalizedStatus(value, "");
@@ -50,6 +51,11 @@ function normalizedRewardStatusAction(value) {
 function normalizedUserStatusAction(value) {
   const status = normalizedStatus(value, "");
   return USER_STATUS_ACTIONS.includes(status) ? status : "";
+}
+
+function normalizedBinStatusAction(value) {
+  const status = normalizedStatus(value, "");
+  return BIN_STATUS_ACTIONS.includes(status) ? status : "";
 }
 
 function normalizedEnabled(value) {
@@ -506,12 +512,14 @@ export async function saveBin(bin) {
 }
 
 export async function updateBinStatus(bin, status) {
+  const nextStatus = normalizedBinStatusAction(status);
+  if (!nextStatus) return result(bin, LOCAL, new Error("Invalid bin status"));
   try {
-    const response = await client().from("bins").update({ status }).eq("id", bin.id);
+    const response = await client().from("bins").update({ status: nextStatus }).eq("id", bin.id);
     if (response.error) throw response.error;
-    return result({ ...bin, status }, SUPABASE);
+    return result({ ...bin, status: nextStatus }, SUPABASE);
   } catch (error) {
-    const nextBin = { ...bin, status };
+    const nextBin = { ...bin, status: nextStatus };
     const localBins = localStore.getBins();
     const existsLocally = localBins.some(item => item.id === bin.id);
     const next = existsLocally
