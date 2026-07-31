@@ -392,6 +392,30 @@ test("saveManualPointHistory rejects invalid manual point records before writing
   expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
 });
 
+test("saveRewardRedemption rejects invalid reward requests before writing rewards", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingRewards = JSON.stringify(mockTables.reward_redemptions || []);
+  const invalidRequests = [
+    { userId: "", rewardLabel: "Voucher căn tin", costPoints: 100 },
+    { userId: "SV001", rewardLabel: "   ", costPoints: 100 },
+    { userId: "SV001", rewardLabel: "Voucher căn tin", costPoints: 0 },
+    { userId: "SV001", rewardLabel: "Voucher căn tin", costPoints: "bad-cost" },
+  ];
+
+  const results = [];
+  for (const item of invalidRequests) {
+    results.push(await store.saveRewardRedemption(item));
+  }
+
+  results.forEach(response => {
+    expect(response.data).toBeNull();
+    expect(response.error).toEqual(expect.any(Error));
+  });
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("reward_redemptions");
+  expect(JSON.stringify(mockTables.reward_redemptions || [])).toBe(existingRewards);
+  expect(localStorage.getItem("ecoGuardianRewardRedemptions")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;

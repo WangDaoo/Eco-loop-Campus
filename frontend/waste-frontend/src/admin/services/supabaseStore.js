@@ -672,8 +672,17 @@ export async function listRewardRedemptions() {
 }
 
 export async function saveRewardRedemption(item) {
+  const userId = typeof item.userId === "string" ? item.userId.trim() : "";
+  const rewardLabel = typeof item.rewardLabel === "string" ? item.rewardLabel.trim() : "";
+  const costPoints = Number(item.costPoints);
+  if (!userId || !rewardLabel || !Number.isFinite(costPoints) || costPoints <= 0) {
+    return result(null, LOCAL, new Error("Invalid reward redemption"));
+  }
   const payload = fromRewardRedemption({
     ...item,
+    userId,
+    rewardLabel,
+    costPoints,
     id: item.id || `RW-${Date.now()}`,
     status: item.status || "pending",
     requestedAt: item.requestedAt || new Date().toISOString(),
