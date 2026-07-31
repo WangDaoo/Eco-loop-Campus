@@ -51,6 +51,7 @@ const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
 const PREDICTION_SOURCES = ["upload", "camera"];
 const REWARD_STATUSES = ["pending", "approved", "rejected"];
 const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
+const USER_ROLES = ["student", "teacher", "volunteer", "admin"];
 const USER_STATUS_ACTIONS = ["active", "locked"];
 const BIN_STATUS_ACTIONS = ["active", "full", "maintenance"];
 
@@ -67,6 +68,11 @@ function normalizedRewardStatus(value, fallback = "pending") {
 function normalizedRewardStatusAction(value) {
   const status = normalizedStatus(value, "");
   return REWARD_STATUS_ACTIONS.includes(status) ? status : "";
+}
+
+function normalizedUserRole(value) {
+  const role = normalizedStatus(value, "");
+  return USER_ROLES.includes(role) ? role : "";
 }
 
 function normalizedUserStatusAction(value) {
@@ -506,9 +512,10 @@ export async function listUsers() {
 export async function saveUser(user) {
   const name = typeof user.name === "string" ? user.name.trim() : "";
   const email = typeof user.email === "string" ? user.email.trim() : "";
+  const role = normalizedUserRole(user.role);
   const status = normalizedUserStatusAction(user.status || "active");
-  if (!name || !EMAIL_PATTERN.test(email) || !status) return result(null, LOCAL, new Error("Invalid user profile"));
-  const payload = fromUser({ ...user, name, email, status, group: typeof user.group === "string" ? user.group.trim() : user.group, createdAt: user.createdAt || new Date().toISOString() });
+  if (!name || !EMAIL_PATTERN.test(email) || !role || !status) return result(null, LOCAL, new Error("Invalid user profile"));
+  const payload = fromUser({ ...user, name, email, role, status, group: typeof user.group === "string" ? user.group.trim() : user.group, createdAt: user.createdAt || new Date().toISOString() });
   return upsert("users", toUser(payload), payload, item => {
     const users = localStore.getUsers();
     const next = [item, ...users.filter(user => user.id !== item.id)];

@@ -465,6 +465,28 @@ test("saveUser rejects unsupported statuses before writing users", async () => {
   expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
 });
 
+test("saveUser rejects unsupported roles before writing users", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingUsers = JSON.stringify(mockTables.users);
+  const invalidUsers = [
+    { id: "SV-BLANK-ROLE", name: "Người dùng thiếu vai trò", email: "blankrole@school.edu.vn", role: "   ", group: "CNTT K19", points: 0, status: "active" },
+    { id: "SV-BAD-ROLE", name: "Người dùng role lỗi", email: "badrole@school.edu.vn", role: "superadmin", group: "CNTT K19", points: 0, status: "active" },
+  ];
+
+  const results = [];
+  for (const user of invalidUsers) {
+    results.push(await store.saveUser(user));
+  }
+
+  results.forEach(response => {
+    expect(response.data).toBeNull();
+    expect(response.error).toEqual(expect.any(Error));
+  });
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("users");
+  expect(JSON.stringify(mockTables.users)).toBe(existingUsers);
+  expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
+});
+
 test("saveBin rejects invalid station fields before writing bins", async () => {
   const store = require("./admin/services/supabaseStore");
   const existingBins = JSON.stringify(mockTables.bins);
