@@ -171,8 +171,12 @@ async def predict(file: UploadFile = File(...)):
 @app.post("/chat")
 async def chat(request: ChatRequest):
 
+    message = request.message.strip()
+    if not message:
+        return {"reply": "Message is required"}
+
     try:
-        reply = ask_local_ai(request.message)
+        reply = ask_local_ai(message)
         return {"reply": reply}
 
     except Exception as e:

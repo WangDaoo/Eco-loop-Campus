@@ -121,6 +121,17 @@ class AppEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Prediction failed", response.json()["error"])
 
+    def test_chat_rejects_blank_message_without_calling_local_ai(self):
+        def fail_if_called(message):
+            raise AssertionError("ask_local_ai should not be called for blank messages")
+
+        app.ask_local_ai = fail_if_called
+
+        response = self.client.post("/chat", json={"message": "   "})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"reply": "Message is required"})
+
     def test_chat_returns_safe_reply(self):
         app.ask_local_ai = lambda message: f"reply: {message}"
 
