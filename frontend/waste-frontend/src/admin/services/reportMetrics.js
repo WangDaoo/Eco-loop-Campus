@@ -66,11 +66,15 @@ export function filterReportData(data, filters = {}) {
 }
 
 export function buildReportSummary(data) {
+  const predictions = rows(data.predictions);
+  const pointHistory = rows(data.pointHistory);
+  const feedback = rows(data.feedback);
+  const bins = rows(data.bins);
   return {
-    totalScans: (data.predictions || []).length,
-    totalPoints: (data.pointHistory || []).reduce((sum, item) => sum + safeNumber(item.points), 0),
-    openFeedback: (data.feedback || []).filter(isOpenFeedback).length,
-    fullBins: (data.bins || []).filter(bin => statusCode(bin.status) === "full" || safeNumber(bin.capacity) >= 85).length,
+    totalScans: predictions.length,
+    totalPoints: pointHistory.reduce((sum, item) => sum + safeNumber(item.points), 0),
+    openFeedback: feedback.filter(isOpenFeedback).length,
+    fullBins: bins.filter(bin => statusCode(bin.status) === "full" || safeNumber(bin.capacity) >= 85).length,
   };
 }
 

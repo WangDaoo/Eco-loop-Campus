@@ -181,3 +181,9 @@ test("report filters return empty rows for malformed collection inputs", () => {
 
   expect(result).toEqual({ predictions: [], pointHistory: [], feedback: [], bins: [] });
 });
+
+test("report summary returns zero metrics for malformed collection inputs", () => {
+  const summary = buildReportSummary({ predictions: "bad-predictions", bins: "bad-bins", feedback: "bad-feedback", pointHistory: "bad-points" });
+
+  expect(summary).toEqual({ totalScans: 0, totalPoints: 0, openFeedback: 0, fullBins: 0 });
+});
