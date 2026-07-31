@@ -429,6 +429,28 @@ test("saveFeedbackItem rejects blank messages before writing feedback", async ()
   expect(localStorage.getItem("ecoGuardianFeedback")).toBeNull();
 });
 
+test("saveFeedbackItem rejects unsupported status and priority before writing feedback", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingFeedback = JSON.stringify(mockTables.feedback);
+  const invalidFeedback = [
+    { userName: "Monitor A1", category: "Other", message: "Bad status", status: " archived ", priority: "medium" },
+    { userName: "Monitor A1", category: "Other", message: "Bad priority", status: "unread", priority: " urgent " },
+  ];
+
+  const results = [];
+  for (const item of invalidFeedback) {
+    results.push(await store.saveFeedbackItem(item));
+  }
+
+  results.forEach(response => {
+    expect(response.data).toBeNull();
+    expect(response.error).toEqual(expect.any(Error));
+  });
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("feedback");
+  expect(JSON.stringify(mockTables.feedback)).toBe(existingFeedback);
+  expect(localStorage.getItem("ecoGuardianFeedback")).toBeNull();
+});
+
 test("saveUser rejects invalid profile fields before writing users", async () => {
   const store = require("./admin/services/supabaseStore");
   const existingUsers = JSON.stringify(mockTables.users);

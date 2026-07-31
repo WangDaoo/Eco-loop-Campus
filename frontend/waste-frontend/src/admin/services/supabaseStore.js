@@ -7,7 +7,7 @@ import {
   getWasteLabel,
   normalizePrediction,
 } from "../data/wasteConfig";
-import { FEEDBACK_STATUSES, normalizeFeedback } from "../data/feedbackConfig";
+import { FEEDBACK_PRIORITIES, FEEDBACK_STATUSES, normalizeFeedback } from "../data/feedbackConfig";
 import { seedBins, seedFeedback, seedUsers } from "../data/seedData";
 import * as localStore from "./storage";
 
@@ -88,6 +88,11 @@ function normalizedBinStatusAction(value) {
 function normalizedFeedbackStatusAction(value) {
   const status = normalizedStatus(value, "");
   return Object.prototype.hasOwnProperty.call(FEEDBACK_STATUSES, status) ? status : "";
+}
+
+function normalizedFeedbackPriorityAction(value) {
+  const priority = normalizedStatus(value, "");
+  return Object.prototype.hasOwnProperty.call(FEEDBACK_PRIORITIES, priority) ? priority : "";
 }
 
 function normalizedEnabled(value) {
@@ -602,12 +607,15 @@ export async function listFeedback() {
 
 export async function saveFeedbackItem(feedback) {
   const message = typeof feedback.message === "string" ? feedback.message.trim() : "";
-  if (!message) return result(null, LOCAL, new Error("Invalid feedback message"));
+  const status = normalizedFeedbackStatusAction(feedback.status || "unread");
+  const priority = normalizedFeedbackPriorityAction(feedback.priority || "medium");
+  if (!message || !status || !priority) return result(null, LOCAL, new Error("Invalid feedback message"));
   const payload = normalizeFeedback({
     ...feedback,
     message,
     id: feedback.id || `FB-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    status: feedback.status || "unread",
+    status,
+    priority,
     timestamp: feedback.timestamp || new Date().toISOString(),
   });
   return upsert("feedback", toFeedback(payload), payload, item => {
