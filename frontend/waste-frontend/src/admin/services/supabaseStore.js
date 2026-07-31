@@ -28,6 +28,18 @@ function normalizedStatus(value, fallback = "pending") {
   return status || fallback;
 }
 
+function normalizeNumber(value, fallback = null) {
+  if (value === "" || value === null || value === undefined) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizePercent(value, fallback = null) {
+  const parsed = normalizeNumber(value, fallback);
+  if (parsed === null || parsed === undefined) return parsed;
+  return Math.max(0, Math.min(100, parsed));
+}
+
 const PREDICTION_STATUSES = ["pending", "approved", "rejected"];
 const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
 const PREDICTION_SOURCES = ["upload", "camera"];
@@ -534,6 +546,9 @@ export async function saveBin(bin) {
     building: typeof bin.building === "string" ? bin.building.trim() : bin.building,
     floor: typeof bin.floor === "string" ? bin.floor.trim() : bin.floor,
     qrCode: typeof bin.qrCode === "string" ? bin.qrCode.trim() : bin.qrCode,
+    capacity: normalizePercent(bin.capacity, 0),
+    mapX: normalizePercent(bin.mapX),
+    mapY: normalizePercent(bin.mapY),
   };
   return upsert("bins", toBin(payload), payload, item => {
     const bins = localStore.getBins();

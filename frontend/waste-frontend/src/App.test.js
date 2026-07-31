@@ -475,6 +475,21 @@ test("saveBin rejects invalid station fields before writing bins", async () => {
   expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
 });
 
+test("saveBin clamps capacity and map coordinates before writing bins", async () => {
+  const store = require("./admin/services/supabaseStore");
+
+  const result = await store.saveBin({ id: "BIN-DIRECT-RANGE", name: "Trạm biên trực tiếp", binGroup: "Tái chế", location: "Nhà D", status: "active", capacity: "150", mapX: "-10", mapY: "140" });
+
+  expect(result.data).toEqual(expect.objectContaining({ capacity: 100, mapX: 0, mapY: 100 }));
+  expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
+    id: "BIN-DIRECT-RANGE",
+    capacity: 100,
+    map_x: 0,
+    map_y: 100,
+  }));
+  expect(mockTables.bins.find(bin => bin.id === "BIN-DIRECT-RANGE")).toEqual(expect.objectContaining({ capacity: 100, map_x: 0, map_y: 100 }));
+});
+
 test("savePredictionRecord rejects invalid scan fields before writing predictions", async () => {
   const store = require("./admin/services/supabaseStore");
   const existingPredictions = JSON.stringify(mockTables.predictions);
