@@ -570,6 +570,7 @@ Test hiện có:
 - Invalid timestamp không crash, không lọt date filter, chart bỏ ngày lỗi.
 - Invalid `dateFrom/dateTo` query/filter bounds bị bỏ qua thay vì lọc rỗng sai.
 - Record thiếu/mất bin bị loại khi bin filters active.
+- Record operation thiếu `binId/bin_id` vẫn bị loại khi filter thùng active, kể cả khi `id` của record trùng mã thùng.
 - Empty operations data hiện KPI 0 và export CSV fallback không crash.
 - `buildCsvContent()` khi rows thiếu/undefined trả CSV fallback rỗng, không crash.
 - Unit test `buildCsvContent` escape dấu phẩy, dấu nháy kép, xuống dòng, null và fallback `Không có dữ liệu`.
@@ -593,6 +594,7 @@ Fix đã làm:
 - `reportMetrics.statusCode` trim/lower status thùng trước khi tính `fullBins`.
 - `ReportsPage` dùng `statusCode/safeNumber` cho full bin counts trong bảng tổng hợp nhóm.
 - `reportMetrics.labelCode` trim/lower theo locale `vi-VN` cho `building` và `binGroup`, tránh dữ liệu Supabase bẩn bị loại khỏi báo cáo.
+- `reportMetrics.getLinkedBinId` bỏ fallback `item.id`, chỉ dùng `binId/bin_id` để không nhận nhầm mã record là mã thùng.
 - `ReportsPage` canonicalize query `building/binGroup` theo options hiện có bằng labelCode, giá trị bẩn/lạ fallback filter trống thay vì giữ raw value trong select.
 
 Gaps còn lại:

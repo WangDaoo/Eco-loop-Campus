@@ -540,6 +540,25 @@ test("dashboard uses point history for awarded Ecopoint KPI and activity", async
   expect(screen.getAllByText("Thùng tái chế A1").length).toBeGreaterThan(0);
 });
 
+
+test("report filters do not treat operation record ids as linked bin ids", () => {
+  const { buildReportSummary, filterReportData } = require("./admin/services/reportMetrics");
+  const data = {
+    bins: [{ id: "BIN-A1-RECYCLE", building: "A1", binGroup: "Tái chế", status: "active", capacity: 20 }],
+    predictions: [{ id: "BIN-A1-RECYCLE", class: "plastic", timestamp: "2026-07-07T08:00:00.000Z" }],
+    pointHistory: [{ id: "BIN-A1-RECYCLE", points: 5, timestamp: "2026-07-07T08:10:00.000Z" }],
+    feedback: [{ id: "BIN-A1-RECYCLE", status: "unread", timestamp: "2026-07-07T08:20:00.000Z" }],
+  };
+
+  const filtered = filterReportData(data, { building: "A1" });
+  const summary = buildReportSummary(filtered);
+
+  expect(filtered.predictions).toEqual([]);
+  expect(filtered.pointHistory).toEqual([]);
+  expect(filtered.feedback).toEqual([]);
+  expect(summary).toEqual(expect.objectContaining({ totalScans: 0, totalPoints: 0, openFeedback: 0 }));
+});
+
 test("reports page filters real operations data and exports filtered csv", async () => {
   window.location.hash = "#/reports?building=A1&binGroup=T%C3%A1i%20ch%E1%BA%BF";
   URL.createObjectURL = jest.fn(() => "blob:report");

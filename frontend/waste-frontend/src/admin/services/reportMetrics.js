@@ -43,7 +43,7 @@ function binMatches(bin, filters) {
 }
 
 function getLinkedBinId(item) {
-  return item.binId || item.bin_id || item.id;
+  return item.binId || item.bin_id || "";
 }
 
 export function filterReportData(data, filters = {}) {
