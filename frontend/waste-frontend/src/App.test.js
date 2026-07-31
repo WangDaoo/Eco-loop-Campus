@@ -452,6 +452,19 @@ test("saveUser rejects invalid profile fields before writing users", async () =>
   expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
 });
 
+test("saveUser rejects unsupported statuses before writing users", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingUsers = JSON.stringify(mockTables.users);
+
+  const result = await store.saveUser({ id: "SV-BAD-STATUS", name: "Người dùng status lỗi", email: "badstatus@school.edu.vn", role: "student", group: "CNTT K19", points: 0, status: " archived " });
+
+  expect(result.data).toBeNull();
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("users");
+  expect(JSON.stringify(mockTables.users)).toBe(existingUsers);
+  expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
+});
+
 test("saveBin rejects invalid station fields before writing bins", async () => {
   const store = require("./admin/services/supabaseStore");
   const existingBins = JSON.stringify(mockTables.bins);
