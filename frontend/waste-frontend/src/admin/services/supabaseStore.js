@@ -422,7 +422,14 @@ export async function listPredictions() {
 }
 
 export async function savePredictionRecord(record) {
-  const appRecord = fromPrediction(record);
+  const rawClass = typeof record?.class === "string" ? record.class : typeof record?.className === "string" ? record.className : "";
+  const classKey = rawClass.trim().toLowerCase();
+  const source = typeof record?.source === "string" ? record.source.trim() : "";
+  const confidence = Number(record?.confidence);
+  if (!classKey || !source || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    return result(null, LOCAL, new Error("Invalid prediction record"));
+  }
+  const appRecord = fromPrediction({ ...record, class: classKey, source, confidence });
   return upsert("predictions", toPrediction(appRecord), appRecord, payload => localStore.savePredictionRecord(payload));
 }
 

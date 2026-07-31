@@ -475,6 +475,30 @@ test("saveBin rejects invalid station fields before writing bins", async () => {
   expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
 });
 
+test("savePredictionRecord rejects invalid scan fields before writing predictions", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingPredictions = JSON.stringify(mockTables.predictions);
+  const invalidPredictions = [
+    { id: "scan-blank-class", class: "   ", confidence: 0.88, source: "upload", status: "pending" },
+    { id: "scan-bad-confidence", class: "plastic", confidence: "bad-confidence", source: "upload", status: "pending" },
+    { id: "scan-out-confidence", class: "plastic", confidence: 1.4, source: "upload", status: "pending" },
+    { id: "scan-blank-source", class: "plastic", confidence: 0.88, source: "   ", status: "pending" },
+  ];
+
+  const results = [];
+  for (const prediction of invalidPredictions) {
+    results.push(await store.savePredictionRecord(prediction));
+  }
+
+  results.forEach(response => {
+    expect(response.data).toBeNull();
+    expect(response.error).toEqual(expect.any(Error));
+  });
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("predictions");
+  expect(JSON.stringify(mockTables.predictions)).toBe(existingPredictions);
+  expect(localStorage.getItem("smartWastePredictions")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;
