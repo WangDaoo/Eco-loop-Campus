@@ -99,3 +99,9 @@ test("buildUserLeaderboard returns empty rows for malformed users", () => {
 
   expect(result).toEqual([]);
 });
+
+test("buildUserLeaderboard treats malformed history as empty", () => {
+  const result = buildUserLeaderboard(users, "bad-history");
+
+  expect(result[0]).toEqual(expect.objectContaining({ userId: "SV001", totalPoints: 0, scanCount: 0 }));
+});
