@@ -589,6 +589,7 @@ export async function listPointRules() {
 }
 
 export async function savePointRules(rules) {
+  if (!Array.isArray(rules)) return result([], LOCAL, new Error("Invalid point rules"));
   try {
     const response = await client().from("point_rules").upsert(rules.map(toPointRule));
     if (response.error) throw response.error;

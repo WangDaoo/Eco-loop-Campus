@@ -353,6 +353,19 @@ test("updateFeedbackStatus rejects unsupported statuses before writing feedback"
   expect(localStorage.getItem("ecoGuardianFeedback")).toBeNull();
 });
 
+test("savePointRules rejects non-array rules before writing point rules", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingRules = JSON.stringify(mockTables.point_rules);
+
+  const result = await store.savePointRules("bad-rules");
+
+  expect(result.data).toEqual([]);
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("point_rules");
+  expect(JSON.stringify(mockTables.point_rules)).toBe(existingRules);
+  expect(localStorage.getItem("ecoGuardianPointRules")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;
