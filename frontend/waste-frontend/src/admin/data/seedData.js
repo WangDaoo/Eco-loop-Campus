@@ -3,7 +3,7 @@ export const seedUsers = [
   { id: "SV002", name: "Trần Hoàng Nam", email: "hoangnam@school.edu.vn", role: "Sinh viên", group: "Môi trường K17", points: 190, status: "active" },
   { id: "GV001", name: "Lê Thu Hà", email: "thuha@school.edu.vn", role: "Giáo viên", group: "Khoa Môi trường", points: 80, status: "active" },
   { id: "TN001", name: "Phạm Khánh Linh", email: "khanhlinh@school.edu.vn", role: "Tình nguyện viên", group: "CLB Xanh", points: 320, status: "active" },
-  { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "Admin", group: "Ban vận hành", points: 0, status: "active" },
+  { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "Admin", group: "Ban vận hành", points: 0, status: "active" },
 ];
 
 export const seedBins = [

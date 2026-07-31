@@ -130,7 +130,7 @@ classes = [
 # ---------------- DEFAULT ROUTE ----------------
 @app.get("/")
 def home():
-    return {"message": "Smart Waste Detection Backend Running"}
+    return {"message": "Eco-loop Campus Backend Running"}
 
 
 # ---------------- PREDICTION ROUTE ----------------

@@ -1,6 +1,6 @@
 # Eco-loop Campus Mobile Handoff
 
-Tài liệu này là bản bàn giao để triển khai app mobile theo hướng **Eco-loop Campus**. Project kỹ thuật hiện tại là EcoGuardian / Smart Waste Detection; web admin EcoGuardian sẽ là nền quản trị cho mô hình Eco-loop Campus.
+Tài liệu này là bản bàn giao để triển khai app mobile theo hướng **Eco-loop Campus**. Project kỹ thuật hiện tại là Eco-loop Campus; web admin Eco-loop Campus sẽ là nền quản trị cho mô hình Eco-loop Campus.
 
 Trọng tâm mới: app mobile không lấy AI làm luồng chính. Luồng chính là sinh viên gửi rác tái chế tại trạm, tạo QR giao dịch, tình nguyện viên xác nhận rác thật, hệ thống cộng Ecopoint tạm tính/chính thức, admin theo dõi và xuất báo cáo. AI MobileNetV2 chỉ hỗ trợ gợi ý/kiểm chứng phân loại, không tự cộng điểm.
 
@@ -11,7 +11,7 @@ Quyết định thiết kế cho bản mobile đầu tiên:
 - Dùng QR như mã xác nhận giao dịch một lần, có hạn, không chứa điểm hoặc dữ liệu có thể tự sửa.
 - Dùng Ecopoint để khuyến khích, nhưng điểm chỉ hợp lệ sau khi có xác nhận người thật hoặc admin.
 - Dùng AI như lớp hỗ trợ nhận diện, kiểm chứng ảnh proof và cảnh báo sai phân loại.
-- Dùng web admin EcoGuardian hiện tại làm trung tâm quản trị vận hành, báo cáo, điểm, trạm và gian lận.
+- Dùng web admin Eco-loop Campus hiện tại làm trung tâm quản trị vận hành, báo cáo, điểm, trạm và gian lận.
 
 Khi triển khai mobile, hãy đọc app theo mô hình Eco-loop trong file mẫu: sinh viên có trải nghiệm gần một ví xanh và cổng gửi rác; tình nguyện viên có trải nghiệm gần một quầy xác nhận tại trạm; admin web là trung tâm điều phối vận hành. Camera AI là công cụ phụ trong luồng này, không phải màn hình đầu tiên của sản phẩm.
 
@@ -54,13 +54,13 @@ Khi bắt đầu code mobile, đọc sản phẩm theo thứ tự nghiệp vụ 
 4. **Volunteer Scanner** là luồng xác nhận: quét QR, kiểm tra rác thật, điều chỉnh số lượng, chụp proof, accept/reject.
 5. **Ecopoint** chỉ sinh từ `recycling_submissions` đã được xác nhận hoặc từ thao tác cộng/trừ thủ công có lý do.
 6. **AI MobileNetV2** chỉ nằm trong bước gợi ý/kiểm chứng, không thay thế tình nguyện viên và không tự cộng điểm.
-7. **Admin web EcoGuardian** là trung tâm vận hành: user, trạm, giao dịch, điểm, phản hồi, báo cáo, gian lận và phần thưởng.
+7. **Admin web Eco-loop Campus** là trung tâm vận hành: user, trạm, giao dịch, điểm, phản hồi, báo cáo, gian lận và phần thưởng.
 
 Nếu phải chọn giữa làm camera AI và làm giao dịch QR, chọn giao dịch QR trước. Đây là phần bám sát app mẫu Eco-loop Campus nhất và là nền để mobile chạy đúng nghiệp vụ trường học.
 
 ## 1. Eco-loop overview - Định vị sản phẩm
 
-Eco-loop Campus là mô hình phân loại, thu gom và tái chế rác trong trường học theo kinh tế tuần hoàn. Tài liệu mobile phải bám theo nghiệp vụ này trước, sau đó mới gắn các năng lực kỹ thuật hiện có của EcoGuardian như AI MobileNetV2, bản đồ trạm, Supabase và web admin.
+Eco-loop Campus là mô hình phân loại, thu gom và tái chế rác trong trường học theo kinh tế tuần hoàn. Tài liệu mobile phải bám theo nghiệp vụ này trước, sau đó mới gắn các năng lực kỹ thuật hiện có của Eco-loop Campus như AI MobileNetV2, bản đồ trạm, Supabase và web admin.
 
 Thông tin định vị theo file Eco-loop Campus:
 
@@ -69,13 +69,13 @@ Thông tin định vị theo file Eco-loop Campus:
 | Tên nghiệp vụ chính | Eco-loop Campus |
 | Phạm vi mẫu | Trường Đại học Sư phạm Kỹ thuật Hưng Yên |
 | Định hướng | Môi trường, công nghệ số, kinh tế tuần hoàn, trường học xanh |
-| Sản phẩm quản trị hiện có | EcoGuardian Admin Web |
+| Sản phẩm quản trị hiện có | Eco-loop Campus Admin Web |
 | Sản phẩm mobile cần làm trước | App sinh viên và app tình nguyện viên |
 | Trung tâm dữ liệu | Giao dịch gửi rác, QR xác nhận, Ecopoint, báo cáo vận hành |
 
 Bảng bám nghiệp vụ từ file mẫu Eco-loop Campus sang sản phẩm cần triển khai:
 
-| Nghiệp vụ trong mẫu | App sinh viên | App tình nguyện viên | Web admin EcoGuardian |
+| Nghiệp vụ trong mẫu | App sinh viên | App tình nguyện viên | Web admin Eco-loop Campus |
 |---|---|---|---|
 | Phân loại rác tại nguồn | Hướng dẫn, tìm kiếm loại rác, AI gợi ý | Kiểm tra rác thật | Quản lý danh mục loại rác và rule điểm |
 | Mang rác đến trạm | Tìm trạm, xem bản đồ, quét/chọn trạm | Chọn trạm đang trực | Quản lý trạm, vị trí, sức chứa, QR |
@@ -180,7 +180,7 @@ Tài liệu này không ghi nguyên Supabase URL/key thật.
 
 Trạng thái kỹ thuật hiện tại:
 
-- React admin web đã chuyển sang vai trò quản trị EcoGuardian/Eco-loop.
+- React admin web đã chuyển sang vai trò quản trị Eco-loop Campus.
 - Supabase đang dùng cho Auth và dữ liệu quản trị chính.
 - `localStorage` vẫn là fallback/offline adapter trong web admin khi Supabase lỗi hoặc chưa cấp quyền.
 - FastAPI backend hiện chỉ phụ trách AI `/predict` và chatbot `/chat`; chưa có API nghiệp vụ riêng cho QR, giao dịch gửi rác, cộng điểm atomic.
@@ -199,7 +199,7 @@ Ranh giới dữ liệu cần giữ rõ:
 flowchart LR
   StudentApp[App sinh viên] --> SupabaseAuth[Supabase Auth]
   VolunteerApp[App tình nguyện viên] --> SupabaseAuth
-  AdminWeb[EcoGuardian Admin Web] --> SupabaseAuth
+  AdminWeb[Eco-loop Campus Admin Web] --> SupabaseAuth
   StudentApp --> SupabaseDB[Supabase DB]
   VolunteerApp --> SupabaseDB
   AdminWeb --> SupabaseDB
@@ -215,7 +215,7 @@ Vai trò:
 
 - **App sinh viên**: hướng dẫn phân loại, tìm trạm, tạo giao dịch gửi rác, QR giao dịch, lịch sử, điểm, nhiệm vụ, bảng xếp hạng, đổi thưởng, phản hồi.
 - **App tình nguyện viên**: quét QR giao dịch, kiểm tra rác thật, xác nhận số lượng/khối lượng, chụp ảnh proof, ghi chú bất thường, accept/reject.
-- **Web admin EcoGuardian**: quản lý users, bins/trạm, AI scans, Ecopoint, feedback, reports, map campus, model settings, gian lận.
+- **Web admin Eco-loop Campus**: quản lý users, bins/trạm, AI scans, Ecopoint, feedback, reports, map campus, model settings, gian lận.
 - **FastAPI AI**: nhận ảnh và trả `class/confidence` để gợi ý hoặc kiểm chứng.
 - **Supabase**: auth, database vận hành, RLS, báo cáo.
 
@@ -424,7 +424,7 @@ Quy tắc:
 - QR hết hạn thì từ chối hoặc yêu cầu tạo mới.
 - Giao dịch bất thường chuyển `PENDING_REVIEW`.
 
-## 7. Admin web - EcoGuardian hiện có
+## 7. Admin web - Eco-loop Campus hiện có
 
 Module hiện có:
 
@@ -918,7 +918,7 @@ GET /
 Response:
 
 ```json
-{ "message": "Smart Waste Detection Backend Running" }
+{ "message": "Eco-loop Campus Backend Running" }
 ```
 
 ```http
@@ -970,7 +970,7 @@ Contract theo role cho app mobile:
 |---|---|
 | Student | Đăng nhập, đọc profile, đọc trạm, tạo submission, xem QR, xem lịch sử, gửi feedback, tạo redemption |
 | Volunteer | Đăng nhập, chọn trạm trực, quét QR, đọc submission bằng token, xác nhận/từ chối, upload proof, ghi scan log |
-| Admin | Dùng web EcoGuardian để quản lý dữ liệu, rule điểm, báo cáo, gian lận và phần thưởng |
+| Admin | Dùng web Eco-loop Campus để quản lý dữ liệu, rule điểm, báo cáo, gian lận và phần thưởng |
 
 Thao tác cần chuyển sang RPC/Edge Function/backend trước khi chạy thật:
 
@@ -1509,6 +1509,6 @@ Backlog triển khai sát nhất cho mobile:
 
 ## 31. Kết luận
 
-App mobile nên bám Eco-loop Campus: phân loại, thu gom, QR xác nhận, tình nguyện viên kiểm tra, Ecopoint, nhiệm vụ xanh, bảng xếp hạng, map nội bộ và báo cáo. EcoGuardian admin web là nền quản trị tốt để mở rộng. FastAPI MobileNetV2 là lợi thế AI, nhưng không phải nguồn quyết định điểm duy nhất.
+App mobile nên bám Eco-loop Campus: phân loại, thu gom, QR xác nhận, tình nguyện viên kiểm tra, Ecopoint, nhiệm vụ xanh, bảng xếp hạng, map nội bộ và báo cáo. Eco-loop Campus admin web là nền quản trị tốt để mở rộng. FastAPI MobileNetV2 là lợi thế AI, nhưng không phải nguồn quyết định điểm duy nhất.
 
 Thứ tự đúng: giao dịch gửi rác và QR trước, xác nhận volunteer sau, rồi Ecopoint/leaderboard/reward, tiếp theo là map nội bộ, chống gian lận nâng cao, doanh nghiệp tái chế và Eco Community.

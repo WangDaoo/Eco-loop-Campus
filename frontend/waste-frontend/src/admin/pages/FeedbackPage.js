@@ -157,7 +157,7 @@ export default function FeedbackPage() {
     }
     const response = await saveFeedbackItem({
       ...createForm,
-      userName: createForm.userName.trim() || "Admin EcoGuardian",
+      userName: createForm.userName.trim() || "Admin Eco-loop Campus",
       message: createForm.message.trim(),
       status: "unread",
       adminNote: "",
@@ -289,7 +289,7 @@ export default function FeedbackPage() {
         <form className="eg-form eg-feedback-form" onSubmit={createFeedback}>
           <label>
             Người gửi
-            <input value={createForm.userName} onChange={event => updateCreateForm("userName", event.target.value)} placeholder="Admin EcoGuardian" />
+            <input value={createForm.userName} onChange={event => updateCreateForm("userName", event.target.value)} placeholder="Admin Eco-loop Campus" />
           </label>
           <label>
             Loại phản hồi

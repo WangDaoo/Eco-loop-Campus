@@ -1,4 +1,4 @@
-# EcoGuardian Function Test Roadmap
+# Eco-loop Campus Function Test Roadmap
 
 Tài liệu này chia toàn bộ chức năng hiện có thành các plan nhỏ để test tuần tự. Quy tắc làm việc: mỗi module phải có test pass đầy đủ trước khi chuyển sang module tiếp theo. Nếu gặp case không hợp lệ hoặc test fail, dừng tại module đó, tìm root cause, viết test tái hiện lỗi, sửa, chạy lại test liên quan và full regression.
 
@@ -329,6 +329,7 @@ Test hiện có:
 - `Toast` normalize tone bẩn như ` DANGER ` thành class `tone-danger`.
 - Empty table/modal/toast vẫn được cover thêm gián tiếp qua page tests.
 - `Sidebar` render an toàn khi thiếu `items` và khi nav item thiếu `icon`.
+- `Sidebar` hiển thị brand `Eco-loop Campus` và có guard chống brand cũ quay lại.
 - `StatCard` normalize tone bẩn như ` GREEN ` thành `tone-green` và bỏ qua icon không hợp lệ.
 - `ChartPanel` truyền default `{ labels: [], datasets: [] }` và options responsive khi props thiếu.
 
@@ -342,6 +343,7 @@ Fix đã làm:
 - `Sidebar.groupItems` normalize `items` thành array an toàn; nav icon chỉ render khi icon là component hợp lệ.
 - `StatCard` dùng tone allowlist `blue/green/orange/red`, tone lạ fallback `blue`; icon chỉ render khi là component function.
 - `ChartPanel` có default data/options an toàn để chart không crash trong state rỗng/loading.
+- `Sidebar` đổi brand hiển thị từ tên cũ sang `Eco-loop Campus`, giữ test cấm brand cũ quay lại.
 
 Gaps:
 
@@ -425,7 +427,7 @@ Case cần test:
 - Filter status `all/open/unread/in_progress/resolved/rejected`.
 - Filter priority `low/medium/high`.
 - Filter binId.
-- Create feedback với userName rỗng -> fallback Admin EcoGuardian.
+- Create feedback với userName rỗng -> fallback Admin Eco-loop Campus.
 - Create feedback message rỗng -> không lưu, hiện toast.
 - Status transitions: unread -> in_progress -> resolved.
 - Reject flow.
@@ -452,7 +454,7 @@ Test hiện có:
 - Service update phản hồi từ chối priority lạ như `urgent`, giữ priority hiện tại.
 - Service update phản hồi từ chối message rỗng/toàn khoảng trắng, giữ message hiện tại.
 - Query `#/feedback?status= OPEN ` được normalize về `open`, không làm bảng rỗng sai.
-- Tạo phản hồi với người gửi rỗng fallback `Admin EcoGuardian`, vẫn lưu nội dung và status `unread`.
+- Tạo phản hồi với người gửi rỗng fallback `Admin Eco-loop Campus`, vẫn lưu nội dung và status `unread`.
 
 Fix đã làm:
 
@@ -468,6 +470,7 @@ Fix đã làm:
 - `updateFeedbackItem` chỉ nhận priority update trong `FEEDBACK_PRIORITIES`, tránh ghi mức ưu tiên phản hồi không thuộc nghiệp vụ.
 - `updateFeedbackItem` chặn message rỗng/toàn khoảng trắng khi update để code gọi trực tiếp không thể ghi phản hồi không có nội dung.
 - `FeedbackPage` normalize query param `status` bằng allowlist `all/open/unread/in_progress/resolved/rejected/read`, giá trị bẩn/lạ fallback `all`.
+- `FeedbackPage` đổi sender fallback phản hồi admin sang `Admin Eco-loop Campus` để đồng bộ tên dự án.
 
 Gaps còn lại:
 

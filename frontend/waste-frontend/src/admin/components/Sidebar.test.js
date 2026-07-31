@@ -10,7 +10,8 @@ test("Sidebar renders safely when items are missing", () => {
     </MemoryRouter>
   );
 
-  expect(screen.getByText("EcoGuardian")).toBeInTheDocument();
+  expect(screen.getByText("Eco-loop Campus")).toBeInTheDocument();
+  expect(screen.queryByText("EcoGuardian")).not.toBeInTheDocument();
   expect(screen.queryAllByRole("link")).toHaveLength(0);
 });
 test("Sidebar renders links safely when an item icon is missing", () => {

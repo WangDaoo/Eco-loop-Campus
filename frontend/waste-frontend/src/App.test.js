@@ -20,7 +20,7 @@ let createdSupabaseClientArgs = [];
 const seedSupabase = () => {
   mockTables = {
     users: [
-      { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
+      { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
       { id: "SV001", name: "Nguyễn Minh Anh", email: "minhanh@school.edu.vn", role: "student", group: "CNTT K18", points: 245, status: "active" },
     ],
     bins: [
@@ -1017,7 +1017,7 @@ test("users page searches by user id", async () => {
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Nguyễn Minh Anh")).toBeInTheDocument();
-  expect(within(usersTable).queryByText("Quản trị EcoGuardian")).not.toBeInTheDocument();
+  expect(within(usersTable).queryByText("Quản trị Eco-loop Campus")).not.toBeInTheDocument();
 });
 
 test("users page trims search text before filtering", async () => {
@@ -1030,7 +1030,7 @@ test("users page trims search text before filtering", async () => {
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Nguyễn Minh Anh")).toBeInTheDocument();
-  expect(within(usersTable).queryByText("Quản trị EcoGuardian")).not.toBeInTheDocument();
+  expect(within(usersTable).queryByText("Quản trị Eco-loop Campus")).not.toBeInTheDocument();
 });
 
 test("users page filters Supabase role codes with Vietnamese role labels", async () => {
@@ -1042,7 +1042,7 @@ test("users page filters Supabase role codes with Vietnamese role labels", async
   fireEvent.change(screen.getByLabelText(/vai trò/i), { target: { value: "admin" } });
 
   const usersTable = screen.getByRole("table");
-  expect(await within(usersTable).findByText("Quản trị EcoGuardian")).toBeInTheDocument();
+  expect(await within(usersTable).findByText("Quản trị Eco-loop Campus")).toBeInTheDocument();
   expect(within(usersTable).queryByText("Nguyễn Minh Anh")).not.toBeInTheDocument();
 });
 
@@ -1113,7 +1113,7 @@ test("users page filters users by account status", async () => {
 
 test("users page normalizes dirty account status values", async () => {
   mockTables.users = [
-    { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
+    { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
     { id: "SV009", name: "Sinh viên status bẩn", email: "dirty-status@school.edu.vn", role: "student", group: "CNTT K20", points: 9, status: " LOCKED " },
   ];
   window.location.hash = "#/users";
@@ -1149,7 +1149,7 @@ test("users page filters users by class or faculty group", async () => {
 
 test("users page normalizes dirty class or faculty group labels", async () => {
   mockTables.users = [
-    { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
+    { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
     { id: "SV010", name: "Sinh viên nhóm bẩn", email: "dirty-group@school.edu.vn", role: "student", group: " CNTT K19 ", points: 19, status: "active" },
     { id: "SV011", name: "Sinh viên nhóm sạch", email: "clean-group@school.edu.vn", role: "student", group: "CNTT K18", points: 18, status: "active" },
   ];
@@ -1168,7 +1168,7 @@ test("users page normalizes dirty class or faculty group labels", async () => {
 
 test("users page generates the next unused student id when creating users", async () => {
   mockTables.users = [
-    { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
+    { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
     { id: "SV003", name: "Sinh viên đã có", email: "existing@school.edu.vn", role: "student", group: "CNTT K18", points: 12, status: "active" },
   ];
   window.location.hash = "#/users";
@@ -1321,7 +1321,7 @@ test("users page resets toast tone after a successful status update", async () =
 test("users status update failure persists live users to local fallback", async () => {
   mockSupabaseUpdateFailure = true;
   mockTables.users = [
-    { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
+    { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
     { id: "SV777", name: "Sinh viên Supabase Live", email: "live@school.edu.vn", role: "student", group: "CNTT K20", points: 33, status: "active" },
   ];
   window.location.hash = "#/users";
@@ -1345,7 +1345,7 @@ test("users status update failure persists live users to local fallback", async 
 
 test("users page displays malformed point values as zero", async () => {
   mockTables.users = [
-    { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
+    { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
     { id: "SV001", name: "Nguyễn Minh Anh", email: "minhanh@school.edu.vn", role: "student", group: "CNTT K18", points: null, status: "active" },
   ];
   window.location.hash = "#/users";
@@ -1519,7 +1519,7 @@ test("dashboard clamps malformed bin capacity before summary metrics", async () 
 
 test("dashboard seed button fills empty operation tables when admin user already exists", async () => {
   mockTables.users = [
-    { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
+    { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
   ];
   mockTables.bins = [];
   mockTables.feedback = [];
@@ -1542,7 +1542,7 @@ test("dashboard seed button fills empty operation tables when admin user already
 
 test("dashboard renders empty operations data without crashing", async () => {
   mockTables.users = [
-    { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
+    { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
   ];
   mockTables.predictions = [];
   mockTables.bins = [];
@@ -2134,7 +2134,7 @@ test("feedback page normalizes dirty status query filter params", async () => {
   expect(screen.queryByText("Phản hồi query resolved cần ẩn.")).not.toBeInTheDocument();
 });
 
-test("feedback page uses Admin EcoGuardian when sender is blank", async () => {
+test("feedback page uses Admin Eco-loop Campus when sender is blank", async () => {
   window.location.hash = "#/feedback";
 
   render(<App />);
@@ -2146,11 +2146,11 @@ test("feedback page uses Admin EcoGuardian when sender is blank", async () => {
   fireEvent.click(screen.getByRole("button", { name: /lưu phản hồi/i }));
 
   await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
-    user_name: "Admin EcoGuardian",
+    user_name: "Admin Eco-loop Campus",
     message: "Cần bổ sung poster hướng dẫn tại Nhà A1.",
     status: "unread",
   })));
-  expect(await screen.findByText("Admin EcoGuardian")).toBeInTheDocument();
+  expect(await screen.findByText("Admin Eco-loop Campus")).toBeInTheDocument();
   expect(screen.getByText("Cần bổ sung poster hướng dẫn tại Nhà A1.")).toBeInTheDocument();
 });
 test("feedback page filters by priority", async () => {
@@ -3076,7 +3076,7 @@ test("ecopoints page blocks reward requests when user has insufficient points", 
 
 test("ecopoints page treats malformed user points as zero for reward requests", async () => {
   mockTables.users = [
-    { id: "AD001", name: "Quản trị EcoGuardian", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
+    { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
     { id: "SV-BAD-POINTS", name: "Sinh viên điểm lỗi", email: "bad-points@school.edu.vn", role: "student", group: "CNTT K20", points: "bad-points", status: "active" },
   ];
   mockTables.reward_redemptions = [];

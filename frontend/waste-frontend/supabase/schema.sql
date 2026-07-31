@@ -163,7 +163,7 @@ create policy "admin write point_history" on public.point_history for all to aut
 create policy "admin write reward_redemptions" on public.reward_redemptions for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 insert into public.users (id, name, email, role, "group", points, status)
-values ('AD001', 'Quản trị EcoGuardian', 'admin@school.edu.vn', 'admin', 'Ban vận hành', 0, 'active')
+values ('AD001', 'Quản trị Eco-loop Campus', 'admin@school.edu.vn', 'admin', 'Ban vận hành', 0, 'active')
 on conflict (id) do update set
   name = excluded.name,
   email = excluded.email,

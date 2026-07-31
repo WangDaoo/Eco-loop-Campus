@@ -45,7 +45,7 @@ export default function LoginPage() {
   return (
     <div className="eg-login-page">
       <form className="eg-login-card" onSubmit={submitLogin}>
-        <span>EcoGuardian</span>
+        <span>Eco-loop Campus</span>
         <h1>Đăng nhập quản trị</h1>
         <p>Dùng Supabase Auth email/password. Tài khoản phải có vai trò admin trong bảng users.</p>
         <label>Email<input value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" /></label>

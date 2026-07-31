@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace Firebase Firestore/Auth in EcoGuardian admin with Supabase PostgreSQL/Auth while preserving existing admin UI and localStorage fallback.
+**Goal:** Replace Firebase Firestore/Auth in Eco-loop Campus admin with Supabase PostgreSQL/Auth while preserving existing admin UI and localStorage fallback.
 
 **Architecture:** Keep page components using a single admin data service API. Add an env-driven Supabase client, replace Firestore calls with Supabase table calls, and keep localStorage as offline/demo fallback when Supabase is missing or returns errors.
 

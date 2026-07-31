@@ -469,7 +469,7 @@ Replace stat cards with `summary.totalScans`, `summary.totalPoints`, `summary.op
 Update CSV button:
 
 ```jsx
-<button type="button" className="eg-primary-btn" onClick={() => downloadCsv("ecoguardian-report.csv", csvRows)}>
+<button type="button" className="eg-primary-btn" onClick={() => downloadCsv("eco-loop-campus-report.csv", csvRows)}>
   <DownloadSimple size={18} /> Xuất CSV
 </button>
 ```

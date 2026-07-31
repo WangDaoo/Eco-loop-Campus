@@ -218,7 +218,7 @@ export default function DashboardPage() {
     <div className="eg-page">
       <div className="eg-page-title">
         <div>
-          <span>EcoGuardian Campus</span>
+          <span>Eco-loop Campus</span>
           <h1>Tổng quan quản trị</h1>
         </div>
         <div className="eg-button-row">

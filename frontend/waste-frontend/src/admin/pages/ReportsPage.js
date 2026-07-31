@@ -131,7 +131,7 @@ export default function ReportsPage() {
         </div>
         <div className="eg-button-row">
           {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
-          <button type="button" className="eg-primary-btn" onClick={() => downloadCsv("ecoguardian-report.csv", csvRows)}><DownloadSimple size={18} /> Xuất CSV</button>
+          <button type="button" className="eg-primary-btn" onClick={() => downloadCsv("eco-loop-campus-report.csv", csvRows)}><DownloadSimple size={18} /> Xuất CSV</button>
         </div>
       </div>
 

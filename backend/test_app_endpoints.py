@@ -53,7 +53,7 @@ class AppEndpointTests(unittest.TestCase):
         response = self.client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"message": "Smart Waste Detection Backend Running"})
+        self.assertEqual(response.json(), {"message": "Eco-loop Campus Backend Running"})
 
     def test_predict_returns_model_not_loaded_when_model_missing(self):
         app.model = None

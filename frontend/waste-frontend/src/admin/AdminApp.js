@@ -62,7 +62,7 @@ function LoadingPage() {
   return (
     <div className="eg-login-page">
       <section className="eg-login-card">
-        <span>EcoGuardian</span>
+        <span>Eco-loop Campus</span>
         <h1>Đang kiểm tra phiên đăng nhập</h1>
         <p>Đang xác thực tài khoản quản trị.</p>
       </section>
@@ -74,7 +74,7 @@ function ForbiddenPage() {
   return (
     <div className="eg-login-page">
       <section className="eg-login-card">
-        <span>EcoGuardian</span>
+        <span>Eco-loop Campus</span>
         <h1>Không có quyền truy cập</h1>
         <p>Tài khoản hiện tại không có vai trò admin trong Supabase.</p>
       </section>

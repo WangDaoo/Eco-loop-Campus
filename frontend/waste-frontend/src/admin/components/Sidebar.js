@@ -22,7 +22,7 @@ export default function Sidebar({ items, open, onClose }) {
       <div className="eg-brand">
         <div className="eg-brand-mark">EG</div>
         <div>
-          <strong>EcoGuardian</strong>
+          <strong>Eco-loop Campus</strong>
           <span>Campus Admin</span>
         </div>
       </div>
