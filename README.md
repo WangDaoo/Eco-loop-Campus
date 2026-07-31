@@ -1,335 +1,221 @@
 # Eco-loop Campus / EcoGuardian
 
-Eco-loop Campus là mô hình phân loại, thu gom và tái chế rác thải trong phạm vi trường học theo hướng kinh tế tuần hoàn. Repository này là nền kỹ thuật hiện tại của dự án: web admin EcoGuardian, backend AI nhận diện rác bằng MobileNetV2, cấu hình Supabase Auth/Database, dữ liệu mẫu và tài liệu bàn giao để phát triển app mobile.
+Eco-loop Campus is a school-focused circular economy platform for waste sorting, collection, recycling operations, Ecopoint rewards, and campus waste reporting. The current repository contains the EcoGuardian admin web, FastAPI AI backend, Supabase Auth/Database integration, GIS campus map, and mobile handoff documentation.
 
-Trọng tâm sản phẩm không còn là một web demo chỉ chụp ảnh AI. Hệ thống được định hướng theo quy trình vận hành thật trong trường học:
+The project uses AI as a support layer, not as the only workflow. The main operation flow is: student submits recyclable waste, the app creates a QR transaction, a volunteer verifies the real waste at the station, Ecopoint is recorded, and admin monitors reports.
 
-```text
-Sinh viên phân loại rác
--> Mang rác đến trạm Eco-loop
--> Tạo giao dịch/QR trên app
--> Tình nguyện viên kiểm tra và xác nhận
--> Hệ thống ghi nhận Ecopoint
--> Admin theo dõi, báo cáo, xử lý bất thường
--> Rác được tập kết và chuyển cho đơn vị tái chế
-```
+![Project Status](https://img.shields.io/badge/Status-Active-success)
+![Python](https://img.shields.io/badge/Python-3.10-blue)
+![React](https://img.shields.io/badge/React-19-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
+![Supabase](https://img.shields.io/badge/Supabase-Auth%20%2B%20Database-3ECF8E)
+![TensorFlow](https://img.shields.io/badge/TensorFlow-2.13-orange)
 
-## Thông tin dự án
+---
 
-| Nội dung | Thông tin |
-|---|---|
-| Tên nghiệp vụ | Eco-loop Campus |
-| Nền quản trị | EcoGuardian Admin Web |
-| Phạm vi mẫu | Trường Đại học Sư phạm Kỹ thuật Hưng Yên |
-| Định hướng | Môi trường, công nghệ số, kinh tế tuần hoàn, trường học xanh |
-| Dataset | Garbage Dataset |
-| AI model | MobileNetV2, 10 lớp rác, input ảnh 224x224 |
-| Database/Auth | Supabase Auth + Supabase Database |
-| Backend AI | FastAPI |
-| Frontend admin | React CRA, React Router, Chart.js, Leaflet, Phosphor Icons |
+## Table of Contents
 
-## Người hướng dẫn và thành viên
+- [Problem Statement](#problem-statement)
+- [Objectives](#objectives)
+- [System Architecture](#system-architecture)
+- [Technologies Used](#technologies-used)
+- [Features](#features)
+- [Deployment and Local URLs](#deployment-and-local-urls)
+- [Installation and Setup](#installation-and-setup)
+- [Usage](#usage)
+- [Project Structure](#project-structure)
+- [Mobile App Direction](#mobile-app-direction)
+- [Future Scope](#future-scope)
+- [Credits and Acknowledgements](#credits-and-acknowledgements)
 
-**Supervisor:** Nguyễn Thị Tươi, Ngô Quang Hiệp
+---
 
-**Team Members**
+## Problem Statement
 
-- Phạm Thanh Hương (11425064)
-- Nguyễn Phương Thảo (11425159)
-- Đào Minh Quang (10123264)
-- Phan Văn Khánh (12523037)
+Waste management in a university campus is difficult when recyclable waste, organic waste, hazardous waste, and remaining waste are mixed together. This reduces recycling efficiency, makes reporting impossible, and weakens long-term student participation.
 
-## Kiến trúc hiện tại
+Eco-loop Campus solves this problem by combining:
+
+- Classified collection stations and QR-based confirmation.
+- Student and volunteer workflows.
+- Ecopoint rewards, missions, leaderboard, and reward redemption.
+- Admin reporting for scans, bins, feedback, points, and campus operations.
+- AI-based waste recognition as a support tool for classification and verification.
+
+The core business problem is not only image classification. The project needs an operating system for a school recycling loop: collect correct data, verify real submissions, reward valid behavior, detect abnormal activity, and export reports for management.
+
+---
+
+## Objectives
+
+1. **Campus Waste Operation Management**
+   Manage bins, QR stations, user roles, feedback, Ecopoint rules, and reports for school-scale recycling operations.
+
+2. **Student Recycling Workflow**
+   Prepare a mobile-first flow where students find stations, submit recyclable waste, create QR transactions, track status, and receive points after verification.
+
+3. **Volunteer Verification Workflow**
+   Support a future volunteer app for scanning QR transactions, checking real waste, capturing proof images, accepting or rejecting submissions, and logging abnormal cases.
+
+4. **AI-Assisted Waste Classification**
+   Use MobileNetV2 to classify waste images into 10 AI classes and map them into 4 school bin groups.
+
+5. **Ecopoint and Engagement**
+   Record point history, manual adjustments, leaderboard data, reward redemptions, and green participation metrics.
+
+6. **Admin Reporting and Campus Map**
+   Provide KPI dashboards, operational reports, CSV export, bin capacity alerts, feedback alerts, and GIS campus visualization.
+
+---
+
+## System Architecture
 
 ```mermaid
 flowchart LR
-  Admin[EcoGuardian Admin Web] --> SupabaseAuth[Supabase Auth]
-  Admin --> SupabaseDB[Supabase Database]
-  Admin --> FastAPI[FastAPI AI Backend]
-  FastAPI --> Model[MobileNetV2]
-  Mobile[App mobile sắp triển khai] --> SupabaseAuth
-  Mobile --> SupabaseDB
-  Mobile --> FastAPI
-  SupabaseDB --> Reports[Báo cáo vận hành]
+  StudentApp[Mobile App - Student] --> SupabaseAuth[Supabase Auth]
+  VolunteerApp[Mobile App - Volunteer] --> SupabaseAuth
+  AdminWeb[EcoGuardian Admin Web] --> SupabaseAuth
+
+  StudentApp --> SupabaseDB[Supabase Database]
+  VolunteerApp --> SupabaseDB
+  AdminWeb --> SupabaseDB
+
+  StudentApp --> FastAPI[FastAPI AI Backend]
+  VolunteerApp --> FastAPI
+  AdminWeb --> FastAPI
+
+  FastAPI --> Model[MobileNetV2 Waste Model]
+  SupabaseDB --> Reports[Reports]
   SupabaseDB --> Points[Ecopoint]
-  SupabaseDB --> Map[Bản đồ trạm/thùng]
+  SupabaseDB --> CampusMap[Campus Map and Bin Stations]
 ```
 
-Các thành phần chính:
+Current system boundaries:
 
-- **Web admin EcoGuardian:** quản trị người dùng, thùng/trạm, lượt quét AI, điểm thưởng, phản hồi, báo cáo, bản đồ campus và cài đặt model.
-- **FastAPI backend:** cung cấp API nhận diện ảnh `/predict` và chatbot `/chat`.
-- **Supabase:** xác thực admin, lưu dữ liệu quản trị, bật RLS qua file schema.
-- **localStorage fallback:** web admin vẫn có lớp dự phòng khi Supabase lỗi hoặc chưa cấp quyền.
-- **Mobile handoff:** file `MOBILE_APP_HANDOFF.md` mô tả hướng triển khai app sinh viên và app tình nguyện viên.
+| Layer | Current responsibility |
+|---|---|
+| React admin web | Admin dashboard, CRUD screens, reports, map, AI testing |
+| FastAPI backend | `/predict` AI inference and `/chat` local chatbot endpoint |
+| Supabase Auth | Admin login and future mobile login |
+| Supabase Database | Users, bins, predictions, point rules, point history, feedback, rewards, settings |
+| localStorage fallback | Demo/offline fallback when Supabase is unavailable |
+| Mobile app | Planned next phase based on `MOBILE_APP_HANDOFF.md` |
 
-## Chức năng admin hiện có
+---
 
-### Đăng nhập và phân quyền
+## Technologies Used
 
-- Đăng nhập bằng Supabase Auth email/password.
-- Chỉ tài khoản có `role = admin` và `status = active` trong bảng `users` được vào admin shell.
-- Tài khoản không có quyền sẽ thấy màn hình chặn truy cập.
+| Component | Technology | Purpose |
+|---|---|---|
+| Backend | Python, FastAPI, Uvicorn | AI API and chatbot endpoint |
+| AI/ML | TensorFlow, Keras, MobileNetV2 | Waste classification |
+| Frontend | React CRA, JavaScript, React Router | Admin web application |
+| UI and charts | Chart.js, react-chartjs-2, Phosphor Icons | Dashboard, KPI, icon system |
+| Map | Leaflet, GeoJSON, Proj4 | Campus map and bin station visualization |
+| Database/Auth | Supabase Auth, Supabase Database | Admin auth and operational data |
+| Fallback storage | localStorage | Demo/offline data fallback |
+| Testing | Jest, React Testing Library, Pytest | Frontend and backend verification |
+| Training | ImageDataGenerator, transfer learning, fine-tuning | MobileNetV2 training pipeline |
 
-### Dashboard tổng quan
+---
 
-- KPI lượt quét, lượt chờ duyệt, phản hồi mở, thùng cần chú ý và Ecopoint.
-- Biểu đồ lượt quét, điểm, nhóm rác.
-- Cảnh báo thùng đầy, phản hồi chưa xử lý, confidence thấp.
-- Bản đồ GIS campus dùng GeoJSON/Leaflet, hiển thị vị trí thùng bằng chấm, hover/click xem chi tiết.
+## Features
 
-### Lượt quét / Duyệt AI
+### Admin Authentication
 
-- Danh sách kết quả AI từ upload/camera.
-- Hiển thị class, confidence, nhóm thùng, trạng thái, user, bin.
-- Duyệt/từ chối lượt quét.
-- Khi duyệt hợp lệ, hệ thống ghi `point_history` theo rule điểm.
+- Supabase email/password login.
+- Admin-only access using `users.role = admin` and `users.status = active`.
+- Unauthorized users are blocked from the admin shell.
 
-### Người dùng / lớp / khoa
+### Dashboard
 
-- Quản lý sinh viên, giáo viên, tình nguyện viên, admin.
-- Tìm kiếm, lọc vai trò, lọc lớp/khoa, trạng thái.
-- Thêm/sửa/khóa người dùng.
-- Theo dõi tổng điểm từng người dùng.
+- KPI cards for scans, pending approvals, open feedback, attention bins, and Ecopoint.
+- Charts for scans, points, waste groups, feedback, and full bins.
+- Alert links from dashboard to filtered pages.
+- GIS campus map with interactive bin/station dots.
 
-### Thùng rác / trạm QR
+### Scans and AI Review
 
-- Quản lý thùng hoặc trạm theo tòa nhà, tầng, vị trí, mã QR.
-- Nhóm rác: Hữu cơ, Tái chế, Pin / nguy hại, Còn lại.
-- Trạng thái: hoạt động, đầy, bảo trì.
-- Sức chứa mô phỏng, cảnh báo khi vượt ngưỡng 85%.
-- Kéo thả chấm trên map để chỉnh vị trí, có xác nhận hoặc hủy.
+- List AI predictions from upload or camera.
+- Show class, confidence, bin group, user, bin, and status.
+- Approve or reject AI scan records.
+- Write point history when an approved scan matches enabled point rules.
+
+### Users, Classes, and Departments
+
+- Manage students, teachers, volunteers, and admins.
+- Search and filter by role, class/department, points, and status.
+- Add, edit, and lock users.
+
+### Bins and QR Stations
+
+- Manage bin/station ID, name, bin group, location, building, floor, QR code, status, and capacity.
+- Status support: active, full, maintenance.
+- Capacity alert when a bin reaches 85% or higher.
+- Drag station markers on the map and confirm or cancel location changes.
 
 ### Ecopoint
 
-- Cấu hình rule điểm theo nhóm rác.
-- Lịch sử điểm chi tiết.
-- Cộng/trừ điểm thủ công có lý do.
-- Bảng xếp hạng cá nhân, lớp/khoa.
-- Yêu cầu đổi thưởng và trạng thái xử lý.
+- Configure point rules for waste groups.
+- View point history with filters.
+- Add manual point adjustments with reasons.
+- Show individual and group leaderboards.
+- Manage reward redemption requests.
 
-### Phản hồi
+### Feedback
 
-- Tạo, xem, lọc phản hồi theo trạng thái, ưu tiên, thùng/trạm.
-- Xử lý phản hồi, cập nhật ghi chú admin.
-- Liên kết cảnh báo phản hồi với Dashboard.
+- Create and manage user feedback.
+- Filter by status, priority, bin/station, and query.
+- Add admin notes and update processing state.
+- Surface unresolved feedback in dashboard alerts.
 
-### Báo cáo vận hành
+### Reports
 
-- Lọc theo ngày, tòa nhà, nhóm rác.
-- Tổng hợp lượt quét, Ecopoint, phản hồi, thùng đầy.
-- Bảng nhóm rác và CSV export dùng dữ liệu thật từ Supabase/fallback.
+- Filter by date range, building, and bin group.
+- Summarize scans, points, feedback, and full bins.
+- Generate charts and grouped operational tables.
+- Export CSV from Supabase/fallback data.
 
-### Kiểm thử AI
+### AI Tester
 
-- Upload ảnh hoặc dùng camera.
-- Gọi backend `http://127.0.0.1:8000/predict`.
-- Gắn kết quả với trạm/thùng QR nếu có.
-- Lưu prediction vào Supabase hoặc localStorage fallback.
+- Upload image or use camera.
+- Call `http://127.0.0.1:8000/predict`.
+- Select QR/bin context.
+- Save predictions to Supabase or local fallback.
 
-### Cài đặt model
+### Model Settings
 
-- Hiển thị model MobileNetV2.
-- Hiển thị 10 lớp AI.
-- Cấu hình ngưỡng confidence cảnh báo.
+- Display MobileNetV2 model information.
+- Show 10 AI classes.
+- Configure confidence warning threshold.
 
-## AI model
+---
 
-Backend hiện dùng model tại:
+## Deployment and Local URLs
 
-```text
-backend/model/mobilenetv2_model.h5
-```
+The current verified setup is local development. Public deployment URLs are not treated as the source of truth for this project phase.
 
-Thông tin chính:
-
-- Kiến trúc: MobileNetV2 transfer learning.
-- Input: ảnh RGB resize về `224x224`.
-- Output: softmax 10 lớp.
-- Training script: `model_training/train_mobilenetv2.py`.
-- Dataset theo thư mục class trong `model_training/dataset`.
-- Train bằng `ImageDataGenerator`, validation split 10%, augmentation cơ bản.
-- Fine-tuning sau giai đoạn frozen base model.
-
-10 lớp AI:
-
-```text
-battery, biological, cardboard, clothes, glass, metal, paper, plastic, shoes, trash
-```
-
-Mapping sang 4 nhóm thùng:
-
-| AI class | Nhóm thùng |
+| Service | URL |
 |---|---|
-| biological | Hữu cơ |
-| paper, cardboard, plastic, glass, metal | Tái chế |
-| battery | Pin / nguy hại |
-| clothes, shoes, trash | Còn lại |
+| Frontend admin | `http://127.0.0.1:3000/#/dashboard` |
+| Login page | `http://127.0.0.1:3000/#/login` |
+| Backend API | `http://127.0.0.1:8000` |
+| Backend docs | `http://127.0.0.1:8000/docs` |
+| AI predict endpoint | `http://127.0.0.1:8000/predict` |
 
-Trong luồng Eco-loop Campus, AI chỉ đóng vai trò gợi ý/kiểm chứng. AI không tự cộng điểm trực tiếp. Điểm chỉ được ghi sau khi tình nguyện viên hoặc admin xác nhận.
+---
 
-## Backend API hiện có
+## Installation and Setup
 
-Backend chạy bằng FastAPI trong `backend/app.py`.
+### Prerequisites
 
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| GET | `/` | Kiểm tra backend đang chạy |
-| POST | `/predict` | Nhận ảnh `multipart/form-data file`, trả `{ class, confidence }` |
-| POST | `/chat` | Nhận `{ message }`, trả `{ reply }` từ chatbot local nếu khả dụng |
+- Python 3.10
+- Node.js 18 or higher
+- npm
+- Supabase project with Auth and Database enabled
+- Optional: Ollama with `llama3` for local chatbot responses
 
-Ví dụ gọi `/predict`:
-
-```http
-POST /predict
-Content-Type: multipart/form-data
-
-file=<image.jpg>
-```
-
-Response mẫu:
-
-```json
-{
-  "class": "plastic",
-  "confidence": 0.9231
-}
-```
-
-## Supabase schema hiện có
-
-Schema chính nằm tại:
-
-```text
-frontend/waste-frontend/supabase/schema.sql
-```
-
-Bảng đang có:
-
-| Bảng | Vai trò |
-|---|---|
-| `users` | Hồ sơ user, role, lớp/khoa, điểm, trạng thái |
-| `bins` | Thùng/trạm, nhóm rác, QR, vị trí, sức chứa, trạng thái |
-| `predictions` | Lượt AI scan hoặc proof nhận diện |
-| `point_rules` | Rule tính điểm theo class/nhóm rác |
-| `point_history` | Lịch sử cộng/trừ Ecopoint |
-| `feedback` | Phản hồi người dùng và ghi chú xử lý |
-| `reward_redemptions` | Yêu cầu đổi thưởng |
-| `settings` | Cài đặt model, threshold, số lớp |
-
-RLS hiện tại:
-
-- Người dùng authenticated được đọc dữ liệu cần thiết.
-- Quyền ghi các bảng quản trị giới hạn cho admin qua function `public.is_admin()`.
-- Mobile thật cần bổ sung policy riêng cho `student` và `volunteer` trước khi triển khai production.
-
-## Database mục tiêu cho mobile Eco-loop
-
-Các bảng hiện có đủ cho admin demo, nhưng app mobile vận hành đúng nghiệp vụ cần thêm bảng trung tâm cho giao dịch gửi rác:
-
-| Bảng cần thêm | Mục đích |
-|---|---|
-| `waste_types` | Danh mục loại rác tái chế, đơn vị tính, điểm/unit |
-| `recycling_submissions` | Giao dịch sinh viên gửi rác, QR token, trạng thái xác nhận |
-| `qr_scan_logs` | Log mọi lần quét QR, kể cả thất bại |
-| `proof_images` | Ảnh chứng minh khi volunteer xác nhận |
-| `missions` | Nhiệm vụ xanh theo tuần/tháng |
-| `user_missions` | Tiến độ nhiệm vụ của từng user |
-| `rewards` | Catalog phần thưởng |
-| `recycling_partners` | Đơn vị thu gom/tái chế |
-| `recycling_batches` | Đợt chuyển giao rác cho đối tác |
-| `sponsors` | Doanh nghiệp tài trợ, voucher, quà |
-
-Trạng thái QR/giao dịch đề xuất:
-
-```text
-CREATED -> VERIFIED -> ACCEPTED -> COMPLETED -> LOCKED
-```
-
-Nhánh phụ:
-
-```text
-EXPIRED, REJECTED, PENDING_REVIEW, CANCELLED
-```
-
-Kết quả log quét QR cần hỗ trợ:
-
-```text
-SUCCESS, EXPIRED, ALREADY_USED, INVALID_TOKEN, WRONG_STATION, INVALID_ROLE, SUSPECTED_FRAUD
-```
-
-## Luồng mobile đề xuất
-
-### App sinh viên
-
-- Đăng nhập bằng Supabase Auth.
-- Xem điểm, nhiệm vụ xanh, trạm gần nhất.
-- Xem hướng dẫn phân loại rác.
-- Tìm trạm/thùng theo tòa nhà, tầng, vị trí.
-- Tạo giao dịch gửi rác: chọn trạm, loại rác, số lượng/khối lượng.
-- Sinh QR giao dịch một lần, có hạn.
-- Theo dõi trạng thái giao dịch.
-- Xem ví Ecopoint, lịch sử điểm, bảng xếp hạng.
-- Đổi thưởng.
-- Gửi phản hồi về thùng đầy, QR lỗi, sai vị trí, vấn đề khác.
-
-### App tình nguyện viên
-
-- Đăng nhập bằng role `volunteer` hoặc `admin`.
-- Chọn trạm đang trực.
-- Quét QR giao dịch của sinh viên.
-- Kiểm tra token, hạn, trạng thái, đúng trạm.
-- Xác nhận loại rác thật, chỉnh số lượng/khối lượng nếu cần.
-- Chụp ảnh proof.
-- Chấp nhận hoặc từ chối giao dịch, ghi chú bất thường.
-- Theo dõi trạng thái trạm, sức chứa, phản hồi mở.
-
-### Nguyên tắc chống gian lận
-
-- QR token không chứa điểm, email, role hoặc dữ liệu có thể tự sửa.
-- QR chỉ dùng một lần và có thời hạn.
-- Mỗi lần quét QR đều ghi `qr_scan_logs`.
-- Ảnh proof ưu tiên chụp trực tiếp bằng camera.
-- Cộng điểm nên qua RPC/Edge Function/backend để ghi transaction và cập nhật điểm theo thao tác atomic.
-- Mobile không nên tự update trực tiếp `users.points`.
-
-## Bản đồ campus và thùng rác
-
-Admin web hiện có bản đồ campus mô phỏng bằng Leaflet/GeoJSON. Dữ liệu GeoJSON nằm trong:
-
-```text
-frontend/waste-frontend/public/assets/geojson
-```
-
-MVP hiện lưu vị trí thùng bằng `bins.map_x` và `bins.map_y` theo phần trăm trên bản đồ. Về sau, khi có sơ đồ phòng/tầng trong trường, nên mở rộng:
-
-```text
-buildings -> floors -> rooms -> bins
-```
-
-Trường dữ liệu nên bổ sung:
-
-- `building_id`
-- `floor_id`
-- `near_room_id`
-- `position_x`
-- `position_y`
-- `map_image_url`
-
-Với app mobile, không nên phụ thuộc GPS để định vị thùng trong nhà. Nên dùng bản đồ nội bộ theo tòa/tầng/phòng + QR định danh từng thùng/trạm.
-
-## Cách chạy local
-
-Từ root project:
-
-```bat
-start_backend.bat
-start_frontend.bat
-```
-
-Hoặc chạy thủ công.
-
-Backend:
+### Backend Setup
 
 ```powershell
 cd backend
@@ -339,7 +225,13 @@ pip install -r requirements.txt
 uvicorn app:app --reload
 ```
 
-Frontend:
+Backend runs on:
+
+```text
+http://127.0.0.1:8000
+```
+
+### Frontend Setup
 
 ```powershell
 cd frontend\waste-frontend
@@ -347,16 +239,21 @@ npm install
 npm start
 ```
 
-URL local:
+Frontend runs on:
 
 ```text
-Frontend admin: http://127.0.0.1:3000/#/dashboard
-Login admin:    http://127.0.0.1:3000/#/login
-Backend API:    http://127.0.0.1:8000
-Backend docs:   http://127.0.0.1:8000/docs
+http://127.0.0.1:3000
 ```
 
-Env frontend dùng dạng:
+### Supabase Setup
+
+Run schema file on the real Supabase project:
+
+```text
+frontend/waste-frontend/supabase/schema.sql
+```
+
+Frontend environment variables:
 
 ```env
 REACT_APP_SUPABASE_URL=<supabase-project-url>
@@ -364,9 +261,34 @@ REACT_APP_SUPABASE_PUBLISHABLE_KEY=<supabase-publishable-key>
 REACT_APP_API_URL=http://127.0.0.1:8000
 ```
 
-Không commit file `.env` thật. Repo chỉ nên commit `.env.example`.
+Do not commit real `.env` files. Only `.env.example` should be committed.
 
-## Cấu trúc thư mục chính
+### Quick Start Scripts
+
+From project root:
+
+```bat
+start_backend.bat
+start_frontend.bat
+```
+
+---
+
+## Usage
+
+1. Start backend and frontend.
+2. Open `http://127.0.0.1:3000/#/login`.
+3. Sign in with a Supabase Auth account that also exists in `users` with role `admin`.
+4. Use Dashboard to monitor KPIs, alerts, reports, and campus map.
+5. Use Bins to manage QR stations and bin capacity.
+6. Use AI Tester to upload/capture a waste image and call `/predict`.
+7. Use Scans to approve/reject AI records.
+8. Use Ecopoint to manage rules, point history, leaderboard, manual adjustments, and rewards.
+9. Use Feedback and Reports to handle operations and export CSV.
+
+---
+
+## Project Structure
 
 ```text
 Smart-Waste-Detection-and-Segregation-Platform-main/
@@ -395,14 +317,137 @@ Smart-Waste-Detection-and-Segregation-Platform-main/
     dataset/
     train_mobilenetv2.py
     train_mobilenetv3.py
-  MOBILE_APP_HANDOFF.md
   FUNCTION_TEST_ROADMAP.md
+  MOBILE_APP_HANDOFF.md
   start_backend.bat
   start_frontend.bat
   README.md
 ```
 
-## Test và kiểm chứng
+---
+
+## AI Model and Waste Mapping
+
+Model file:
+
+```text
+backend/model/mobilenetv2_model.h5
+```
+
+Training script:
+
+```text
+model_training/train_mobilenetv2.py
+```
+
+Model facts:
+
+- Architecture: MobileNetV2 transfer learning.
+- Input size: `224x224` RGB image.
+- Output: 10-class softmax.
+- Dataset layout: folder-per-class under `model_training/dataset`.
+- Training: `ImageDataGenerator`, augmentation, validation split, frozen base training, then fine-tuning.
+
+AI classes:
+
+```text
+battery, biological, cardboard, clothes, glass, metal, paper, plastic, shoes, trash
+```
+
+Mapping to school bin groups:
+
+| AI class | Bin group |
+|---|---|
+| `biological` | Hữu cơ |
+| `paper`, `cardboard`, `plastic`, `glass`, `metal` | Tái chế |
+| `battery` | Pin / nguy hại |
+| `clothes`, `shoes`, `trash` | Còn lại |
+
+Important rule: AI does not directly award points. Ecopoint should be awarded after volunteer or admin verification.
+
+---
+
+## Supabase Data Model
+
+Current tables:
+
+| Table | Purpose |
+|---|---|
+| `users` | User profile, role, group/class, points, status |
+| `bins` | Bin/station data, QR code, location, capacity, map coordinates |
+| `predictions` | AI scan records and AI proof data |
+| `point_rules` | Ecopoint rules by waste class and bin group |
+| `point_history` | Point transaction history |
+| `feedback` | Feedback and admin handling notes |
+| `reward_redemptions` | Reward redemption requests |
+| `settings` | Model threshold and AI metadata |
+
+Target mobile tables to add later:
+
+| Table | Purpose |
+|---|---|
+| `waste_types` | Recycling categories, units, point rules |
+| `recycling_submissions` | Student waste submission transactions and QR state |
+| `qr_scan_logs` | Every QR scan result, including invalid cases |
+| `proof_images` | Volunteer proof photos and hashes |
+| `missions` | Green weekly/monthly missions |
+| `user_missions` | User mission progress |
+| `rewards` | Reward catalog |
+| `recycling_partners` | Recycling partners |
+| `recycling_batches` | Waste transfer batches |
+| `sponsors` | Sponsors and voucher partners |
+
+---
+
+## Mobile App Direction
+
+The mobile app should follow the Eco-loop Campus operation-first model.
+
+### Student App
+
+- Login and load profile from Supabase.
+- View Ecopoint wallet, missions, nearby stations, and main CTA `Gửi rác tái chế`.
+- Search waste sorting guide.
+- Find stations by building, floor, room, or map.
+- Create recycling submission with waste type, station, quantity, and unit.
+- Generate one-time QR transaction.
+- Track submission status, point history, leaderboard, rewards, and feedback.
+
+### Volunteer App
+
+- Login with volunteer/admin role.
+- Select assigned station.
+- Scan student QR transaction.
+- Verify token, station, role, expiry, and status.
+- Check real waste, adjust quantity, capture proof image.
+- Accept/reject submission and write abnormal notes.
+- Monitor station capacity and unresolved feedback.
+
+### QR Anti-Fraud Rules
+
+- QR token must be one-time and time-limited.
+- QR token must not contain editable point/user data.
+- Every scan must create a log: `SUCCESS`, `EXPIRED`, `ALREADY_USED`, `INVALID_TOKEN`, `WRONG_STATION`, `INVALID_ROLE`, or `SUSPECTED_FRAUD`.
+- Point updates should use RPC, Edge Function, or backend API for atomic writes.
+- Mobile clients should not update `users.points` directly.
+
+---
+
+## Future Scope
+
+- Add `recycling_submissions`, `waste_types`, `qr_scan_logs`, and `proof_images` for true mobile operations.
+- Build Flutter student app for QR submissions and Ecopoint wallet.
+- Build volunteer scanner flow for QR verification and proof image capture.
+- Add Supabase Storage for proof images.
+- Add RPC/Edge Functions for secure QR generation, verification, and point awarding.
+- Add indoor maps by building, floor, room, and station position.
+- Add missions, reward catalog, sponsor integration, and recycling partner batches.
+- Add Eco Community for green posts, likes, comments, saved posts, and moderation.
+- Convert model to TensorFlow Lite if mobile on-device inference becomes required.
+
+---
+
+## Testing
 
 Frontend:
 
@@ -418,41 +463,28 @@ Backend:
 backend\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Kiểm tra Git diff:
+Diff check:
 
 ```powershell
 git diff --check
 ```
 
-Roadmap test chi tiết nằm tại `FUNCTION_TEST_ROADMAP.md`. Tài liệu này chia các chức năng thành nhóm nhỏ, ghi baseline test, case đã cover và những guard đã sửa.
+Detailed function test plan:
 
-## Roadmap triển khai tiếp
+```text
+FUNCTION_TEST_ROADMAP.md
+```
 
-1. Hoàn thiện schema mobile: `waste_types`, `recycling_submissions`, `qr_scan_logs`, `proof_images`.
-2. Viết RPC/Edge Function/backend cho tạo QR, xác nhận QR và cộng điểm atomic.
-3. Viết RLS riêng cho student/volunteer/admin.
-4. Dựng app mobile Flutter cho sinh viên: login, home, trạm, tạo giao dịch, QR, lịch sử.
-5. Dựng app/role tình nguyện viên: scan QR, xác nhận rác, proof image, reject/accept.
-6. Kết nối Ecopoint, leaderboard, nhiệm vụ xanh, rewards.
-7. Mở rộng bản đồ nội bộ theo tòa nhà, tầng, phòng.
-8. Bổ sung chống gian lận nâng cao, Eco Community, đối tác tái chế và tài trợ.
+---
 
-## Tài liệu liên quan
-
-- `MOBILE_APP_HANDOFF.md`: tài liệu bàn giao chi tiết để bắt đầu làm app mobile theo hướng Eco-loop Campus.
-- `FUNCTION_TEST_ROADMAP.md`: kế hoạch kiểm thử từng module hiện có.
-- `frontend/waste-frontend/supabase/schema.sql`: schema Supabase hiện tại.
-- `model_training/train_mobilenetv2.py`: script train MobileNetV2.
-- `backend/app.py`: API FastAPI hiện tại.
-
-## Ghi chú triển khai mobile
-
-Khuyến nghị mặc định là Flutter vì phù hợp demo Android/iOS, camera, QR, map và Supabase SDK. React Native vẫn dùng được nếu đội muốn giữ tư duy React từ web admin.
-
-Thứ tự đúng cho mobile: giao dịch gửi rác và QR trước, volunteer xác nhận sau, rồi Ecopoint/leaderboard/reward, tiếp theo là map nội bộ, chống gian lận nâng cao, đối tác tái chế và Eco Community.
-
-## Credits
+## Credits and Acknowledgements
 
 - **Dataset:** Garbage Dataset
 - **Supervisor:** Nguyễn Thị Tươi, Ngô Quang Hiệp
-- **Team Members:** Phạm Thanh Hương (11425064), Nguyễn Phương Thảo (11425159), Đào Minh Quang (10123264), Phan Văn Khánh (12523037)
+
+### Team Members
+
+- Phạm Thanh Hương (11425064)
+- Nguyễn Phương Thảo (11425159)
+- Đào Minh Quang (10123264)
+- Phan Văn Khánh (12523037)
