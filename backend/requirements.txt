@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+tensorflow==2.13.0
+numpy
+pillow
+python-multipart
+requests
+h5py
+pytest
+httpx<0.28
