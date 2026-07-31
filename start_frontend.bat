@@ -2,9 +2,9 @@
 chcp 65001 >nul
 setlocal
 
-REM Smart Waste Detection - Frontend launcher
+REM Eco-loop Campus - Frontend launcher
 set "PROJECT_DIR=%~dp0"
-set "FRONTEND_DIR=%PROJECT_DIR%frontend\waste-frontend"
+set "FRONTEND_DIR=%PROJECT_DIR%frontend\eco-loop-campus-admin"
 
 if not exist "%FRONTEND_DIR%\package.json" (
     echo [ERROR] Khong tim thay package.json tai:

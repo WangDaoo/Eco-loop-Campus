@@ -1,4 +1,4 @@
-﻿node_modules/
+node_modules/
 **/node_modules/
 
 venv310/
@@ -24,6 +24,6 @@ logs/
 
 start-dev.bat
 start.md
-frontend/waste-frontend/supabase/.temp/
+frontend/eco-loop-campus-admin/supabase/.temp/
 **/supabase/.temp/
 

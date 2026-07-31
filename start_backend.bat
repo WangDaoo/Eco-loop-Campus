@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal
 
-REM Smart Waste Detection - Backend launcher
+REM Eco-loop Campus - Backend launcher
 set "PROJECT_DIR=%~dp0"
 set "BACKEND_DIR=%PROJECT_DIR%backend"
 set "VENV_PY=%BACKEND_DIR%\.venv\Scripts\python.exe"

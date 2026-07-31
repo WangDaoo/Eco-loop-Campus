@@ -21,10 +21,10 @@ Gate:
 
 Files chính:
 
-- `frontend\waste-frontend\src\admin\services\authContext.js`
-- `frontend\waste-frontend\src\admin\services\supabaseStore.js`
-- `frontend\waste-frontend\src\admin\pages\LoginPage.js`
-- `frontend\waste-frontend\src\admin\AdminApp.js`
+- `frontend\eco-loop-campus-admin\src\admin\services\authContext.js`
+- `frontend\eco-loop-campus-admin\src\admin\services\supabaseStore.js`
+- `frontend\eco-loop-campus-admin\src\admin\pages\LoginPage.js`
+- `frontend\eco-loop-campus-admin\src\admin\AdminApp.js`
 
 Case cần test:
 

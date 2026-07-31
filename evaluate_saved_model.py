@@ -2,9 +2,10 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from sklearn.metrics import classification_report, confusion_matrix
 import numpy as np
+from pathlib import Path
 
-# SAME SETTINGS AS TRAINING FILE
-data_dir = r"C:\Users\utrej\OneDrive\Desktop\sem7\swdasp\Smart-Waste-Detection-and-Segregation-Platform\model_training\dataset"
+project_root = Path(__file__).resolve().parent
+data_dir = project_root / "model_training" / "dataset"
 img_size = 224
 batch_size = 32
 
@@ -24,9 +25,8 @@ val_ds = datagen.flow_from_directory(
     shuffle=False
 )
 
-# Load your trained model
 model = tf.keras.models.load_model(
-    r"C:\Users\utrej\OneDrive\Desktop\sem7\swdasp\Smart-Waste-Detection-and-Segregation-Platform\backend\model\mobilenetv2_model.h5"
+    project_root / "backend" / "model" / "mobilenetv2_model.h5"
 )
 
 # Get predictions

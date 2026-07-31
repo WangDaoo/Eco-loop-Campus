@@ -8,7 +8,7 @@ deactivate
 
 for frontend
 cd frontend
-cd waste-frontend
+cd eco-loop-campus-admin
 npm install(only for first time)
 npm start
 go to http://localhost:3000

@@ -234,7 +234,7 @@ http://127.0.0.1:8000
 ### Frontend Setup
 
 ```powershell
-cd frontend\waste-frontend
+cd frontend\eco-loop-campus-admin
 npm install
 npm start
 ```
@@ -250,7 +250,7 @@ http://127.0.0.1:3000
 Run schema file on the real Supabase project:
 
 ```text
-frontend/waste-frontend/supabase/schema.sql
+frontend/eco-loop-campus-admin/supabase/schema.sql
 ```
 
 Frontend environment variables:
@@ -291,7 +291,7 @@ start_frontend.bat
 ## Project Structure
 
 ```text
-Smart-Waste-Detection-and-Segregation-Platform-main/
+Eco-loop-Campus/
   backend/
     app.py
     model/
@@ -301,7 +301,7 @@ Smart-Waste-Detection-and-Segregation-Platform-main/
     test_app_endpoints.py
     test_app_startup.py
   frontend/
-    waste-frontend/
+    eco-loop-campus-admin/
       public/assets/geojson/
       src/admin/
         AdminApp.js
@@ -452,7 +452,7 @@ The mobile app should follow the Eco-loop Campus operation-first model.
 Frontend:
 
 ```powershell
-cd frontend\waste-frontend
+cd frontend\eco-loop-campus-admin
 npm test -- --watchAll=false --runInBand --silent
 npm run build
 ```

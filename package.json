@@ -1,4 +1,6 @@
 {
+  "name": "eco-loop-campus",
+  "private": true,
   "dependencies": {
     "chart.js": "^4.5.1",
     "firebase": "^12.12.0",

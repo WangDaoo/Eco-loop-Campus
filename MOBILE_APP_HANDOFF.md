@@ -132,7 +132,7 @@ Mục tiêu mobile:
 Root project:
 
 ```text
-D:\Project\NỔ NỔ\Smart-Waste-Detection-and-Segregation-Platform-main
+D:\Project\NỔ NỔ\Eco-loop-Campus
 ```
 
 Nguồn nghiệp vụ Eco-loop:
@@ -144,13 +144,13 @@ D:\Project\NỔ NỔ\eco_loop_campus_tong_hop_day_du.md
 Frontend admin:
 
 ```text
-D:\Project\NỔ NỔ\Smart-Waste-Detection-and-Segregation-Platform-main\frontend\waste-frontend
+D:\Project\NỔ NỔ\Eco-loop-Campus\frontend\eco-loop-campus-admin
 ```
 
 Backend AI:
 
 ```text
-D:\Project\NỔ NỔ\Smart-Waste-Detection-and-Segregation-Platform-main\backend
+D:\Project\NỔ NỔ\Eco-loop-Campus\backend
 ```
 
 Cách bật local:
@@ -546,7 +546,7 @@ MVP nên ưu tiên nhựa PET, lon kim loại, giấy, bìa carton vì dễ thu 
 
 ## 10. Supabase hiện có và map tương thích
 
-Schema hiện tại: `frontend\waste-frontend\supabase\schema.sql`.
+Schema hiện tại: `frontend\eco-loop-campus-admin\supabase\schema.sql`.
 
 | Bảng hiện tại | Vai trò hiện tại | Vai trò Eco-loop |
 |---|---|---|
@@ -1460,18 +1460,18 @@ Cảnh báo: không cho client tự cộng `users.points`. Cộng điểm nên q
 D:\Project\NỔ NỔ\eco_loop_campus_tong_hop_day_du.md
 backend\app.py
 model_training\train_mobilenetv2.py
-frontend\waste-frontend\supabase\schema.sql
-frontend\waste-frontend\src\supabaseClient.js
-frontend\waste-frontend\src\admin\AdminApp.js
-frontend\waste-frontend\src\admin\data\wasteConfig.js
-frontend\waste-frontend\src\admin\services\supabaseStore.js
-frontend\waste-frontend\src\admin\pages\AiTesterPage.js
-frontend\waste-frontend\src\admin\pages\ScansPage.js
-frontend\waste-frontend\src\admin\pages\BinsPage.js
-frontend\waste-frontend\src\admin\pages\EcoPointsPage.js
-frontend\waste-frontend\src\admin\pages\FeedbackPage.js
-frontend\waste-frontend\src\admin\pages\ReportsPage.js
-frontend\waste-frontend\src\admin\components\CampusMap.js
+frontend\eco-loop-campus-admin\supabase\schema.sql
+frontend\eco-loop-campus-admin\src\supabaseClient.js
+frontend\eco-loop-campus-admin\src\admin\AdminApp.js
+frontend\eco-loop-campus-admin\src\admin\data\wasteConfig.js
+frontend\eco-loop-campus-admin\src\admin\services\supabaseStore.js
+frontend\eco-loop-campus-admin\src\admin\pages\AiTesterPage.js
+frontend\eco-loop-campus-admin\src\admin\pages\ScansPage.js
+frontend\eco-loop-campus-admin\src\admin\pages\BinsPage.js
+frontend\eco-loop-campus-admin\src\admin\pages\EcoPointsPage.js
+frontend\eco-loop-campus-admin\src\admin\pages\FeedbackPage.js
+frontend\eco-loop-campus-admin\src\admin\pages\ReportsPage.js
+frontend\eco-loop-campus-admin\src\admin\components\CampusMap.js
 ```
 
 ## 30. Việc nên làm ngay trước khi code mobile
