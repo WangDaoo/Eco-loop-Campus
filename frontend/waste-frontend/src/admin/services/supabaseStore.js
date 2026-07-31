@@ -6,7 +6,7 @@ import {
   getWasteLabel,
   normalizePrediction,
 } from "../data/wasteConfig";
-import { normalizeFeedback } from "../data/feedbackConfig";
+import { FEEDBACK_STATUSES, normalizeFeedback } from "../data/feedbackConfig";
 import { seedBins, seedFeedback, seedUsers } from "../data/seedData";
 import * as localStore from "./storage";
 
@@ -56,6 +56,11 @@ function normalizedUserStatusAction(value) {
 function normalizedBinStatusAction(value) {
   const status = normalizedStatus(value, "");
   return BIN_STATUS_ACTIONS.includes(status) ? status : "";
+}
+
+function normalizedFeedbackStatusAction(value) {
+  const status = normalizedStatus(value, "");
+  return Object.prototype.hasOwnProperty.call(FEEDBACK_STATUSES, status) ? status : "";
 }
 
 function normalizedEnabled(value) {
@@ -550,7 +555,11 @@ export async function saveFeedbackItem(feedback) {
 }
 
 export async function updateFeedbackItem(feedback, updates) {
-  const nextFeedback = normalizeFeedback({ ...feedback, ...updates });
+  const currentFeedback = normalizeFeedback(feedback);
+  const hasStatusUpdate = Object.prototype.hasOwnProperty.call(updates, "status");
+  const nextStatus = hasStatusUpdate ? normalizedFeedbackStatusAction(updates.status) : "";
+  if (hasStatusUpdate && !nextStatus) return result(currentFeedback, LOCAL, new Error("Invalid feedback status"));
+  const nextFeedback = normalizeFeedback({ ...feedback, ...updates, ...(hasStatusUpdate ? { status: nextStatus } : {}) });
   try {
     const response = await client().from("feedback").update(toFeedback(nextFeedback)).eq("id", feedback.id);
     if (response.error) throw response.error;
@@ -567,9 +576,11 @@ export async function updateFeedbackItem(feedback, updates) {
 }
 
 export async function updateFeedbackStatus(feedback, status) {
-  const updates = status === "resolved"
-    ? { status, resolvedAt: new Date().toISOString() }
-    : { status };
+  const nextStatus = normalizedFeedbackStatusAction(status);
+  if (!nextStatus) return result(normalizeFeedback(feedback), LOCAL, new Error("Invalid feedback status"));
+  const updates = nextStatus === "resolved"
+    ? { status: nextStatus, resolvedAt: new Date().toISOString() }
+    : { status: nextStatus };
   return updateFeedbackItem(feedback, updates);
 }
 
