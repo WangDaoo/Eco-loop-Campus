@@ -149,6 +149,12 @@ export default function BinsPage() {
       mapY: normalizePercent(form.mapY),
     };
 
+    if (!payload.id || !payload.name || !payload.location) {
+      setToastTone("danger");
+      setToast("Nhập đầy đủ mã thùng, tên trạm và vị trí trước khi lưu.");
+      return;
+    }
+
     if (editingBin?.mode === "create" && bins.some(bin => String(bin.id || "").trim().toLowerCase() === id.toLowerCase())) {
       setToastTone("danger");
       setToast("Mã thùng đã tồn tại. Chọn mã khác trước khi lưu.");

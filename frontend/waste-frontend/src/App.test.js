@@ -1260,6 +1260,23 @@ test("dashboard campus map normalizes malformed bin capacity and map coordinates
   expect(screen.queryByText(/NaN/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/not-a-number/i)).not.toBeInTheDocument();
 });
+
+test("dashboard campus map summary normalizes dirty station statuses", async () => {
+  mockTables.bins = [
+    { id: "BIN-DIRTY-ACTIVE", name: "Trạm active bẩn map", bin_group: "Tái chế", location: "Nhà A", building: "A", floor: "1", qr_code: "QR-DIRTY-ACTIVE", status: " Active ", capacity: 20, map_x: 20, map_y: 20 },
+    { id: "BIN-DIRTY-MAINT", name: "Trạm bảo trì bẩn map", bin_group: "Còn lại", location: "Nhà B", building: "B", floor: "1", qr_code: "QR-DIRTY-MAINT", status: " Maintenance ", capacity: 30, map_x: 40, map_y: 40 },
+  ];
+  mockTables.feedback = [];
+  window.location.hash = "#/dashboard";
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /bản đồ gis campus/i })).toBeInTheDocument();
+  expect((await screen.findAllByText("Trạm active bẩn map")).length).toBeGreaterThan(0);
+  expect(screen.getByText("1 điểm hoạt động")).toBeInTheDocument();
+  expect(screen.getByText("1 điểm cần kiểm tra")).toBeInTheDocument();
+  expect(screen.getByText("Bảo trì")).toBeInTheDocument();
+});
 test("bins page creates a station and exposes QR scan link", async () => {
   window.location.hash = "#/bins";
   render(<App />);
@@ -1337,6 +1354,25 @@ test("bins page rejects duplicate QR codes when creating a station", async () =>
     id: "BIN-NEW-DUP-QR",
     qr_code: "QR-A1",
   }));
+  expect(screen.getByRole("dialog", { name: /thêm trạm qr/i })).toBeInTheDocument();
+});
+
+test("bins page rejects blank required station fields after trimming", async () => {
+  window.location.hash = "#/bins";
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /thùng rác \/ trạm qr/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /thêm trạm/i }));
+
+  const dialog = await screen.findByRole("dialog", { name: /thêm trạm qr/i });
+  fireEvent.change(within(dialog).getByLabelText(/mã thùng/i), { target: { value: "   " } });
+  fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "   " } });
+  fireEvent.change(within(dialog).getByLabelText(/vị trí/i), { target: { value: "   " } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
+
+  expect(await screen.findByText(/nhập đầy đủ mã thùng, tên trạm và vị trí/i)).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveClass("tone-danger");
+  expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ id: "" }));
   expect(screen.getByRole("dialog", { name: /thêm trạm qr/i })).toBeInTheDocument();
 });
 

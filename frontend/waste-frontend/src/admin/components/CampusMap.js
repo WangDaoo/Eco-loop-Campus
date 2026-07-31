@@ -106,6 +106,11 @@ function capacityTone(capacity) {
   return "ổn định";
 }
 
+function stationStatusCode(status) {
+  const normalized = typeof status === "string" ? status.trim().toLowerCase() : "";
+  return Object.prototype.hasOwnProperty.call(STATUS_LABELS, normalized) ? normalized : "";
+}
+
 function countOpenFeedbackByBin(feedback) {
   return feedback.filter(isOpenFeedback).reduce((acc, item) => {
     if (!item.binId) return acc;
@@ -178,6 +183,7 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
   const openFeedbackByBin = useMemo(() => countOpenFeedbackByBin(feedback), [feedback]);
   const stations = useMemo(() => bins.map((bin, index) => ({
     ...bin,
+    status: stationStatusCode(bin.status) || bin.status || "active",
     capacity: readPercent(bin.capacity, 0),
     ...getStationPosition(bin, index),
     openFeedbackCount: openFeedbackByBin[bin.id] || 0,
