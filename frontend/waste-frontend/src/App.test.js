@@ -512,6 +512,19 @@ test("savePredictionRecord rejects unsupported statuses before writing predictio
   expect(localStorage.getItem("smartWastePredictions")).toBeNull();
 });
 
+test("savePredictionRecord rejects unsupported sources before writing predictions", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingPredictions = JSON.stringify(mockTables.predictions);
+
+  const result = await store.savePredictionRecord({ id: "scan-bad-source", class: "plastic", confidence: 0.88, source: " webhook ", status: "pending" });
+
+  expect(result.data).toBeNull();
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("predictions");
+  expect(JSON.stringify(mockTables.predictions)).toBe(existingPredictions);
+  expect(localStorage.getItem("smartWastePredictions")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;

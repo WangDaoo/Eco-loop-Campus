@@ -30,6 +30,7 @@ function normalizedStatus(value, fallback = "pending") {
 
 const PREDICTION_STATUSES = ["pending", "approved", "rejected"];
 const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
+const PREDICTION_SOURCES = ["upload", "camera"];
 const REWARD_STATUSES = ["pending", "approved", "rejected"];
 const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
 const USER_STATUS_ACTIONS = ["active", "locked"];
@@ -425,10 +426,10 @@ export async function listPredictions() {
 export async function savePredictionRecord(record) {
   const rawClass = typeof record?.class === "string" ? record.class : typeof record?.className === "string" ? record.className : "";
   const classKey = rawClass.trim().toLowerCase();
-  const source = typeof record?.source === "string" ? record.source.trim() : "";
+  const source = typeof record?.source === "string" ? record.source.trim().toLowerCase() : "";
   const confidence = Number(record?.confidence);
   const status = normalizedStatus(record?.status, "pending");
-  if (!classKey || !source || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 || !PREDICTION_STATUSES.includes(status)) {
+  if (!classKey || !PREDICTION_SOURCES.includes(source) || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 || !PREDICTION_STATUSES.includes(status)) {
     return result(null, LOCAL, new Error("Invalid prediction record"));
   }
   const appRecord = fromPrediction({ ...record, class: classKey, source, confidence, status });
