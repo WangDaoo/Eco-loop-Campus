@@ -2420,6 +2420,19 @@ test("approving a scan with a disabled point rule does not award points", async 
   expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("users", expect.objectContaining({ points: expect.any(Number) }));
 });
 
+test("approving a scan with a string false point rule does not award points", async () => {
+  mockTables.point_rules = mockTables.point_rules.map(rule => rule.id === "hazard" ? { ...rule, enabled: " false " } : rule);
+  window.location.hash = "#/scans";
+
+  render(<App />);
+
+  const scanRow = (await screen.findByText("scan-low")).closest("tr");
+  fireEvent.click(within(scanRow).getAllByRole("button")[0]);
+
+  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("predictions", expect.objectContaining({ status: "approved" })));
+  expect(mockSupabaseInsert).not.toHaveBeenCalledWith("point_history", expect.anything());
+  expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("users", expect.objectContaining({ points: expect.any(Number) }));
+});
 test("scans page handles malformed confidence and timestamp without crashing", async () => {
   mockTables.predictions = [
     { id: "scan-malformed", class: "paper", confidence: "not-a-number", source: "upload", timestamp: "not-a-date", bin_group: "Tái chế", status: "pending", user_id: "SV001", bin_id: "BIN-A1-RECYCLE" },

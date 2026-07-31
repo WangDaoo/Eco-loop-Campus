@@ -27,6 +27,17 @@ function normalizedStatus(value, fallback = "pending") {
   return status || fallback;
 }
 
+function normalizedEnabled(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "enabled", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "disabled", "off", ""].includes(normalized)) return false;
+  }
+  return false;
+}
+
 function addPoints(currentPoints, deltaPoints) {
   const current = Number(currentPoints ?? 0);
   const delta = Number(deltaPoints ?? 0);
@@ -134,6 +145,7 @@ function fromPointRule(row) {
     ...rest,
     classKeys: normalizeClassKeys(row.classKeys || classKeysSnake || []),
     binGroup: row.binGroup || binGroupSnake,
+    enabled: normalizedEnabled(row.enabled),
   };
 }
 
@@ -144,7 +156,7 @@ function toPointRule(rule) {
     class_keys: normalizeClassKeys(rule.classKeys),
     bin_group: rule.binGroup,
     points: rule.points,
-    enabled: rule.enabled,
+    enabled: normalizedEnabled(rule.enabled),
   };
 }
 
