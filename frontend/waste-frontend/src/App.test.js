@@ -313,6 +313,20 @@ test("updateRewardRedemption rejects unsupported statuses before writing rewards
   expect(localStorage.getItem("ecoGuardianRewardRedemptions")).toBeNull();
 });
 
+
+test("updateUserStatus rejects unsupported statuses before writing users", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const user = { id: "SV001", name: "Nguyễn Minh Anh", email: "minhanh@school.edu.vn", role: "student", group: "CNTT K18", points: 245, status: "active" };
+
+  const result = await store.updateUserStatus(user, " archived ");
+
+  expect(result.data.status).toBe("active");
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("users", { status: " archived " });
+  expect(mockTables.users.find(item => item.id === "SV001").status).toBe("active");
+  expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
+});
+
 test("Supabase store save and update failures persist every local fallback table", async () => {
   const store = require("./admin/services/supabaseStore");
   mockSupabaseFailure = true;

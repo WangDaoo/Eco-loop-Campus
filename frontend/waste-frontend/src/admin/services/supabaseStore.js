@@ -30,6 +30,7 @@ function normalizedStatus(value, fallback = "pending") {
 const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
 const REWARD_STATUSES = ["pending", "approved", "rejected"];
 const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
+const USER_STATUS_ACTIONS = ["active", "locked"];
 
 function normalizedPredictionStatusAction(value) {
   const status = normalizedStatus(value, "");
@@ -44,6 +45,11 @@ function normalizedRewardStatus(value, fallback = "pending") {
 function normalizedRewardStatusAction(value) {
   const status = normalizedStatus(value, "");
   return REWARD_STATUS_ACTIONS.includes(status) ? status : "";
+}
+
+function normalizedUserStatusAction(value) {
+  const status = normalizedStatus(value, "");
+  return USER_STATUS_ACTIONS.includes(status) ? status : "";
 }
 
 function normalizedEnabled(value) {
@@ -468,12 +474,14 @@ export async function saveUser(user) {
 }
 
 export async function updateUserStatus(user, status) {
+  const nextStatus = normalizedUserStatusAction(status);
+  if (!nextStatus) return result(user, LOCAL, new Error("Invalid user status"));
   try {
-    const response = await client().from("users").update({ status }).eq("id", user.id);
+    const response = await client().from("users").update({ status: nextStatus }).eq("id", user.id);
     if (response.error) throw response.error;
-    return result({ ...user, status }, SUPABASE);
+    return result({ ...user, status: nextStatus }, SUPABASE);
   } catch (error) {
-    const nextUser = { ...user, status };
+    const nextUser = { ...user, status: nextStatus };
     const localUsers = localStore.getUsers();
     const existsLocally = localUsers.some(item => item.id === user.id);
     const next = existsLocally

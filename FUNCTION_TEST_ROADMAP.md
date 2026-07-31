@@ -706,6 +706,7 @@ Test hiện có:
 - Sửa chi tiết user mở modal prefill, cập nhật tên/email/role/lớp-khoa, lưu Supabase bằng `saveUser`, giữ nguyên `id`, `points`, `status`, render lại bảng.
 - Sửa user sang email đã thuộc user khác bị chặn, hiện lỗi, không gọi lưu Supabase, modal vẫn mở để admin sửa lại.
 - Sau toast lỗi form `danger`, khóa/mở khóa user thành công reset toast về `success`, không giữ màu lỗi cũ.
+- `updateUserStatus` từ chối status ngoài `active/locked`, không gọi Supabase update, không ghi localStorage fallback và giữ status hiện tại.
 
 Fix đã làm:
 
@@ -724,6 +725,7 @@ Fix đã làm:
 - `saveUser` create fallback đã được khóa bằng UI test; behavior đã có sẵn qua helper `upsert`.
 - `UsersPage` thêm `editingUser`, dùng chung modal thêm/sửa, nút `Sửa {id}`, duplicate email bỏ qua chính user đang sửa, lưu edit qua `saveUser`.
 - `UsersPage.lockUser` dùng `showToast` cho success để reset `toastTone` về `success` sau các lỗi form trước đó.
+- `updateUserStatus` normalize action status qua allowlist `active/locked`; status lạ trả lỗi và không làm bẩn `users.status`.
 
 Gaps:
 
