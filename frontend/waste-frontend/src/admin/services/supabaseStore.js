@@ -537,12 +537,14 @@ export async function saveBin(bin) {
   const id = typeof bin.id === "string" ? bin.id.trim() : "";
   const name = typeof bin.name === "string" ? bin.name.trim() : "";
   const location = typeof bin.location === "string" ? bin.location.trim() : "";
-  if (!id || !name || !location) return result(null, LOCAL, new Error("Invalid bin station"));
+  const status = normalizedBinStatusAction(bin.status || "active");
+  if (!id || !name || !location || !status) return result(null, LOCAL, new Error("Invalid bin station"));
   const payload = {
     ...bin,
     id,
     name,
     location,
+    status,
     building: typeof bin.building === "string" ? bin.building.trim() : bin.building,
     floor: typeof bin.floor === "string" ? bin.floor.trim() : bin.floor,
     qrCode: typeof bin.qrCode === "string" ? bin.qrCode.trim() : bin.qrCode,

@@ -490,6 +490,19 @@ test("saveBin clamps capacity and map coordinates before writing bins", async ()
   expect(mockTables.bins.find(bin => bin.id === "BIN-DIRECT-RANGE")).toEqual(expect.objectContaining({ capacity: 100, map_x: 0, map_y: 100 }));
 });
 
+test("saveBin rejects unsupported statuses before writing bins", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const existingBins = JSON.stringify(mockTables.bins);
+
+  const result = await store.saveBin({ id: "BIN-BAD-STATUS", name: "Trạm status lỗi", binGroup: "Tái chế", location: "Nhà D", status: " archived ", capacity: 40, mapX: 45, mapY: 55 });
+
+  expect(result.data).toBeNull();
+  expect(result.error).toEqual(expect.any(Error));
+  expect(mockSupabaseFrom).not.toHaveBeenCalledWith("bins");
+  expect(JSON.stringify(mockTables.bins)).toBe(existingBins);
+  expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
+});
+
 test("savePredictionRecord rejects invalid scan fields before writing predictions", async () => {
   const store = require("./admin/services/supabaseStore");
   const existingPredictions = JSON.stringify(mockTables.predictions);
