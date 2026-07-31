@@ -68,7 +68,7 @@ export default function AiTesterPage() {
         return;
       }
       const confidence = Number(prediction.confidence);
-      if (!Number.isFinite(confidence)) {
+      if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
         setResult(null);
         setToastTone("danger");
         setToast("Backend trả kết quả không hợp lệ");

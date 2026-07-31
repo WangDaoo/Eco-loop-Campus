@@ -2202,6 +2202,21 @@ test("AI tester rejects non-numeric backend confidence without saving a predicti
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ status: "pending" }));
   expect(screen.queryByText("NaN%")).not.toBeInTheDocument();
 });
+test("AI tester rejects out-of-range backend confidence without saving a prediction", async () => {
+  const axios = require("axios");
+  axios.post.mockResolvedValueOnce({ data: { class: "plastic", confidence: 1.4 } });
+  window.location.hash = "#/ai-test";
+
+  render(<App />);
+
+  const file = new File(["plastic"], "plastic.jpg", { type: "image/jpeg" });
+  fireEvent.change(await screen.findByLabelText(/chọn ảnh kiểm thử/i), { target: { files: [file] } });
+  fireEvent.click(screen.getByRole("button", { name: /nhận diện thử/i }));
+
+  await waitFor(() => expect(screen.getByRole("status")).toHaveClass("tone-danger"));
+  expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ status: "pending" }));
+  expect(screen.queryByText("100%")).not.toBeInTheDocument();
+});
 test("AI tester shows request failures without saving a prediction", async () => {
   const axios = require("axios");
   axios.post.mockRejectedValueOnce(new Error("Network down"));
