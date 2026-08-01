@@ -4,7 +4,7 @@ import { useLocation } from "react-router-dom";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { getBinGroup, getWasteLabel } from "../data/wasteConfig";
-import { listBins, savePredictionRecord, sourceText } from "../services/supabaseStore";
+import { listBins, savePredictionRecord, sourceText, uploadPredictionImage } from "../services/supabaseStore";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
 const formatPercent = value => `${Math.round(Number(value || 0) * 100)}%`;
@@ -74,6 +74,8 @@ export default function AiTesterPage() {
         setToast("Backend trả kết quả không hợp lệ");
         return;
       }
+      const imageUpload = await uploadPredictionImage(blob);
+      const imageMeta = imageUpload.data || {};
       const record = await savePredictionRecord({
         class: className,
         confidence,
@@ -82,11 +84,13 @@ export default function AiTesterPage() {
         status: "pending",
         binId: qrBinId || undefined,
         imageName: blob.name || "capture.jpg",
+        imageUrl: imageMeta.imageUrl,
+        thumbnailUrl: imageMeta.thumbnailUrl,
       });
       setResult(record.data);
       setSource(record.source);
       setToastTone("success");
-      setToast(`Đã lưu lượt kiểm thử AI (${sourceText(record.source)})`);
+      setToast(imageUpload.error ? `Đã lưu lượt kiểm thử AI (${sourceText(record.source)}), nhưng chưa lưu được ảnh xem trước` : `Đã lưu lượt kiểm thử AI (${sourceText(record.source)})`);
     } catch {
       setResult(null);
       setToastTone("danger");

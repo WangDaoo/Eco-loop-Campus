@@ -36,6 +36,19 @@ test("normalizes predictions and clamps invalid confidence values", () => {
   expect(normalizePrediction({ class: "plastic", confidence: "bad" }).confidence).toBe(0);
   expect(normalizePrediction({ class: "plastic", confidence: 0.73 }).confidence).toBe(0.73);
 });
+
+test("normalizes prediction image URLs for review previews", () => {
+  const prediction = normalizePrediction({
+    class: "plastic",
+    confidence: 0.73,
+    imageUrl: "https://storage.example/full.jpg",
+    thumbnailUrl: "https://storage.example/thumb.jpg",
+  });
+
+  expect(prediction.imageUrl).toBe("https://storage.example/full.jpg");
+  expect(prediction.thumbnailUrl).toBe("https://storage.example/thumb.jpg");
+});
+
 test("normalizes non-string prediction classes to the safe fallback class", () => {
   expect(() => normalizePrediction({ class: 123, confidence: 0.7 })).not.toThrow();
   expect(normalizePrediction({ class: 123, confidence: 0.7 }).class).toBe("trash");

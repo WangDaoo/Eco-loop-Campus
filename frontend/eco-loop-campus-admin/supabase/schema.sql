@@ -36,8 +36,13 @@ create table if not exists public.predictions (
   status text not null default 'pending',
   user_id text references public.users(id) on delete set null,
   bin_id text references public.bins(id) on delete set null,
-  image_name text
+  image_name text,
+  image_url text,
+  thumbnail_url text
 );
+
+alter table public.predictions add column if not exists image_url text;
+alter table public.predictions add column if not exists thumbnail_url text;
 
 create table if not exists public.point_rules (
   id text primary key,
@@ -161,6 +166,36 @@ create policy "admin write feedback" on public.feedback for all to authenticated
 create policy "admin write settings" on public.settings for all to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy "admin write point_history" on public.point_history for all to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy "admin write reward_redemptions" on public.reward_redemptions for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'prediction-images',
+  'prediction-images',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/heic', 'image/heif']::text[]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "admin upload prediction images" on storage.objects;
+drop policy if exists "admin update prediction images" on storage.objects;
+drop policy if exists "admin delete prediction images" on storage.objects;
+
+create policy "admin upload prediction images" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'prediction-images' and public.is_admin());
+
+create policy "admin update prediction images" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'prediction-images' and public.is_admin())
+  with check (bucket_id = 'prediction-images' and public.is_admin());
+
+create policy "admin delete prediction images" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'prediction-images' and public.is_admin());
 
 insert into public.users (id, name, email, role, "group", points, status)
 values ('AD001', 'Quản trị Eco-loop Campus', 'admin@school.edu.vn', 'admin', 'Ban vận hành', 0, 'active')

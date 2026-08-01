@@ -14,6 +14,7 @@ import * as localStore from "./storage";
 const SUPABASE = "supabase";
 const LOCAL = "local";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PREDICTION_IMAGE_BUCKET = "prediction-images";
 
 function result(data, source = SUPABASE, error = null) {
   return { data, source, error };
@@ -112,6 +113,29 @@ function addPoints(currentPoints, deltaPoints) {
   return (Number.isFinite(current) ? current : 0) + (Number.isFinite(delta) ? delta : 0);
 }
 
+function safeImageFileName(fileName = "scan.jpg") {
+  const rawName = String(fileName || "scan.jpg").trim() || "scan.jpg";
+  const parts = rawName.split(".");
+  const extension = parts.length > 1 ? parts.pop().toLowerCase() : "jpg";
+  const baseName = parts.join(".") || "scan";
+  const asciiBase = baseName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "scan";
+  const safeExtension = extension.replace(/[^a-z0-9]/g, "") || "jpg";
+  return `${asciiBase}.${safeExtension}`;
+}
+
+function buildPredictionImagePath(fileName, now = new Date(), random = Math.random()) {
+  const date = Number.isNaN(now.getTime()) ? new Date().toISOString().slice(0, 10) : now.toISOString().slice(0, 10);
+  const nonce = String(Math.floor(Math.max(0, Math.min(0.999999, Number(random) || 0)) * 1000000)).padStart(6, "0");
+  return `ai-reviews/${date}/${nonce}-${safeImageFileName(fileName)}`;
+}
+
 function normalizedClassKey(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
@@ -188,6 +212,8 @@ function fromPrediction(row) {
     userId: row.userId || row.user_id,
     binId: row.binId || row.bin_id,
     imageName: row.imageName || row.image_name,
+    imageUrl: row.imageUrl || row.image_url,
+    thumbnailUrl: row.thumbnailUrl || row.thumbnail_url,
   });
 }
 
@@ -204,6 +230,8 @@ function toPrediction(record) {
     user_id: normalized.userId,
     bin_id: normalized.binId,
     image_name: normalized.imageName,
+    image_url: normalized.imageUrl || null,
+    thumbnail_url: normalized.thumbnailUrl || null,
   };
 }
 
@@ -463,6 +491,32 @@ export async function savePredictionRecord(record) {
   }
   const appRecord = fromPrediction({ ...record, class: classKey, source, confidence, status });
   return upsert("predictions", toPrediction(appRecord), appRecord, payload => localStore.savePredictionRecord(payload));
+}
+
+export async function uploadPredictionImage(file) {
+  const imageName = typeof file?.name === "string" && file.name.trim() ? file.name.trim() : "capture.jpg";
+  const imageType = typeof file?.type === "string" ? file.type : "";
+  if (!file || (imageType && !imageType.startsWith("image/"))) {
+    return result(null, LOCAL, new Error("Invalid prediction image"));
+  }
+  try {
+    const storage = client().storage;
+    if (!storage?.from) throw new Error("Supabase Storage unavailable");
+    const path = buildPredictionImagePath(imageName);
+    const bucket = storage.from(PREDICTION_IMAGE_BUCKET);
+    const uploadResponse = await bucket.upload(path, file, {
+      cacheControl: "3600",
+      contentType: imageType || undefined,
+      upsert: false,
+    });
+    if (uploadResponse.error) throw uploadResponse.error;
+    const publicResponse = bucket.getPublicUrl(path);
+    const publicUrl = publicResponse?.data?.publicUrl || "";
+    if (!publicUrl) throw new Error("Prediction image URL unavailable");
+    return result({ imageName, imageUrl: publicUrl, thumbnailUrl: "", storagePath: path }, SUPABASE);
+  } catch (error) {
+    return result(null, LOCAL, error);
+  }
 }
 
 export async function setPredictionStatus(record, status) {
@@ -861,6 +915,7 @@ export const __testing = {
   toBin,
   fromPrediction,
   toPrediction,
+  buildPredictionImagePath,
   fromPointRule,
   toPointRule,
   fromPointHistory,

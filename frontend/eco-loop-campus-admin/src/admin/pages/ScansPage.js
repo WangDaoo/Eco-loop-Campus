@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import DataTable from "../components/DataTable";
+import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { getBinGroup, getWasteLabel } from "../data/wasteConfig";
@@ -29,6 +30,7 @@ export default function ScansPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState("");
+  const [previewRecord, setPreviewRecord] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -69,9 +71,29 @@ export default function ScansPage() {
     setSource(response.source);
     setError(response.error);
     setToast(status === "approved" ? "Đã duyệt lượt quét" : "Đã từ chối lượt quét");
+    if (previewRecord?.id === record.id) setPreviewRecord(null);
   };
 
+  const imageSourceFor = record => record.thumbnailUrl || "";
+  const fullImageSourceFor = record => record.imageUrl || record.thumbnailUrl || "";
+
   const columns = [
+    {
+      key: "image",
+      label: "Ảnh",
+      render: row => {
+        const imageSource = imageSourceFor(row);
+        if (!imageSource && !row.imageUrl) return <span className="eg-muted-block">Chưa có ảnh</span>;
+        if (!imageSource) {
+          return <button type="button" className="eg-small-btn" onClick={() => setPreviewRecord(row)} aria-label={`Xem ảnh ${row.id}`}>Xem ảnh</button>;
+        }
+        return (
+          <button type="button" className="eg-scan-thumb-btn" onClick={() => setPreviewRecord(row)} aria-label={`Xem ảnh ${row.id}`}>
+            <img className="eg-scan-thumb" src={imageSource} alt={`Ảnh lượt quét ${row.id}`} loading="lazy" />
+          </button>
+        );
+      },
+    },
     { key: "id", label: "Mã", render: row => <strong>{row.id}</strong> },
     { key: "class", label: "Loại AI", render: row => getWasteLabel(row.class) },
     { key: "binGroup", label: "Nhóm thùng", render: row => <StatusBadge group={getBinGroup(row.class)}>{getBinGroup(row.class)}</StatusBadge> },
@@ -135,6 +157,41 @@ export default function ScansPage() {
         </div>
         <DataTable columns={columns} rows={visibleRows} emptyText="Chưa có lượt quét phù hợp bộ lọc." />
       </section>
+      <Modal open={Boolean(previewRecord)} title={previewRecord ? `Xem ảnh lượt quét ${previewRecord.id}` : "Xem ảnh lượt quét"} onClose={() => setPreviewRecord(null)}>
+        {previewRecord && (
+          <div className="eg-scan-preview-modal">
+            {fullImageSourceFor(previewRecord) ? (
+              <img className="eg-scan-preview-image" src={fullImageSourceFor(previewRecord)} alt={`Ảnh đầy đủ ${previewRecord.id}`} />
+            ) : (
+              <div className="eg-scan-preview-empty">Chưa có ảnh để hiển thị.</div>
+            )}
+            <div className="eg-scan-preview-meta">
+              <div>
+                <span>Mã lượt quét</span>
+                <strong>{previewRecord.id}</strong>
+              </div>
+              <div>
+                <span>Loại AI</span>
+                <strong>{getWasteLabel(previewRecord.class)}</strong>
+              </div>
+              <div>
+                <span>Độ tin cậy</span>
+                <strong className={previewRecord.confidence < threshold ? "eg-warning-text" : ""}>{formatPercent(previewRecord.confidence)}</strong>
+              </div>
+              <div>
+                <span>Tên ảnh</span>
+                <strong>{previewRecord.imageName || "Không rõ"}</strong>
+              </div>
+            </div>
+            {previewRecord.status === "pending" ? (
+              <div className="eg-button-row eg-scan-preview-actions">
+                <button type="button" className="eg-small-btn success" onClick={() => updateStatus(previewRecord, "approved")} aria-label={`Duyệt ${previewRecord.id} từ ảnh xem trước`}>Duyệt</button>
+                <button type="button" className="eg-small-btn danger" onClick={() => updateStatus(previewRecord, "rejected")} aria-label={`Từ chối ${previewRecord.id} từ ảnh xem trước`}>Từ chối</button>
+              </div>
+            ) : <span className="eg-muted-block">Lượt quét này đã được xử lý.</span>}
+          </div>
+        )}
+      </Modal>
       <Toast message={toast} onClose={() => setToast("")} />
     </div>
   );

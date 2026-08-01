@@ -15,6 +15,9 @@ const mockSupabaseFrom = jest.fn();
 const mockSupabaseUpsert = jest.fn();
 const mockSupabaseUpdate = jest.fn();
 const mockSupabaseInsert = jest.fn();
+const mockStorageFrom = jest.fn();
+const mockStorageUpload = jest.fn();
+const mockStorageGetPublicUrl = jest.fn();
 let createdSupabaseClientArgs = [];
 
 const seedSupabase = () => {
@@ -110,6 +113,9 @@ function upsertRow(tableName, row) {
 
 const mockSupabaseClient = {
   from: mockSupabaseFrom,
+  storage: {
+    from: mockStorageFrom,
+  },
   auth: {
     getSession: jest.fn(() => Promise.resolve({ data: { session: mockAuthUser ? { user: mockAuthUser } : null }, error: null })),
     onAuthStateChange: jest.fn(() => ({ data: { subscription: { unsubscribe: jest.fn() } } })),
@@ -178,6 +184,9 @@ beforeEach(() => {
   mockSupabaseClient.auth.signInWithPassword.mockImplementation(() => Promise.resolve({ data: { user: { id: "AD001", email: "admin@school.edu.vn" } }, error: null }));
   mockSupabaseClient.auth.signOut.mockImplementation(() => Promise.resolve({ error: null }));
   mockSupabaseFrom.mockImplementation(tableName => makeQuery(tableName));
+  mockStorageFrom.mockReturnValue({ upload: mockStorageUpload, getPublicUrl: mockStorageGetPublicUrl });
+  mockStorageUpload.mockResolvedValue({ data: { path: "ai-reviews/2026-08-02/paper.jpg" }, error: null });
+  mockStorageGetPublicUrl.mockReturnValue({ data: { publicUrl: "https://school.supabase.co/storage/v1/object/public/prediction-images/ai-reviews/2026-08-02/paper.jpg" } });
 });
 
 test("uses CRA Supabase publishable key env", () => {
@@ -2336,7 +2345,12 @@ test("AI tester writes predictions to Supabase after backend returns a result", 
   fireEvent.click(screen.getByRole("button", { name: /nhận diện thử/i }));
 
   await waitFor(() => expect(screen.getByText(/giấy/i)).toBeInTheDocument());
+  expect(mockStorageFrom).toHaveBeenCalledWith("prediction-images");
+  expect(mockStorageUpload).toHaveBeenCalledWith(expect.stringMatching(/^ai-reviews\/\d{4}-\d{2}-\d{2}\//), file, expect.objectContaining({ contentType: "image/jpeg", upsert: false }));
   expect(mockSupabaseFrom).toHaveBeenCalledWith("predictions");
+  expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
+    image_url: "https://school.supabase.co/storage/v1/object/public/prediction-images/ai-reviews/2026-08-02/paper.jpg",
+  }));
   expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({ class: "paper", bin_group: "Tái chế", status: "pending" }));
 });
 

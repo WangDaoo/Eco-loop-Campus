@@ -415,6 +415,93 @@ button:disabled {
   color: var(--eg-danger);
 }
 
+.eg-scan-thumb-btn {
+  width: 72px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius);
+  background: #f8fafc;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.eg-scan-thumb-btn:focus-visible {
+  outline: 3px solid rgba(70, 128, 255, 0.24);
+  outline-offset: 2px;
+}
+
+.eg-scan-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.eg-scan-preview-modal {
+  display: grid;
+  gap: 16px;
+}
+
+.eg-scan-preview-image,
+.eg-scan-preview-empty {
+  width: 100%;
+  min-height: 260px;
+  max-height: 62vh;
+  border-radius: var(--eg-radius);
+  border: 1px solid var(--eg-border);
+  background: #f8fafc;
+}
+
+.eg-scan-preview-image {
+  object-fit: contain;
+  display: block;
+}
+
+.eg-scan-preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--eg-muted);
+  font-weight: 700;
+}
+
+.eg-scan-preview-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.eg-scan-preview-meta div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius);
+  background: #fbfdff;
+}
+
+.eg-scan-preview-meta span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--eg-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.eg-scan-preview-meta strong {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--eg-heading);
+}
+
+.eg-scan-preview-actions {
+  justify-content: flex-end;
+}
+
 .eg-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

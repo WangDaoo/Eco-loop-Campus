@@ -122,6 +122,8 @@ test("maps Supabase predictions snake_case into clean normalized admin predictio
     user_id: "SV001",
     bin_id: "BIN-A1-RECYCLE",
     image_name: "plastic.jpg",
+    image_url: "https://storage.example/full.jpg",
+    thumbnail_url: "https://storage.example/thumb.jpg",
   });
 
   expect(prediction).toEqual(expect.objectContaining({
@@ -131,11 +133,15 @@ test("maps Supabase predictions snake_case into clean normalized admin predictio
     userId: "SV001",
     binId: "BIN-A1-RECYCLE",
     imageName: "plastic.jpg",
+    imageUrl: "https://storage.example/full.jpg",
+    thumbnailUrl: "https://storage.example/thumb.jpg",
   }));
   expect(prediction.bin_group).toBeUndefined();
   expect(prediction.user_id).toBeUndefined();
   expect(prediction.bin_id).toBeUndefined();
   expect(prediction.image_name).toBeUndefined();
+  expect(prediction.image_url).toBeUndefined();
+  expect(prediction.thumbnail_url).toBeUndefined();
 });
 
 test("maps admin predictions camelCase into Supabase snake_case fields", () => {
@@ -150,6 +156,8 @@ test("maps admin predictions camelCase into Supabase snake_case fields", () => {
     userId: "SV001",
     binId: "BIN-A1-RECYCLE",
     imageName: "plastic.jpg",
+    imageUrl: "https://storage.example/full.jpg",
+    thumbnailUrl: "https://storage.example/thumb.jpg",
   });
 
   expect(payload).toEqual(expect.objectContaining({
@@ -157,11 +165,22 @@ test("maps admin predictions camelCase into Supabase snake_case fields", () => {
     user_id: "SV001",
     bin_id: "BIN-A1-RECYCLE",
     image_name: "plastic.jpg",
+    image_url: "https://storage.example/full.jpg",
+    thumbnail_url: "https://storage.example/thumb.jpg",
   }));
   expect(payload.binGroup).toBeUndefined();
   expect(payload.userId).toBeUndefined();
   expect(payload.binId).toBeUndefined();
   expect(payload.imageName).toBeUndefined();
+  expect(payload.imageUrl).toBeUndefined();
+  expect(payload.thumbnailUrl).toBeUndefined();
+});
+
+test("builds safe Supabase Storage paths for AI review images", () => {
+  const path = __testing.buildPredictionImagePath("Ảnh chai nhựa #1.JPG", new Date("2026-08-02T08:10:00.000Z"), 0.5);
+
+  expect(path).toBe("ai-reviews/2026-08-02/500000-anh-chai-nhua-1.jpg");
+  expect(path).not.toMatch(/[\s#À-ỹ]/);
 });
 
 test("maps Supabase point rules snake_case into clean admin point rules", () => {

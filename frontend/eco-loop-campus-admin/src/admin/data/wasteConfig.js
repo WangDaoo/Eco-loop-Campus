@@ -108,6 +108,10 @@ function normalizeStatus(value, fallback = "pending") {
   return typeof value === "string" && value.trim() ? value.trim().toLowerCase() : fallback;
 }
 
+function normalizeImageUrl(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
 export function normalizePrediction(record) {
   const rawClass = typeof record.class === "string" ? record.class : typeof record.className === "string" ? record.className : "trash";
   const classKey = rawClass.trim().toLowerCase() || "trash";
@@ -124,5 +128,7 @@ export function normalizePrediction(record) {
     userId: record.userId ?? null,
     binId: record.binId ?? null,
     imageName: record.imageName || record.fileName || "Ảnh kiểm thử",
+    imageUrl: normalizeImageUrl(record.imageUrl || record.image_url),
+    thumbnailUrl: normalizeImageUrl(record.thumbnailUrl || record.thumbnail_url),
   };
 }
