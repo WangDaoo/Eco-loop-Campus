@@ -1507,7 +1507,146 @@ Backlog triển khai sát nhất cho mobile:
 | P2 | Indoor map theo tòa/tầng/phòng | Tìm trạm chính xác hơn GPS |
 | P3 | Eco Community, partner, batch, sponsor | Mở rộng hệ sinh thái tuần hoàn |
 
-## 31. Kết luận
+## 31. Kế hoạch kiểm tra mức độ bám Eco-loop Campus
+
+Mục tiêu của bước này là thao tác lần lượt từng chức năng nhỏ trong app mobile, chụp lại bằng chứng màn hình, ghi kết quả và tính xem app hiện tại đã bám nghiệp vụ Eco-loop Campus đến mức nào. Không đánh giá chung chung; mỗi chức năng phải có trạng thái rõ ràng: `Đạt`, `Đạt một phần`, `Chưa đạt`, hoặc `Chưa kiểm tra được`.
+
+### 31.1. Chuẩn bị môi trường kiểm tra
+
+Thiết bị kiểm tra chính:
+
+- Android Studio Emulator, AVD `Pixel`.
+- Expo Go mở app `Ecoloop Campus`.
+- Frontend/admin web nếu cần đối chiếu dữ liệu: `http://127.0.0.1:3000/#/dashboard`.
+- Backend AI nếu kiểm tra phân loại ảnh: `http://127.0.0.1:8000`.
+- Supabase project thật đã chạy schema mobile/admin.
+
+Lệnh kiểm tra nền trước khi thao tác app:
+
+```powershell
+cd D:\Project\NỔ NỔ\Eco-loop-Campus\ecoloop-campus-mobile\ecoloop-campus-mobile
+npm run typecheck
+npm run smoke:supabase
+npm test
+```
+
+Lệnh mở app trên Android Studio Emulator:
+
+```powershell
+$adb="$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb reverse tcp:8081 tcp:8081
+& $adb reverse tcp:8000 tcp:8000
+& $adb shell am start -W -a android.intent.action.VIEW -d "exp://10.0.2.2:8081" host.exp.exponent
+```
+
+Lệnh chụp bằng chứng màn hình sau mỗi nhóm chức năng:
+
+```powershell
+$adb="$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb shell screencap -p /sdcard/ecoloop-check.png
+& $adb pull /sdcard/ecoloop-check.png C:\Temp\ecoloop-check-<step>.png
+```
+
+Quy ước đặt tên ảnh:
+
+```text
+01-login-student.png
+02-student-home.png
+03-create-submission.png
+04-qr-created.png
+05-volunteer-login.png
+06-volunteer-scan.png
+07-proof-confirm.png
+08-student-history-points.png
+09-feedback.png
+10-ai-suggestion.png
+```
+
+### 31.2. Ma trận kiểm tra chức năng nhỏ
+
+| Nhóm | Chức năng nhỏ | Cách thao tác kiểm tra | Dữ liệu cần đối chiếu | Kết quả mong muốn | Trạng thái hiện tại |
+|---|---|---|---|---|---|
+| Auth | Mở app từ Expo Go | Mở deep link Expo trên Android Studio Emulator | Không cần DB | App vào Splash/Login, không crash | Đã kiểm tra: đạt |
+| Auth | Đăng nhập sinh viên | Chọn `Sinh viên`, nhập tài khoản student test | `users.role = student` | Vào Student Home | Đã kiểm tra: đạt |
+| Auth | Đăng nhập volunteer | Đăng xuất, chọn `Volunteer`, nhập tài khoản volunteer test | `users.role = volunteer` | Vào Volunteer tabs | Cần kiểm tra lại bằng thao tác |
+| Auth | Đăng ký user mới | Mở Register, tạo tài khoản student mới | Supabase Auth + `users` | Có profile mới, role đúng | Cần kiểm tra |
+| Home | Ví Ecopoint | Vào Home sau login student | `users.points`, `point_history` | Điểm hiển thị không double-count | Đạt theo service test, cần chụp |
+| Home | Nhiệm vụ xanh | Xem danh sách nhiệm vụ tuần | `missions`, `user_missions` | Progress đúng, không cho cộng tay sai nghiệp vụ | Cần sửa/test fail đang báo lệch copy |
+| Stations | Danh sách trạm | Vào tab Bản đồ/Trạm | `bins` | Thấy 3 trạm seed, trạng thái/sức chứa đúng | Cần chụp |
+| Stations | Map campus | Chạm marker trạm | `bins.map_x`, `bins.map_y` | Hiện chi tiết trạm, không tràn UI | Cần chụp |
+| Submission | Chọn trạm | Vào Gửi rác, chọn từng trạm | `bins.id` | Station id cập nhật đúng | Cần kiểm tra |
+| Submission | Chọn loại rác | Chọn từng `waste_types` | `waste_types` | Hiện đơn vị/điểm tương ứng | Cần kiểm tra |
+| Submission | Nhập số lượng hợp lệ | Nhập `1`, `2.5`, tạo QR | `recycling_submissions` | Tạo submission `CREATED`, có `qr_token`, `expired_at` | Cần kiểm tra thật |
+| Submission | Chặn số lượng sai | Nhập `0`, âm, text rỗng | Không ghi DB | Hiện cảnh báo, không tạo submission | Cần kiểm tra |
+| QR | QR giao dịch một lần | Tạo QR mới rồi dùng volunteer nhập/quét | `recycling_submissions`, `qr_scan_logs` | `CREATED -> QR_SCANNED`, log `SUCCESS` | Cần kiểm tra thật |
+| QR | QR sai trạm | Volunteer chọn trạm khác rồi quét QR | `qr_scan_logs` | Không xác nhận, log `WRONG_STATION` | Có service test, cần thao tác |
+| QR | QR đã dùng | Quét lại QR đã xử lý | `qr_scan_logs` | Log `ALREADY_USED`, không cộng điểm lần hai | Cần kiểm tra |
+| QR | QR hết hạn | Dùng QR quá `expired_at` hoặc seed test | `recycling_submissions.status` | `EXPIRED`, không cộng điểm | Service test đang có fail cần sửa |
+| Volunteer | Chọn trạm trực | Vào màn Ca trực, đổi trạm | `bins` | Scanner dùng đúng `dutyStationId` | Cần kiểm tra |
+| Volunteer | Xem chi tiết giao dịch | Quét/nhập QR hợp lệ | `recycling_submissions` | Hiện user, loại rác, số lượng, trạng thái | Cần kiểm tra |
+| Volunteer | Chụp proof image | Trong modal xác nhận, chụp ảnh | Supabase Storage `proof-images`, `proof_images` | Có ảnh proof gắn submission | Cần kiểm tra thật |
+| Volunteer | Confirm điểm | Nhập actual quantity, xác nhận | `point_history`, `users.points` | Ghi điểm đúng rule, submission `POINT_CONFIRMED` | Cần chuyển sang RPC atomic sau MVP |
+| Volunteer | Reject | Từ chối kèm ghi chú | `recycling_submissions` | Status `REJECTED`, không cộng điểm | Cần kiểm tra |
+| Volunteer | Request review | Yêu cầu kiểm tra lại | `recycling_submissions` | Status `PENDING_REVIEW`, có note/proof | Cần kiểm tra |
+| History | Lịch sử student | Student mở lịch sử sau khi tạo/xác nhận | `recycling_submissions`, `point_history` | Hiện đúng trạng thái và điểm | Cần kiểm tra |
+| Rewards | Danh sách phần thưởng | Mở tab Đổi thưởng | `rewards` | Hiện 3 reward seed | Cần chụp |
+| Rewards | Đổi thưởng đủ điểm | User có đủ điểm bấm đổi | `reward_redemptions` | Tạo request, chưa tự duyệt | Cần kiểm tra |
+| Rewards | Chặn thiếu điểm | User 0 điểm bấm reward cao | Không ghi DB | Không tạo redemption | Cần kiểm tra |
+| Feedback | Gửi phản hồi | Nhập phản hồi thùng đầy/QR lỗi | `feedback` | Ghi feedback, admin web thấy cảnh báo | Cần kiểm tra thật |
+| AI | Backend health | Mở `http://127.0.0.1:8000/` | FastAPI | Trả backend running | Hiện chưa bật backend |
+| AI | Chụp/tải ảnh phân loại | Bấm Chụp ảnh AI/Tải ảnh trong Gửi rác | `/predict`, `predictions`, Storage | Trả class/confidence, lưu prediction | Cần bật backend và kiểm tra |
+| AI | Backend tắt | Tắt FastAPI rồi bấm AI | Không ghi sai DB | App báo lỗi rõ, không crash | Cần kiểm tra |
+| Sync | Supabase online | Login khi Supabase đủ schema | `syncSource = supabase` | Badge báo dữ liệu thật | Smoke pass, cần chụp |
+| Sync | Fallback mock | Tắt config hoặc schema thiếu | Mock data | Badge offline rõ, không giả vờ đã ghi DB | Test copy đang fail cần sửa |
+| Admin đối chiếu | Submissions hiện trên web | Sau khi tạo QR mobile, mở admin/reports/scans/ecopoints | Supabase | Web nhìn được dữ liệu liên quan | Cần kiểm tra |
+
+### 31.3. Cách chấm mức độ bám Eco-loop Campus
+
+Tính điểm theo 5 trục chính, tổng 100 điểm:
+
+| Trục đánh giá | Điểm tối đa | Điều kiện đạt |
+|---|---:|---|
+| Student operation flow | 25 | Login, xem trạm, chọn loại rác, tạo submission, thấy QR/lịch sử |
+| Volunteer verification flow | 25 | Chọn trạm, quét QR, proof image, accept/reject, QR logs |
+| Ecopoint & reward loop | 20 | Điểm chỉ cộng sau xác nhận, lịch sử điểm, leaderboard/reward hoạt động |
+| Admin/data integration | 15 | Dữ liệu mobile hiện trên admin/report, feedback tạo cảnh báo |
+| AI hỗ trợ đúng vai | 15 | AI chỉ gợi ý/kiểm chứng, không tự cộng điểm, lỗi backend không làm hỏng flow chính |
+
+Quy đổi trạng thái:
+
+```text
+0-39   điểm: Chưa bám nghiệp vụ, mới là UI/demo rời rạc.
+40-59  điểm: Bám một phần, có vài màn nhưng chưa khép vòng vận hành.
+60-79  điểm: Bám khá, demo được end-to-end nhưng còn thiếu an toàn/backend atomic.
+80-100 điểm: Bám tốt, đủ demo trường học và có nền backend an toàn để mở rộng.
+```
+
+### 31.4. Thứ tự thao tác kiểm tra end-to-end
+
+1. Mở app trên Android Studio Emulator, chụp `01-login-student.png`.
+2. Đăng nhập student, chụp Home và Sync badge.
+3. Mở Bản đồ/Trạm, chạm từng trạm, chụp chi tiết trạm.
+4. Vào Gửi rác, chọn trạm, chọn loại rác, nhập số lượng hợp lệ.
+5. Tạo QR, ghi lại `qr_token`, chụp màn QR.
+6. Đăng xuất, đăng nhập volunteer.
+7. Chọn đúng trạm trực, nhập hoặc quét `qr_token`.
+8. Kiểm tra modal giao dịch, nhập actual quantity, chụp proof.
+9. Bấm confirm, chụp trạng thái sau confirm.
+10. Đăng nhập lại student, kiểm tra điểm/lịch sử/submission status.
+11. Gửi feedback thùng đầy, mở admin web kiểm tra cảnh báo.
+12. Bật FastAPI, thử AI bằng ảnh upload, kiểm tra `predictions` lưu đúng.
+13. Tắt FastAPI, thử AI lỗi, xác nhận app không crash và flow QR vẫn chạy.
+14. Chạy lại `npm run smoke:supabase` để chắc dữ liệu thật vẫn đọc được.
+
+### 31.5. Bảng kết luận sau mỗi vòng kiểm tra
+
+Sau khi thao tác xong, cập nhật bảng này để biết việc tiếp theo nên sửa gì:
+
+| Vòng kiểm tra | Ngày | Thiết bị | Tổng điểm | Mức bám | Blocker lớn nhất | Việc ưu tiên tiếp theo |
+|---|---|---|---:|---|---|---|
+| Vòng 1 | Chưa chạy đủ | Android Studio Emulator Pixel | Chưa chấm | Chưa kết luận | Backend AI chưa bật, test mobile còn fail | Sửa test fail, bật backend, kiểm tra QR end-to-end |
+
+## 32. Kết luận
 
 App mobile nên bám Eco-loop Campus: phân loại, thu gom, QR xác nhận, tình nguyện viên kiểm tra, Ecopoint, nhiệm vụ xanh, bảng xếp hạng, map nội bộ và báo cáo. Eco-loop Campus admin web là nền quản trị tốt để mở rộng. FastAPI MobileNetV2 là lợi thế AI, nhưng không phải nguồn quyết định điểm duy nhất.
 

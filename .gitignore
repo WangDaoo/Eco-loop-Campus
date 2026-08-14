@@ -27,3 +27,29 @@ start.md
 frontend/eco-loop-campus-admin/supabase/.temp/
 **/supabase/.temp/
 
+# Runtime/debug artifacts generated while testing mobile and emulators
+*.log
+*.err.log
+/*.png
+*.zip
+backups/
+demo/
+mobile-audit/
+ecoloop-campus-mobile/ecoloop-campus-mobile/.expo/
+ecoloop-campus-mobile/ecoloop-campus-mobile/.idea/
+ecoloop-campus-mobile/ecoloop-campus-mobile/dist/
+ecoloop-campus-mobile/ecoloop-campus-mobile/android/.gradle/
+ecoloop-campus-mobile/ecoloop-campus-mobile/android/**/build/
+ecoloop-campus-mobile/ecoloop-campus-mobile/*.png
+ecoloop-campus-mobile/ecoloop-campus-mobile/*.log
+ecoloop-campus-mobile/ecoloop-campus-mobile/log.txt
+ecoloop-campus-mobile/ecoloop-campus-mobile/analysis_results.md
+ecoloop-campus-mobile/ecoloop-campus-mobile/debug-bundle.*
+ecoloop-campus-mobile/ecoloop-campus-mobile/tombstone_*.txt
+ecoloop-campus-mobile/ecoloop-campus-mobile/window.xml
+ecoloop-campus-mobile/ecoloop-campus-mobile/native-window.xml
+ecoloop-campus-mobile/ecoloop-campus-mobile/adb.exe
+ecoloop-campus-mobile/ecoloop-campus-mobile/AdbWin*.dll
+ecoloop-campus-mobile/ecoloop-campus-mobile/android/local.properties
+ecoloop-campus-mobile/ecoloop-campus-mobile/supabase/schema.sql
+

@@ -1,0 +1,36 @@
+﻿{
+    "expo":  {
+                 "name":  "Ecoloop Campus",
+                 "slug":  "ecoloop-campus-mobile",
+                 "version":  "1.0.0",
+                 "orientation":  "portrait",
+                 "userInterfaceStyle":  "light",
+                 "jsEngine":  "hermes",
+                 "splash":  {
+                                "backgroundColor":  "#F9D8CF"
+                            },
+                 "assetBundlePatterns":  [
+                                             "**/*"
+                                         ],
+                 "ios":  {
+                             "supportsTablet":  true
+                         },
+                 "android":  {
+                                 "package":  "com.ecoloopcampus.mobile",
+                                 "adaptiveIcon":  {
+                                                      "backgroundColor":  "#F9D8CF"
+                                                  }
+                             },
+                 "plugins":  [
+                                 "expo-font",
+                                 [
+                                     "expo-image-picker",
+                                     {
+                                         "photosPermission":  "Eco-loop Campus needs photo access so AI can suggest waste classification.",
+                                         "cameraPermission":  "Eco-loop Campus needs camera access so AI can suggest waste classification."
+                                     }
+                                 ],
+                                 "react-native-fast-tflite"
+                             ]
+             }
+}

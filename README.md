@@ -475,6 +475,25 @@ Detailed function test plan:
 FUNCTION_TEST_ROADMAP.md
 ```
 
+Mobile operation audit:
+
+```text
+MOBILE_APP_HANDOFF.md - Section 31: Kế hoạch kiểm tra mức độ bám Eco-loop Campus
+```
+
+Use this audit before building the next mobile backend phase. It checks each small app function one by one, captures emulator screenshots as evidence, compares mobile data with Supabase/admin web, and scores how closely the app follows the Eco-loop Campus operation-first flow.
+
+Minimum audit order:
+
+1. Open the app in Android Studio Emulator through Expo Go.
+2. Login as student and capture Home, wallet, missions, and sync state.
+3. Create a recycling submission and capture the generated QR transaction.
+4. Login as volunteer, scan or enter that QR, capture proof, then accept/reject.
+5. Reopen student history and Ecopoint wallet to verify the status and point result.
+6. Send feedback and verify the alert appears in the admin web.
+7. Start FastAPI, test AI suggestion through `/predict`, then test the app behavior when FastAPI is unavailable.
+8. Record each result as `Đạt`, `Đạt một phần`, `Chưa đạt`, or `Chưa kiểm tra được`.
+
 ---
 
 ## Credits and Acknowledgements
