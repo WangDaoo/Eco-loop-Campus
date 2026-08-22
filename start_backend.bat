@@ -2,14 +2,17 @@
 chcp 65001 >nul
 setlocal
 
-REM Eco-loop Campus - Backend launcher
+REM Eco-loop Campus - public FastAPI launcher
 set "PROJECT_DIR=%~dp0"
 set "BACKEND_DIR=%PROJECT_DIR%backend"
+set "SCRIPTS_DIR=%PROJECT_DIR%scripts"
+set "RUNTIME_DIR=%PROJECT_DIR%.runtime"
 set "VENV_PY=%BACKEND_DIR%\.venv\Scripts\python.exe"
 
-REM Fix Unicode path/output issues on Windows paths like NO NO with Vietnamese accents
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
+if "%BACKEND_HOST%"=="" set "BACKEND_HOST=127.0.0.1"
+if "%BACKEND_PORT%"=="" set "BACKEND_PORT=8000"
 
 if not exist "%BACKEND_DIR%\app.py" (
     echo [ERROR] Khong tim thay app.py tai:
@@ -18,17 +21,24 @@ if not exist "%BACKEND_DIR%\app.py" (
     exit /b 1
 )
 
-cd /d "%BACKEND_DIR%"
+if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%"
+del "%RUNTIME_DIR%\api_public_url.txt" >nul 2>nul
 
-echo [INFO] Dang khoi dong backend...
-echo [INFO] Thu muc: %CD%
+echo [INFO] Kiem tra va tu cai moi truong backend/public tunnel neu thieu...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\ensure_windows_runtime.ps1" -Mode backend
+if errorlevel 1 (
+    echo [ERROR] Kiem tra/cai moi truong backend that bai.
+    pause
+    exit /b 1
+)
+
+cd /d "%BACKEND_DIR%"
 
 if not exist "%VENV_PY%" (
     echo [INFO] Chua co virtual environment. Dang tao .venv bang Python 3.10...
     py -3.10 -m venv .venv
     if errorlevel 1 (
         echo [ERROR] Khong tao duoc .venv. Hay cai Python 3.10 roi chay lai.
-        echo [INFO] Tai Python 3.10: https://www.python.org/downloads/release/python-31011/
         pause
         exit /b 1
     )
@@ -43,9 +53,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [INFO] Backend se chay tai: http://localhost:8000
-echo [INFO] API docs: http://localhost:8000/docs
+echo [INFO] Dang mo API public tunnel...
+start "Eco-loop Campus API Public" powershell -NoExit -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\run_cloudflared_tunnel.ps1" -Name "Eco-loop Campus API" -Url "http://%BACKEND_HOST%:%BACKEND_PORT%" -OutFile "%RUNTIME_DIR%\api_public_url.txt"
+
+echo [INFO] Backend local: http://%BACKEND_HOST%:%BACKEND_PORT%
+echo [INFO] API docs local: http://%BACKEND_HOST%:%BACKEND_PORT%/docs
+echo [INFO] API public URL se hien trong cua so "Eco-loop Campus API Public".
 echo [INFO] Nhan Ctrl+C de dung server.
-"%VENV_PY%" -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
+"%VENV_PY%" -m uvicorn app:app --host %BACKEND_HOST% --port %BACKEND_PORT% --workers 1
 
 pause
