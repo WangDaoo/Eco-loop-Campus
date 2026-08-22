@@ -419,6 +419,48 @@ test("maps admin reward redemptions camelCase into Supabase snake_case fields", 
   expect(payload.adminNote).toBeUndefined();
 });
 
+test("maps Supabase reward catalog snake_case into admin reward products", () => {
+  const reward = __testing.fromRewardCatalog({
+    id: "coffee",
+    title: "Cà phê căn tin",
+    description: "Giảm 50% một ly bất kỳ",
+    cost_points: "300",
+    status: "active",
+    color: "#F6B83F",
+  });
+
+  expect(reward).toEqual(expect.objectContaining({
+    id: "coffee",
+    title: "Cà phê căn tin",
+    description: "Giảm 50% một ly bất kỳ",
+    costPoints: 300,
+    status: "active",
+    color: "#F6B83F",
+  }));
+  expect(reward.cost_points).toBeUndefined();
+});
+
+test("maps admin reward products into Supabase reward catalog fields", () => {
+  const payload = __testing.toRewardCatalog({
+    id: "coffee",
+    title: "Cà phê căn tin",
+    description: "Giảm 50% một ly bất kỳ",
+    costPoints: 300,
+    status: "active",
+    color: "#F6B83F",
+  });
+
+  expect(payload).toEqual(expect.objectContaining({
+    id: "coffee",
+    title: "Cà phê căn tin",
+    description: "Giảm 50% một ly bất kỳ",
+    cost_points: 300,
+    status: "active",
+    color: "#F6B83F",
+  }));
+  expect(payload.costPoints).toBeUndefined();
+});
+
 test("maps Supabase model settings snake_case and clamps invalid threshold", () => {
   const settings = __testing.fromSettings({
     id: "model",
@@ -492,4 +534,20 @@ test("manual point fallback treats malformed local user points as zero", async (
 
   expect(response.source).toBe("local");
   expect(getUsers()[0].points).toBe(12);
+});
+test("maps avatar fields between Supabase and admin users", () => {
+  const user = __testing.fromUser({
+    id: "SV003",
+    name: "Avatar User",
+    email: "avatar@school.edu.vn",
+    role: "student",
+    group: "CNTT K20",
+    points: 12,
+    status: "active",
+    avatar_key: "wave",
+    avatar_url: "https://cdn.example/avatar.png",
+  });
+
+  expect(user).toEqual(expect.objectContaining({ avatarKey: "wave", avatarUrl: "https://cdn.example/avatar.png" }));
+  expect(__testing.toUser(user)).toEqual(expect.objectContaining({ avatar_key: "wave", avatar_url: "https://cdn.example/avatar.png" }));
 });

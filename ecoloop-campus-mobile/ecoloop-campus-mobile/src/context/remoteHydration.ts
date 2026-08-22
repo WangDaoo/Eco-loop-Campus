@@ -23,7 +23,7 @@ export function resolveRemoteHydrationState(data: MobileInitialData, readiness: 
   if (!readiness.ok) {
     return {
       syncSource: 'mock',
-      syncError: `Supabase thieu du lieu van hanh: ${readiness.missing.join(', ')}. Hay chay supabase/schema.sql va seed du lieu mau.`,
+      syncError: `Chưa có đủ dữ liệu trạm hoặc loại rác để vận hành (${readiness.missing.join(', ')}). Vui lòng đồng bộ dữ liệu trước khi tiếp tục.`,
       users: mockUsers,
       stations: mockStations,
       wasteTypes: mockWasteTypes,

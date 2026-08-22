@@ -44,7 +44,7 @@ function isValidEmail(value) {
 
 function statusCode(value) {
   const normalized = String(value || "active").trim().toLowerCase();
-  return normalized === "locked" ? "locked" : "active";
+  return ["active", "locked", "pending", "rejected"].includes(normalized) ? normalized : "active";
 }
 
 function groupLabel(value) {
@@ -129,13 +129,25 @@ export default function UsersPage() {
     setForm(emptyForm);
   };
 
-  const lockUser = async user => {
-    const nextStatus = statusCode(user.status) === "locked" ? "active" : "locked";
+  const changeUserStatus = async (user, nextStatus, message = "Đã cập nhật trạng thái người dùng") => {
     const response = await updateUserStatus(user, nextStatus);
     setUsers(current => current.map(item => item.id === user.id ? response.data : item));
     setSource(response.source);
     setError(response.error);
-    showToast("Đã cập nhật trạng thái người dùng");
+    showToast(message);
+  };
+
+  const lockUser = async user => {
+    const nextStatus = statusCode(user.status) === "locked" ? "active" : "locked";
+    await changeUserStatus(user, nextStatus);
+  };
+
+  const approveUser = async user => {
+    await changeUserStatus(user, "active", "Đã duyệt tài khoản tình nguyện viên");
+  };
+
+  const rejectUser = async user => {
+    await changeUserStatus(user, "rejected", "Đã từ chối yêu cầu cấp quyền");
   };
 
   const saveUserForm = async event => {
@@ -191,12 +203,24 @@ export default function UsersPage() {
     {
       key: "action",
       label: "Thao tác",
-      render: row => (
-        <div className="eg-button-row">
-          <button type="button" className="eg-small-btn" aria-label={`Sửa ${row.id}`} onClick={() => openEditModal(row)}>Sửa</button>
-          <button type="button" className="eg-small-btn" onClick={() => lockUser(row)}>{statusCode(row.status) === "locked" ? "Mở khóa" : "Khóa"}</button>
-        </div>
-      ),
+      render: row => {
+        const currentStatus = statusCode(row.status);
+        if (currentStatus === "pending") {
+          return (
+            <div className="eg-button-row">
+              <button type="button" className="eg-small-btn" onClick={() => approveUser(row)}>Duyệt</button>
+              <button type="button" className="eg-small-btn" onClick={() => rejectUser(row)}>Từ chối</button>
+            </div>
+          );
+        }
+        return (
+          <div className="eg-button-row">
+            <button type="button" className="eg-small-btn" aria-label={`Sửa ${row.id}`} onClick={() => openEditModal(row)}>Sửa</button>
+            {currentStatus === "rejected" && <button type="button" className="eg-small-btn" onClick={() => approveUser(row)}>Duyệt lại</button>}
+            <button type="button" className="eg-small-btn" onClick={() => lockUser(row)}>{currentStatus === "locked" ? "Mở khóa" : "Khóa"}</button>
+          </div>
+        );
+      },
     },
   ];
 
@@ -234,6 +258,8 @@ export default function UsersPage() {
             <select value={status} onChange={event => setStatus(event.target.value)}>
               <option value="all">Tất cả</option>
               <option value="active">Đang hoạt động</option>
+              <option value="pending">Chờ duyệt</option>
+              <option value="rejected">Từ chối</option>
               <option value="locked">Đã khóa</option>
             </select>
           </label>

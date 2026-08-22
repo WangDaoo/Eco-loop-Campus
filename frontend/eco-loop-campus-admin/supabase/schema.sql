@@ -6,8 +6,21 @@ create table if not exists public.users (
   "group" text,
   points integer not null default 0,
   status text not null default 'active',
+  avatar_key text,
+  avatar_url text,
   created_at timestamptz not null default now()
 );
+
+alter table public.users add column if not exists avatar_key text;
+alter table public.users add column if not exists avatar_url text;
+
+update public.users
+set status = 'active'
+where status is null or lower(trim(status)) not in ('active', 'locked', 'pending', 'rejected');
+
+alter table public.users drop constraint if exists users_status_check;
+alter table public.users add constraint users_status_check
+  check (lower(trim(status)) in ('active', 'locked', 'pending', 'rejected'));
 
 create table if not exists public.bins (
   id text primary key,
@@ -269,8 +282,8 @@ create policy "admin delete prediction images" on storage.objects
   for delete to authenticated
   using (bucket_id = 'prediction-images' and public.is_admin());
 
-insert into public.users (id, name, email, role, "group", points, status)
-values ('AD001', 'Quản trị Eco-loop Campus', 'admin@school.edu.vn', 'admin', 'Ban vận hành', 0, 'active')
+insert into public.users (id, name, email, role, "group", points, status, avatar_key)
+values ('AD001', 'Quản trị Eco-loop Campus', 'admin@school.edu.vn', 'admin', 'Ban vận hành', 0, 'active', 'sprout')
 on conflict (id) do update set
   name = excluded.name,
   email = excluded.email,
@@ -278,10 +291,10 @@ on conflict (id) do update set
   "group" = excluded."group",
   status = excluded.status;
 
-insert into public.users (id, name, email, role, "group", points, status)
+insert into public.users (id, name, email, role, "group", points, status, avatar_key)
 values
-  ('student-smoke', 'Sinh viên Smoke Test', 'student@school.edu.vn', 'student', 'Khoa Công nghệ thông tin', 0, 'active'),
-  ('volunteer-smoke', 'Volunteer Smoke Test', 'volunteer@school.edu.vn', 'volunteer', 'CLB Môi trường', 0, 'active')
+  ('student-smoke', 'Sinh viên Smoke Test', 'student@school.edu.vn', 'student', 'Khoa Công nghệ thông tin', 0, 'active', 'sprout'),
+  ('volunteer-smoke', 'Volunteer Smoke Test', 'volunteer@school.edu.vn', 'volunteer', 'CLB Môi trường', 0, 'active', 'wave')
 on conflict (email) do update set
   name = excluded.name,
   role = excluded.role,
@@ -405,6 +418,295 @@ as $$
       and status = 'active'
   );
 $$;
+
+create or replace function public.create_recycling_submission(
+  p_bin_id text,
+  p_waste_type_id text,
+  p_quantity numeric
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id text := public.current_profile_id();
+  v_waste public.waste_types%rowtype;
+  v_submission public.recycling_submissions%rowtype;
+  v_suffix text := to_char(clock_timestamp(), 'YYYYMMDDHH24MISS') || '-' || lpad(floor(random() * 1000000)::text, 6, '0');
+begin
+  if v_user_id is null then
+    raise exception 'PROFILE_NOT_FOUND';
+  end if;
+
+  if coalesce(p_quantity, 0) <= 0 then
+    raise exception 'INVALID_QUANTITY';
+  end if;
+
+  if not exists (select 1 from public.bins where id = p_bin_id) then
+    raise exception 'INVALID_STATION';
+  end if;
+
+  select * into v_waste
+  from public.waste_types
+  where id = p_waste_type_id and status = 'active';
+
+  if not found then
+    raise exception 'INVALID_WASTE_TYPE';
+  end if;
+
+  insert into public.recycling_submissions (
+    id, user_id, bin_id, waste_type_id, quantity, unit, qr_token, qr_signature, status, created_at, expired_at
+  ) values (
+    'sub-' || v_suffix,
+    v_user_id,
+    p_bin_id,
+    p_waste_type_id,
+    p_quantity,
+    v_waste.unit,
+    'ECO-' || v_suffix,
+    md5(v_user_id || ':' || p_bin_id || ':' || p_waste_type_id || ':' || v_suffix),
+    'CREATED',
+    now(),
+    now() + interval '45 minutes'
+  )
+  returning * into v_submission;
+
+  return to_jsonb(v_submission);
+end;
+$$;
+
+create or replace function public.scan_recycling_qr(
+  p_qr_token text,
+  p_station_id text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_token text := upper(trim(coalesce(p_qr_token, '')));
+  v_scanned_by text := public.current_profile_id();
+  v_submission public.recycling_submissions%rowtype;
+  v_result text;
+  v_note text;
+begin
+  if not public.is_volunteer_or_admin() then
+    insert into public.qr_scan_logs (id, qr_token, scanned_by, station_id, result, note, scanned_at)
+    values ('scan-' || extract(epoch from clock_timestamp())::bigint || '-' || floor(random() * 100000)::int, v_token, v_scanned_by, p_station_id, 'INVALID_ROLE', 'Tai khoan khong co quyen xac minh QR', now());
+    return jsonb_build_object('result', 'INVALID_ROLE', 'note', 'Tai khoan khong co quyen xac minh QR');
+  end if;
+
+  select * into v_submission
+  from public.recycling_submissions
+  where qr_token = v_token
+  for update skip locked;
+
+  if not found then
+    insert into public.qr_scan_logs (id, qr_token, scanned_by, station_id, result, note, scanned_at)
+    values ('scan-' || extract(epoch from clock_timestamp())::bigint || '-' || floor(random() * 100000)::int, v_token, v_scanned_by, p_station_id, 'INVALID_TOKEN', 'QR khong ton tai trong he thong', now());
+    return jsonb_build_object('result', 'INVALID_TOKEN', 'note', 'QR khong ton tai trong he thong');
+  end if;
+
+  if v_submission.expired_at < now() and v_submission.status = 'CREATED' then
+    update public.recycling_submissions
+    set status = 'EXPIRED', verified_by = v_scanned_by, verified_at = now()
+    where id = v_submission.id
+    returning * into v_submission;
+    v_result := 'EXPIRED';
+    v_note := 'QR da het han';
+  elsif p_station_id is not null and v_submission.bin_id <> p_station_id then
+    v_result := 'WRONG_STATION';
+    v_note := 'QR khong thuoc tram dang truc';
+  elsif v_submission.status <> 'CREATED' then
+    v_result := 'ALREADY_USED';
+    v_note := 'QR da duoc xu ly truoc do';
+  else
+    update public.recycling_submissions
+    set status = 'QR_SCANNED', verified_by = v_scanned_by, verified_at = now()
+    where id = v_submission.id
+    returning * into v_submission;
+    v_result := 'SUCCESS';
+    v_note := 'QR hop le';
+  end if;
+
+  insert into public.qr_scan_logs (id, qr_token, scanned_by, station_id, result, note, scanned_at)
+  values ('scan-' || extract(epoch from clock_timestamp())::bigint || '-' || floor(random() * 100000)::int, v_token, v_scanned_by, p_station_id, v_result, v_note, now());
+
+  return jsonb_build_object('result', v_result, 'submission', to_jsonb(v_submission), 'note', v_note);
+end;
+$$;
+
+create or replace function public.confirm_recycling_submission(
+  p_submission_id text,
+  p_actual_quantity numeric,
+  p_volunteer_note text default ''
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_volunteer_id text := public.current_profile_id();
+  v_submission public.recycling_submissions%rowtype;
+  v_waste public.waste_types%rowtype;
+  v_point public.point_history%rowtype;
+  v_points integer;
+  v_user_points integer;
+begin
+  if not public.is_volunteer_or_admin() then
+    raise exception 'INVALID_ROLE';
+  end if;
+
+  if coalesce(p_actual_quantity, 0) <= 0 then
+    raise exception 'INVALID_QUANTITY';
+  end if;
+
+  select * into v_submission
+  from public.recycling_submissions
+  where id = p_submission_id
+  for update skip locked;
+
+  if not found then
+    raise exception 'SUBMISSION_NOT_FOUND';
+  end if;
+
+  if v_submission.status <> 'QR_SCANNED' then
+    raise exception 'QR_NOT_SCANNED';
+  end if;
+
+  if not exists (select 1 from public.proof_images where submission_id = p_submission_id and status <> 'rejected') then
+    raise exception 'PROOF_IMAGE_REQUIRED';
+  end if;
+
+  select * into v_waste from public.waste_types where id = v_submission.waste_type_id;
+  if not found then
+    raise exception 'INVALID_WASTE_TYPE';
+  end if;
+
+  v_points := greatest(0, round(p_actual_quantity * v_waste.point_per_unit)::integer);
+
+  update public.recycling_submissions
+  set status = 'POINT_CONFIRMED',
+      actual_quantity = p_actual_quantity,
+      verified_by = v_volunteer_id,
+      verified_at = now(),
+      volunteer_note = coalesce(p_volunteer_note, '')
+  where id = p_submission_id
+  returning * into v_submission;
+
+  insert into public.point_history (
+    user_id, bin_id, submission_id, class, bin_group, action, description, points, status, source, admin_note, timestamp, created_at
+  ) values (
+    v_submission.user_id,
+    v_submission.bin_id,
+    v_submission.id,
+    v_waste.id,
+    v_waste.name,
+    'Xac nhan ' || p_actual_quantity || ' ' || v_waste.unit || ' ' || v_waste.name,
+    'Xac nhan ' || p_actual_quantity || ' ' || v_waste.unit || ' ' || v_waste.name,
+    v_points,
+    'confirmed',
+    'volunteer_verification',
+    coalesce(p_volunteer_note, ''),
+    now(),
+    now()
+  ) returning * into v_point;
+
+  update public.users
+  set points = coalesce(points, 0) + v_points
+  where id = v_submission.user_id
+  returning points into v_user_points;
+
+  return jsonb_build_object('submission', to_jsonb(v_submission), 'point', to_jsonb(v_point), 'updated_user_points', coalesce(v_user_points, 0));
+end;
+$$;
+
+create or replace function public.reject_recycling_submission(
+  p_submission_id text,
+  p_volunteer_note text default ''
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_volunteer_id text := public.current_profile_id();
+  v_submission public.recycling_submissions%rowtype;
+begin
+  if not public.is_volunteer_or_admin() then
+    raise exception 'INVALID_ROLE';
+  end if;
+
+  select * into v_submission
+  from public.recycling_submissions
+  where id = p_submission_id
+  for update skip locked;
+
+  if not found then
+    raise exception 'SUBMISSION_NOT_FOUND';
+  end if;
+
+  if v_submission.status in ('POINT_CONFIRMED', 'LOCKED') then
+    raise exception 'SUBMISSION_LOCKED';
+  end if;
+
+  update public.recycling_submissions
+  set status = 'REJECTED', verified_by = v_volunteer_id, verified_at = now(), volunteer_note = nullif(p_volunteer_note, '')
+  where id = p_submission_id
+  returning * into v_submission;
+
+  return to_jsonb(v_submission);
+end;
+$$;
+
+create or replace function public.request_recycling_review(
+  p_submission_id text,
+  p_volunteer_note text default ''
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_volunteer_id text := public.current_profile_id();
+  v_submission public.recycling_submissions%rowtype;
+begin
+  if not public.is_volunteer_or_admin() then
+    raise exception 'INVALID_ROLE';
+  end if;
+
+  select * into v_submission
+  from public.recycling_submissions
+  where id = p_submission_id
+  for update skip locked;
+
+  if not found then
+    raise exception 'SUBMISSION_NOT_FOUND';
+  end if;
+
+  if v_submission.status in ('POINT_CONFIRMED', 'LOCKED') then
+    raise exception 'SUBMISSION_LOCKED';
+  end if;
+
+  update public.recycling_submissions
+  set status = 'PENDING_REVIEW', verified_by = v_volunteer_id, verified_at = now(), volunteer_note = nullif(p_volunteer_note, '')
+  where id = p_submission_id
+  returning * into v_submission;
+
+  return to_jsonb(v_submission);
+end;
+$$;
+
+grant execute on function public.create_recycling_submission(text, text, numeric) to authenticated;
+grant execute on function public.scan_recycling_qr(text, text) to authenticated;
+grant execute on function public.confirm_recycling_submission(text, numeric, text) to authenticated;
+grant execute on function public.reject_recycling_submission(text, text) to authenticated;
+grant execute on function public.request_recycling_review(text, text) to authenticated;
 
 drop policy if exists "volunteer upload proof images" on storage.objects;
 drop policy if exists "volunteer update proof images" on storage.objects;

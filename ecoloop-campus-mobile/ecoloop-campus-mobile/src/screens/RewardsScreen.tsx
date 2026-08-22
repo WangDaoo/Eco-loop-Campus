@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Image } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { AppButton } from '../components/AppButton';
 import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
@@ -18,6 +19,21 @@ function redemptionStatusLabel(status: RewardRedemption['status']) {
 
 const CATEGORIES = ['Tất cả', 'Theo tháng', 'Giải trí', 'Mua sắm', 'Đồ ăn'];
 
+type RewardIcon = {
+  icon: keyof typeof Ionicons.glyphMap;
+  bg: string;
+  color: string;
+};
+
+function getIconForReward(reward: Reward): RewardIcon {
+  const title = reward.title.toLowerCase();
+  if (title.includes('giảm')) return { icon: 'cash-outline', bg: '#dcf3f9', color: colors.ecoDarkBlue };
+  if (title.includes('game') || title.includes('giải trí')) return { icon: 'game-controller-outline', bg: '#fff3d6', color: '#b7791f' };
+  if (title.includes('ăn') || title.includes('uống')) return { icon: 'cafe-outline', bg: '#dcfce7', color: colors.green };
+  if (title.includes('sức khỏe') || title.includes('thuốc')) return { icon: 'medkit-outline', bg: '#dbeafe', color: '#2563eb' };
+  return { icon: 'gift-outline', bg: colors.ecoPill, color: reward.color || colors.ecoDarkBlue };
+}
+
 export default function RewardsScreen() {
   const { points, rewards, rewardRedemptions, requestReward } = useAppContext();
   const [activeCategory, setActiveCategory] = useState('Tất cả');
@@ -27,122 +43,108 @@ export default function RewardsScreen() {
   const redeem = async (reward: Reward) => {
     const ok = await requestReward(reward);
     Alert.alert(
-      ok ? 'Đổi quà thành công! 🎉' : 'Chưa đủ Ecopoint',
-      ok ? `Vui lòng kiểm tra lịch sử.` : `Bạn cần thêm ${reward.costPoints - points} Ecopoint để đổi phần thưởng này.`
+      ok ? 'Đổi quà thành công' : 'Chưa đủ Ecopoint',
+      ok ? 'Vui lòng kiểm tra lịch sử.' : `Bạn cần thêm ${reward.costPoints - points} Ecopoint để đổi phần thưởng này.`
     );
     if (ok) setSelectedVoucher(null);
   };
 
-  // Mock icons based on title or description for UI flavor
-  const getIconForReward = (reward: Reward) => {
-    const title = reward.title.toLowerCase();
-    if (title.includes('giảm')) return { icon: '💸', bg: '#10b981' };
-    if (title.includes('game') || title.includes('giải trí')) return { icon: '🎮', bg: '#f59e0b' };
-    if (title.includes('ăn') || title.includes('uống')) return { icon: '🥤', bg: '#059669' };
-    if (title.includes('sức khoẻ') || title.includes('thuốc')) return { icon: '💊', bg: '#3b82f6' };
-    return { icon: '🎁', bg: reward.color || '#0f172a' };
-  };
-
-  const filteredRewards = rewards.filter(r => {
-    if (searchQuery && !r.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    // Note: If you add category to DB later, filter here. For now, show all.
+  const filteredRewards = rewards.filter(reward => {
+    if (searchQuery && !reward.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
 
   return (
-    <View style={styles.container}>
-      {/* Top Header - Current Points */}
-      <View style={styles.header}>
-        <Text style={styles.headerText}>Ecopoints: {points.toLocaleString('vi-VN')}</Text>
+    <Screen scroll noPadding style={styles.container}>
+      <View style={styles.headerCard}>
+        <View>
+          <Text style={styles.headerLabel}>Ví Ecopoint</Text>
+          <Text style={styles.headerText}>{points.toLocaleString('vi-VN')} điểm</Text>
+        </View>
+        <View style={styles.headerIcon}>
+          <Ionicons name="gift-outline" size={28} color={colors.ecoDarkBlue} />
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.searchContainer}>
+        <Ionicons name="search-outline" size={20} color={colors.ecoDarkBlue} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Tìm kiếm voucher..."
+          placeholderTextColor="#659bad"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
 
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Tìm kiếm voucher..."
-            placeholderTextColor="#9ca3af"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-
-        {/* Categories Horizontal Scroll */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesContainer}>
-          {CATEGORIES.map(cat => {
-            const isActive = activeCategory === cat;
-            return (
-              <Pressable
-                key={cat}
-                onPress={() => setActiveCategory(cat)}
-                style={[styles.categoryBtn, isActive && styles.categoryBtnActive]}
-              >
-                <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>{cat}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* Voucher Grid */}
-        <View style={styles.gridSection}>
-          <Text style={styles.sectionTitle}>Khám phá quà mới</Text>
-          {filteredRewards.length > 0 ? (
-            <View style={styles.grid}>
-              {filteredRewards.map(reward => {
-                const { icon, bg } = getIconForReward(reward);
-                return (
-                  <Pressable
-                    key={reward.id}
-                    style={styles.voucherCard}
-                    onPress={() => setSelectedVoucher(reward)}
-                  >
-                    <View style={[styles.voucherIconBox, { backgroundColor: `${bg}20` }]}>
-                      <Text style={styles.voucherIcon}>{icon}</Text>
-                    </View>
-                    <View style={styles.voucherInfo}>
-                      <Text style={styles.voucherTitle} numberOfLines={2}>{reward.title}</Text>
-                      <Text style={styles.voucherSub} numberOfLines={1}>{reward.description}</Text>
-                      <View style={styles.voucherCostRow}>
-                        <View style={styles.ecopointBadge}>
-                          <Text style={styles.ecopointBadgeText}>E</Text>
-                        </View>
-                        <Text style={styles.voucherCost}>{reward.costPoints.toLocaleString('vi-VN')}</Text>
-                      </View>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <Image source={require('../assets/mascot_2.png')} style={styles.mascot} />
-              <Text style={styles.emptyStateTitle}>Chưa có quà tặng nào</Text>
-              <Text style={styles.emptyStateSub}>Đang cập nhật các ưu đãi mới. Hãy quay lại sau nhé!</Text>
-            </View>
-          )}
-        </View>
-
-        {/* History Block */}
-        {rewardRedemptions.length > 0 && (
-          <View style={styles.historySection}>
-            <Text style={styles.sectionTitle}>Yêu cầu đổi thưởng</Text>
-            {rewardRedemptions.map(item => (
-              <View key={item.id} style={styles.historyCard}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.historyTitle}>{item.rewardLabel}</Text>
-                  <Text style={styles.historyMeta}>{item.costPoints} Ecopoint • {item.requestedAt.toLocaleDateString('vi-VN')}</Text>
-                </View>
-                <Text style={styles.historyStatus}>{redemptionStatusLabel(item.status)}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesContainer}>
+        {CATEGORIES.map(category => {
+          const isActive = activeCategory === category;
+          return (
+            <Pressable
+              key={category}
+              onPress={() => setActiveCategory(category)}
+              style={({ pressed }) => [styles.categoryBtn, isActive && styles.categoryBtnActive, pressed && styles.pressed]}
+            >
+              <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>{category}</Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
 
-      {/* Voucher Modal overlay */}
+      <View style={styles.gridSection}>
+        <Text style={styles.sectionTitle}>Khám phá quà mới</Text>
+        {filteredRewards.length > 0 ? (
+          <View style={styles.grid}>
+            {filteredRewards.map(reward => {
+              const icon = getIconForReward(reward);
+              return (
+                <Pressable
+                  key={reward.id}
+                  style={({ pressed }) => [styles.voucherCard, pressed && styles.pressed]}
+                  onPress={() => setSelectedVoucher(reward)}
+                >
+                  <View style={[styles.voucherIconBox, { backgroundColor: icon.bg }]}>
+                    <Ionicons name={icon.icon} size={24} color={icon.color} />
+                  </View>
+                  <View style={styles.voucherInfo}>
+                    <Text style={styles.voucherTitle} numberOfLines={2}>{reward.title}</Text>
+                    <Text style={styles.voucherSub} numberOfLines={2}>{reward.description}</Text>
+                    <View style={styles.voucherCostRow}>
+                      <View style={styles.ecopointBadge}>
+                        <Text style={styles.ecopointBadgeText}>E</Text>
+                      </View>
+                      <Text style={styles.voucherCost}>{reward.costPoints.toLocaleString('vi-VN')}</Text>
+                    </View>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Image source={require('../assets/mascot_2.png')} style={styles.mascot} />
+            <Text style={styles.emptyStateTitle}>Chưa có quà tặng nào</Text>
+            <Text style={styles.emptyStateSub}>Đang cập nhật các ưu đãi mới. Hãy quay lại sau nhé.</Text>
+          </View>
+        )}
+      </View>
+
+      {rewardRedemptions.length > 0 && (
+        <View style={styles.historySection}>
+          <Text style={styles.sectionTitle}>Yêu cầu đổi thưởng</Text>
+          {rewardRedemptions.map(item => (
+            <View key={item.id} style={styles.historyCard}>
+              <View style={styles.historyInfo}>
+                <Text style={styles.historyTitle}>{item.rewardLabel}</Text>
+                <Text style={styles.historyMeta}>{item.costPoints} Ecopoint - {item.requestedAt.toLocaleDateString('vi-VN')}</Text>
+              </View>
+              <Text style={styles.historyStatus}>{redemptionStatusLabel(item.status)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
       <Modal visible={!!selectedVoucher} transparent animationType="slide" onRequestClose={() => setSelectedVoucher(null)}>
         {selectedVoucher && (
           <View style={styles.modalOverlay}>
@@ -151,14 +153,14 @@ export default function RewardsScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Chi tiết ưu đãi</Text>
                 <Pressable onPress={() => setSelectedVoucher(null)} style={styles.closeBtn} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                  <Text style={styles.closeBtnText}>X</Text>
+                  <Ionicons name="close" size={18} color={colors.ecoDarkBlue} />
                 </Pressable>
               </View>
 
               <ScrollView contentContainerStyle={styles.modalBody}>
                 <View style={styles.modalCenter}>
-                  <View style={[styles.modalIconBox, { backgroundColor: `${getIconForReward(selectedVoucher).bg}15` }]}>
-                    <Text style={styles.modalIcon}>{getIconForReward(selectedVoucher).icon}</Text>
+                  <View style={[styles.modalIconBox, { backgroundColor: getIconForReward(selectedVoucher).bg }]}>
+                    <Ionicons name={getIconForReward(selectedVoucher).icon} size={42} color={getIconForReward(selectedVoucher).color} />
                   </View>
                   <Text style={styles.modalItemTitle}>{selectedVoucher.title}</Text>
 
@@ -171,7 +173,7 @@ export default function RewardsScreen() {
                 </View>
 
                 <View style={styles.modalDetails}>
-                  <Text style={styles.detailsLabel}>ℹ️ Thông tin chi tiết</Text>
+                  <Text style={styles.detailsLabel}>Thông tin chi tiết</Text>
                   <Text style={styles.detailsText}>{selectedVoucher.description}</Text>
                   <Text style={styles.detailsText}>Số lượng còn: {selectedVoucher.stock}</Text>
                 </View>
@@ -179,7 +181,7 @@ export default function RewardsScreen() {
 
               <View style={styles.modalFooter}>
                 <AppButton
-                  title={`${selectedVoucher.costPoints.toLocaleString('vi-VN')} Xu - Đổi ngay`}
+                  title={`${selectedVoucher.costPoints.toLocaleString('vi-VN')} điểm - Đổi ngay`}
                   onPress={() => void redeem(selectedVoucher)}
                 />
               </View>
@@ -187,88 +189,99 @@ export default function RewardsScreen() {
           </View>
         )}
       </Modal>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#f4f7f9',
+    backgroundColor: colors.bgPink,
+    paddingHorizontal: 16,
   },
-  header: {
-    backgroundColor: '#0ccbf5',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
+  headerCard: {
+    backgroundColor: colors.ecoBlue,
+    borderRadius: 24,
+    borderBottomWidth: 5,
+    borderBottomColor: colors.ecoCardShadow,
+    padding: 18,
+    marginBottom: 16,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'rgba(255,255,255,0.5)',
-    zIndex: 20,
-    elevation: 3,
-    paddingTop: 48,
+    justifyContent: 'space-between',
+  },
+  headerLabel: {
+    color: '#5194a8',
+    fontWeight: '900',
+    fontSize: 14,
   },
   headerText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
-    fontSize: 18,
+    color: colors.ecoDarkBlue,
+    fontWeight: '900',
+    fontSize: 30,
+    marginTop: 2,
   },
-  scrollContent: {
-    paddingBottom: 160,
+  headerIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: colors.ecoPill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: colors.white,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    margin: 16,
-    marginBottom: 8,
+    backgroundColor: colors.ecoPill,
     borderRadius: 24,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderWidth: 2,
+    borderColor: colors.white,
+    marginBottom: 10,
   },
   searchIcon: {
     marginRight: 8,
-    fontSize: 18,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#374151',
-    fontWeight: '500',
+    color: colors.ecoDarkBlue,
+    fontWeight: '700',
   },
   categoriesContainer: {
-    paddingHorizontal: 16,
     paddingVertical: 8,
     gap: 8,
   },
   categoryBtn: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.white,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.75)',
     marginRight: 8,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   categoryBtnActive: {
-    backgroundColor: '#ffffff',
-    borderColor: '#2563eb',
+    backgroundColor: colors.ecoDarkBlue,
+    borderColor: colors.ecoDarkBlue,
   },
   categoryText: {
-    color: '#4b5563',
-    fontWeight: 'bold',
+    color: '#659bad',
+    fontWeight: '900',
     fontSize: 14,
   },
   categoryTextActive: {
-    color: '#2563eb',
+    color: colors.white,
   },
   gridSection: {
-    paddingHorizontal: 16,
     marginTop: 8,
   },
   sectionTitle: {
-    color: '#1f2937',
+    color: colors.ecoDarkBlue,
     fontWeight: '900',
     fontSize: 18,
     marginBottom: 12,
@@ -280,43 +293,40 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   voucherCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
+    backgroundColor: colors.white,
+    borderRadius: 18,
     padding: 12,
-    flexDirection: 'row',
     width: '48%',
-    borderWidth: 1,
-    borderColor: '#f3f4f6',
-    elevation: 1,
+    minHeight: 150,
+    borderWidth: 2,
+    borderColor: '#f1f8fc',
+    borderBottomWidth: 4,
+    borderBottomColor: '#d9eaf4',
   },
   voucherIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 46,
+    height: 46,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
-  },
-  voucherIcon: {
-    fontSize: 22,
+    marginBottom: 10,
   },
   voucherInfo: {
     flex: 1,
-    justifyContent: 'center',
-    flexShrink: 1,
   },
   voucherTitle: {
-    color: '#111827',
+    color: colors.ecoDarkBlue,
     fontWeight: '900',
-    fontSize: 13,
-    marginBottom: 2,
-    flexShrink: 1,
+    fontSize: 14,
+    lineHeight: 18,
+    marginBottom: 4,
   },
   voucherSub: {
-    color: '#6b7280',
-    fontSize: 11,
-    fontWeight: '500',
-    marginBottom: 6,
+    color: '#659bad',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginBottom: 8,
   },
   voucherCostRow: {
     flexDirection: 'row',
@@ -324,47 +334,50 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
   },
   ecopointBadge: {
-    width: 16,
-    height: 16,
-    backgroundColor: '#fb923c',
-    borderRadius: 8,
+    width: 18,
+    height: 18,
+    backgroundColor: colors.coral,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
+    marginRight: 5,
   },
   ecopointBadgeText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 10,
     fontWeight: '900',
   },
   voucherCost: {
-    color: '#f97316',
-    fontWeight: 'bold',
-    fontSize: 13,
+    color: colors.coralDark,
+    fontWeight: '900',
+    fontSize: 14,
   },
   historySection: {
-    paddingHorizontal: 16,
     marginTop: 24,
   },
   historyCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#f3f4f6',
+    borderColor: colors.ecoPill,
+  },
+  historyInfo: {
+    flex: 1,
+    paddingRight: 10,
   },
   historyTitle: {
-    color: '#111827',
+    color: colors.ecoDarkBlue,
     fontWeight: '900',
     fontSize: 15,
   },
   historyMeta: {
-    color: '#6b7280',
+    color: '#659bad',
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 4,
   },
   historyStatus: {
@@ -377,13 +390,13 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   modalContent: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    minHeight: '60%',
+    minHeight: '58%',
     maxHeight: '90%',
   },
   modalHeader: {
@@ -393,25 +406,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: colors.ecoPill,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: '900',
+    color: colors.ecoDarkBlue,
   },
   closeBtn: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    backgroundColor: colors.ecoPill,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  closeBtnText: {
-    color: '#4b5563',
-    fontWeight: 'bold',
-    fontSize: 14,
   },
   modalBody: {
     padding: 24,
@@ -420,25 +428,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
     borderStyle: 'dashed',
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: colors.ecoPill,
     paddingBottom: 24,
     marginBottom: 24,
   },
   modalIconBox: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
-  modalIcon: {
-    fontSize: 48,
-  },
   modalItemTitle: {
     fontSize: 20,
     fontWeight: '900',
-    color: '#111827',
+    color: colors.ecoDarkBlue,
     textAlign: 'center',
     marginBottom: 12,
   },
@@ -455,19 +460,19 @@ const styles = StyleSheet.create({
   ecopointBadgeLarge: {
     width: 24,
     height: 24,
-    backgroundColor: '#fb923c',
+    backgroundColor: colors.coral,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
   ecopointBadgeTextLarge: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '900',
   },
   modalCostText: {
-    color: '#f97316',
+    color: colors.coralDark,
     fontWeight: '900',
     fontSize: 20,
   },
@@ -475,14 +480,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   detailsLabel: {
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: '900',
+    color: colors.ecoDarkBlue,
     fontSize: 16,
     marginBottom: 4,
   },
   detailsText: {
-    color: '#4b5563',
-    fontWeight: '500',
+    color: '#659bad',
+    fontWeight: '700',
     fontSize: 14,
     lineHeight: 22,
   },
@@ -490,33 +495,33 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 32,
     borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
-    backgroundColor: '#ffffff',
+    borderTopColor: colors.ecoPill,
+    backgroundColor: colors.white,
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    padding: 28,
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: colors.ecoPill,
     marginTop: 8,
-  },
-  emptyStateIcon: {
-    fontSize: 48,
-    marginBottom: 12,
   },
   mascot: { width: 140, height: 140, resizeMode: 'contain', marginBottom: 12 },
   emptyStateTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: '900',
+    color: colors.ecoDarkBlue,
     marginBottom: 4,
   },
   emptyStateSub: {
     fontSize: 13,
-    color: '#6b7280',
+    color: '#659bad',
+    fontWeight: '700',
     textAlign: 'center',
+  },
+  pressed: {
+    opacity: 0.78,
   }
 });

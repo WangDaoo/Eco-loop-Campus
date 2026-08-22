@@ -1,12 +1,17 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
+import { BOTTOM_TAB_BAR_HEIGHT } from './Screen';
 
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+  const bottomPadding = insets.bottom;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: bottomPadding }]}>
       <View style={styles.navBar}>
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
@@ -38,7 +43,6 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
             });
           };
 
-          // Map route names to icons and labels
           let iconName: keyof typeof Ionicons.glyphMap = 'help';
           let displayLabel = String(label);
 
@@ -50,37 +54,17 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
           if (route.name === 'History') { iconName = 'time'; displayLabel = 'Lịch sử'; }
           if (route.name === 'Duty') { iconName = 'clipboard'; displayLabel = 'Ca trực'; }
 
-          const isCenterButton = route.name === 'Scanner' || route.name === 'Submit';
-
-          if (isCenterButton) {
-            return (
-              <View key={index} style={styles.centerItemWrapper}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityState={isFocused ? { selected: true } : {}}
-                  accessibilityLabel={options.tabBarAccessibilityLabel}
-                  testID={options.tabBarTestID}
-                  onPress={onPress}
-                  onLongPress={onLongPress}
-                  style={[styles.centerButton, isFocused && styles.centerButtonActive]}
-                >
-                  <Ionicons name={iconName} size={36} color={colors.ecoDarkBlue} />
-                </TouchableOpacity>
-                <Text style={styles.centerLabel}>{displayLabel}</Text>
-              </View>
-            );
-          }
-
           return (
-            <TouchableOpacity
-              key={index}
+            <Pressable
+              key={route.key}
               accessibilityRole="button"
               accessibilityState={isFocused ? { selected: true } : {}}
-              accessibilityLabel={options.tabBarAccessibilityLabel}
+              accessibilityLabel={options.tabBarAccessibilityLabel ?? displayLabel}
               testID={options.tabBarTestID}
               onPress={onPress}
               onLongPress={onLongPress}
-              style={styles.navItem}
+              hitSlop={8}
+              style={({ pressed }) => [styles.navItem, pressed && styles.pressed]}
             >
               <View style={[styles.iconWrapper, isFocused && styles.iconWrapperActive]}>
                 <Ionicons
@@ -90,7 +74,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                 />
               </View>
               <Text style={styles.navLabel}>{displayLabel}</Text>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
@@ -100,25 +84,23 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    bottom: 0,
     width: '100%',
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    backgroundColor: 'transparent',
+    paddingHorizontal: 0,
+    backgroundColor: colors.ecoNav,
     alignItems: 'center',
   },
   navBar: {
     flexDirection: 'row',
     backgroundColor: colors.ecoNav,
     width: '100%',
-    maxWidth: 400,
-    borderRadius: 40,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
     paddingHorizontal: 8,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    minHeight: BOTTOM_TAB_BAR_HEIGHT,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
@@ -129,22 +111,23 @@ const styles = StyleSheet.create({
   },
   navItem: {
     flex: 1,
+    minHeight: 76,
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
   iconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 7,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
   iconWrapperActive: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.ecoPink,
     borderWidth: 2,
     borderColor: '#ffffff',
@@ -154,37 +137,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 12,
   },
-  centerItemWrapper: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    position: 'relative',
-    paddingHorizontal: 4,
-  },
-  centerButton: {
-    position: 'absolute',
-    top: -85,
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    borderWidth: 4,
-    borderColor: colors.ecoPink,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 5,
-  },
-  centerButtonActive: {
-    backgroundColor: colors.white,
-  },
-  centerLabel: {
-    color: colors.white,
-    fontWeight: 'bold',
-    fontSize: 12,
-    marginTop: 40,
+  pressed: {
+    opacity: 0.78,
   }
 });

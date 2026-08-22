@@ -14,7 +14,8 @@ import {
   mapUserMissionRow,
   mergeMissionProgress,
   mapSubmissionRow,
-  mapUserRow
+  mapUserRow,
+  toUserRow
 } from './supabaseAdapters';
 
 test('maps existing Supabase rows into mobile domain models', () => {
@@ -51,6 +52,13 @@ test('maps existing Supabase rows into mobile domain models', () => {
       mapY: 24.25
     }
   );
+});
+
+test('preserves account approval statuses for mobile authentication', () => {
+  assert.equal(mapUserRow({ id: 'vol-1', role: 'volunteer', status: 'pending' }).status, 'pending');
+  assert.equal(mapUserRow({ id: 'vol-2', role: 'volunteer', status: 'rejected' }).status, 'rejected');
+  assert.equal(mapUserRow({ id: 'student-locked', role: 'student', status: 'locked' }).status, 'locked');
+  assert.equal(mapUserRow({ id: 'student-unknown', role: 'student', status: 'archived' }).status, 'active');
 });
 
 test('builds a submission draft with one-time QR token and 45 minute expiry', () => {
@@ -257,4 +265,9 @@ test('maps QR scan logs for volunteer anti-fraud history', () => {
       scannedAt: new Date('2026-08-02T06:00:00.000Z')
     }
   );
+});
+test('maps avatar keys between Supabase and mobile profile', () => {
+  const profile = mapUserRow({ id: 'student-1', name: 'Mai', email: 'mai@school.edu.vn', role: 'student', group: 'CNTT', points: 42, status: 'active', avatar_key: 'sunny' });
+  assert.equal(profile.avatarKey, 'sunny');
+  assert.equal(toUserRow(profile).avatar_key, 'sunny');
 });

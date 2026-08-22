@@ -10,7 +10,7 @@ export type SyncStatusCopy = {
 export function getSyncStatusCopy(syncSource: SyncSource, syncError: string): SyncStatusCopy {
   if (syncError.trim()) {
     return {
-      title: 'Cần kiểm tra Supabase',
+      title: 'Cần đồng bộ dữ liệu',
       detail: syncError.trim(),
       tone: 'warning'
     };
@@ -18,15 +18,15 @@ export function getSyncStatusCopy(syncSource: SyncSource, syncError: string): Sy
 
   if (syncSource === 'supabase') {
     return {
-      title: 'Realtime Supabase',
+      title: 'Đang đồng bộ',
       detail: 'Dữ liệu đang đồng bộ trực tiếp.',
       tone: 'success'
     };
   }
 
   return {
-    title: 'Demo offline',
-    detail: 'App đang dùng dữ liệu mẫu trên máy.',
+    title: 'Dữ liệu trên thiết bị',
+    detail: 'Một số nội dung đang được lưu tạm trên máy.',
     tone: 'neutral'
   };
 }

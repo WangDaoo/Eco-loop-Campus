@@ -7,10 +7,11 @@ import {
   POINT_HISTORY_KEY,
   normalizePrediction,
   POINT_RULES_KEY,
+  REWARDS_KEY,
   REWARD_REDEMPTIONS_KEY,
   USERS_KEY,
 } from "../data/wasteConfig";
-import { seedBins, seedFeedback, seedPointHistory, seedUsers } from "../data/seedData";
+import { seedBins, seedFeedback, seedPointHistory, seedRewardProducts, seedUsers } from "../data/seedData";
 
 function readJson(key, fallback) {
   try {
@@ -102,6 +103,20 @@ export function savePointHistoryRecord(record) {
   const next = [record, ...getPointHistory()];
   writeJson(POINT_HISTORY_KEY, next);
   return next[0];
+}
+
+export function getRewards() {
+  return readJson(REWARDS_KEY, seedRewardProducts);
+}
+
+export function saveRewards(items) {
+  return writeJson(REWARDS_KEY, safeArray(items));
+}
+
+export function saveReward(item) {
+  const next = [item, ...getRewards().filter(row => row.id !== item.id)];
+  writeJson(REWARDS_KEY, next);
+  return item;
 }
 
 export function getRewardRedemptions() {

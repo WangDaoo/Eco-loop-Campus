@@ -2012,13 +2012,28 @@ a.eg-priority-item:focus-visible {
 }
 
 .eg-inline-form {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   align-items: end;
 }
 
 .eg-inline-form .eg-primary-btn {
   min-height: 42px;
   justify-content: center;
+}
+
+.eg-reward-redemption-form,
+.eg-reward-product-form {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
+}
+
+.eg-reward-redemption-form .eg-primary-btn,
+.eg-reward-product-form .eg-primary-btn {
+  min-height: 42px;
+}
+
+.eg-wide-field {
+  grid-column: 1 / -1;
 }
 
 .eg-feedback-detail {

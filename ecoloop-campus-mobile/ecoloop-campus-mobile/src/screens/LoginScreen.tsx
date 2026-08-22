@@ -33,7 +33,7 @@ export default function LoginScreen({ navigation }: Props) {
     try {
       await signInDemo(role);
     } catch (error) {
-      Alert.alert('Không mở được demo offline', messageOf(error));
+      Alert.alert('Không mở được chế độ xem trước', messageOf(error));
     }
   };
 
@@ -47,13 +47,13 @@ export default function LoginScreen({ navigation }: Props) {
             <RoleButton label="Sinh viên" selected={role === 'student'} onPress={() => setRole('student')} />
             <RoleButton label="Tình nguyện viên" selected={role === 'volunteer'} onPress={() => setRole('volunteer')} />
           </View>
-          <Text style={styles.subtitle}>{role === 'student' ? 'Đăng nhập bằng email sinh viên đã tạo trong Supabase Auth.' : 'Đăng nhập tình nguyện viên / admin đã tạo trong Supabase Auth.'}</Text>
+          <Text style={styles.subtitle}>{role === 'student' ? 'Đăng nhập bằng tài khoản Eco-loop Campus của bạn.' : 'Đăng nhập bằng tài khoản đã được phân quyền trực trạm.'}</Text>
           <TextInput value={email} onChangeText={setEmail} placeholder="Email" style={styles.input} placeholderTextColor={colors.muted} keyboardType="email-address" autoCapitalize="none" />
           <TextInput value={password} onChangeText={setPassword} placeholder="Mật khẩu" secureTextEntry style={styles.input} placeholderTextColor={colors.muted} />
           <SyncStatusBadge syncSource={syncSource} syncError={syncError} />
           <AppButton title={isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'} disabled={isLoading || !email.trim() || !password.trim()} onPress={handleSubmit} />
-          <Text style={styles.demoCopy}>Chưa có Auth user? Dùng demo offline để kiểm tra giao diện và flow app, không ghi Supabase.</Text>
-          <AppButton title="Dùng demo offline" variant="light" disabled={isLoading} onPress={handleDemo} />
+          <Text style={styles.demoCopy}>Bạn có thể xem trước ứng dụng bằng dữ liệu lưu trên thiết bị này.</Text>
+          <AppButton title="Xem trước bằng dữ liệu trên máy" variant="light" disabled={isLoading} onPress={handleDemo} />
 
           <Text style={styles.link} onPress={() => navigation.navigate('Register')}>Chưa có tài khoản? Đăng ký</Text>
         </View>

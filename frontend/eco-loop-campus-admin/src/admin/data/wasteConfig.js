@@ -1,6 +1,7 @@
 export const LOCAL_PREDICTIONS_KEY = "smartWastePredictions";
 export const POINT_RULES_KEY = "ecoGuardianPointRules";
 export const POINT_HISTORY_KEY = "ecoGuardianPointHistory";
+export const REWARDS_KEY = "ecoGuardianRewards";
 export const REWARD_REDEMPTIONS_KEY = "ecoGuardianRewardRedemptions";
 export const USERS_KEY = "ecoGuardianUsers";
 export const BINS_KEY = "ecoGuardianBins";

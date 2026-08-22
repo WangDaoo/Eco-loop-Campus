@@ -88,14 +88,14 @@ export function createPredictionService({
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          throw new Error(`Backend AI lỗi HTTP ${response.status ?? ''}`);
+          throw new Error(`Dịch vụ AI tạm thời chưa sẵn sàng${response.status ? ` (${response.status})` : ''}`);
         }
 
         const payload = await response.json();
         if (payload.error) throw new Error(String(payload.error));
 
         const className = String(payload.class ?? '').trim().toLowerCase();
-        if (!className) throw new Error('Backend AI không trả về class');
+        if (!className) throw new Error('AI chưa trả về kết quả phân loại');
 
         const confidence = Math.max(0, Math.min(1, number(payload.confidence)));
         return {
@@ -106,7 +106,7 @@ export function createPredictionService({
       } catch (err: any) {
         clearTimeout(timeoutId);
         if (err.name === 'AbortError') {
-          throw new Error('Kết nối đến Backend AI quá hạn (Timeout). Kiểm tra mạng hoặc IP máy chủ.');
+          throw new Error('AI xử lý quá lâu. Vui lòng thử lại hoặc chọn loại rác thủ công.');
         }
         throw err;
       }

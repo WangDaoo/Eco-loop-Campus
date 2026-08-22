@@ -13,6 +13,11 @@ test('MapScreen renders Vietnamese station map UI from presentation helpers', ()
   assert.match(source, /getStationCapacityLevel/);
 });
 
+test('MapScreen uses the same pastel pink app background as other mobile pages', () => {
+  assert.match(source, /safe:\s*\{\s*flex:\s*1,\s*backgroundColor:\s*colors\.bgPink\s*\}/);
+  assert.doesNotMatch(source, /backgroundColor:\s*'#f0faf4'/);
+});
+
 test('MapScreen does not render fallback coordinates for every missing station marker', () => {
   assert.doesNotMatch(source, /station\.latitude \?\? 10\.7627/);
   assert.doesNotMatch(source, /station\.longitude \?\? 106\.6822/);

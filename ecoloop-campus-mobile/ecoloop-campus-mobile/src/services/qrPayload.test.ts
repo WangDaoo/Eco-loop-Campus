@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildSubmissionQrPayload, extractSubmissionQrToken } from './qrPayload';
+import { buildSubmissionQrPayload, extractStationQrCode, extractSubmissionQrToken } from './qrPayload';
 
 test('extractSubmissionQrToken accepts a plain Eco-loop token', () => {
   assert.equal(extractSubmissionQrToken(' eco-20260812112233-123456 '), 'ECO-20260812112233-123456');
@@ -23,4 +23,10 @@ test('buildSubmissionQrPayload keeps token scan-compatible', () => {
 
   assert.equal(extractSubmissionQrToken(payload), 'ECO-SUB-003');
   assert.match(payload, /eco-loop-submission/);
+});
+
+test('extractStationQrCode reads station QR from direct code, JSON and URL payloads', () => {
+  assert.equal(extractStationQrCode(' station-e1 '), 'STATION-E1');
+  assert.equal(extractStationQrCode(JSON.stringify({ type: 'eco-loop-station', qrCode: 'station-lib' })), 'STATION-LIB');
+  assert.equal(extractStationQrCode('ecoloop://station/select?station=station-caf'), 'STATION-CAF');
 });

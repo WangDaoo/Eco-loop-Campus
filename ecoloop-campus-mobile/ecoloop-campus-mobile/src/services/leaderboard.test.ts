@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { selectLeaderboardUsers } from './leaderboard';
+import { getUserLeaderboardRank, selectLeaderboardUsers } from './leaderboard';
 import { UserProfile } from '../types';
 
 const users: UserProfile[] = [
@@ -13,8 +13,8 @@ const users: UserProfile[] = [
 test('selectLeaderboardUsers sorts active users by points and hides locked users', () => {
   const rows = selectLeaderboardUsers(users);
 
-  assert.deepEqual(rows.map(row => row.id), ['u2', 'u1', 'u4']);
-  assert.deepEqual(rows.map(row => row.rank), [1, 2, 3]);
+  assert.deepEqual(rows.map(row => row.id), ['u2', 'u1']);
+  assert.deepEqual(rows.map(row => row.rank), [1, 2]);
   assert.equal(rows[0].displayMeta, 'Kinh te');
 });
 
@@ -23,4 +23,11 @@ test('selectLeaderboardUsers limits rows for compact mobile screens', () => {
 
   assert.equal(rows.length, 2);
   assert.equal(rows[1].name, 'Lan');
+});
+test('getUserLeaderboardRank returns the current student rank and ignores volunteers', () => {
+  const rank = getUserLeaderboardRank(users, 'u1');
+
+  assert.equal(rank?.rank, 2);
+  assert.equal(rank?.name, 'Lan');
+  assert.equal(getUserLeaderboardRank(users, 'u4'), undefined);
 });

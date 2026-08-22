@@ -7,6 +7,7 @@ import { SyncStatusBadge } from '../components/SyncStatusBadge';
 import { useAppContext } from '../context/AppContext';
 import { MainTabParamList, RootStackParamList } from '../types';
 import { colors } from '../theme/colors';
+import { getSubmissionStatusLabel } from '../services/submissionPresentation';
 
 type Props = NativeStackScreenProps<RootStackParamList & MainTabParamList, 'Home'>;
 
@@ -58,8 +59,8 @@ export default function HomeScreen({ navigation }: Props) {
       {openSubmission && (
         <View style={styles.openQr}>
           <Text style={styles.openLabel}>QR đang mở</Text>
-          <Text style={styles.openToken}>{openSubmission.qrToken}</Text>
-          <Text style={styles.openMeta}>Trạng thái: {openSubmission.status}</Text>
+          <Text style={styles.openToken} numberOfLines={1} ellipsizeMode="middle">{openSubmission.qrToken}</Text>
+          <Text style={styles.openMeta}>Trạng thái: {getSubmissionStatusLabel(openSubmission.status)}</Text>
         </View>
       )}
 
@@ -111,7 +112,7 @@ export default function HomeScreen({ navigation }: Props) {
           </View>
         </View>
       </View>
-      <View style={{ height: 40 }} />
+      <View style={{ height: 8 }} />
     </Screen>
   );
 }
@@ -130,13 +131,13 @@ const styles = StyleSheet.create({
 
   openQr: { backgroundColor: colors.coral, borderRadius: 20, padding: 16, marginBottom: 16 },
   openLabel: { color: colors.white, fontWeight: '900' },
-  openToken: { color: colors.white, fontSize: 24, fontWeight: '900', marginTop: 4 },
-  openMeta: { color: colors.pink, fontWeight: '800', marginTop: 4 },
+  openToken: { color: colors.white, fontSize: 18, fontWeight: '900', marginTop: 4, maxWidth: '100%' },
+  openMeta: { color: colors.ecoPill, fontWeight: '800', marginTop: 4 },
 
   glassCardWrapper: {
     marginTop: 32,
     paddingHorizontal: 4,
-    marginBottom: 40,
+    marginBottom: 8,
   },
   glassCard: {
     backgroundColor: colors.ecoBlue,

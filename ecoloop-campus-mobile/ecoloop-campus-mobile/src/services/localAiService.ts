@@ -1,7 +1,7 @@
 ﻿import { PickedImage, PredictionResult } from './predictionService';
 export { parseTfliteClassification, rgbBytesToFloatTensor } from './localAiCore';
 
-const missingNativeRuntimeMessage = 'On-device AI cần Android dev build có native TFLite module. Expo Go sẽ dùng FastAPI fallback.';
+const missingNativeRuntimeMessage = 'AI trên thiết bị chưa sẵn sàng. Hệ thống sẽ dùng dịch vụ AI trực tuyến.';
 
 export function createLocalAiService() {
   return {

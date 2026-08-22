@@ -11,13 +11,15 @@ export type SupabaseWriteSmokeResult = {
   predictionId: string;
   qrToken: string;
   proofId: string;
+  pointId: string;
   points: number;
+  verifiedUserPoints: number;
 };
 
 export async function runSupabaseWriteSmoke(
   store: Pick<
     SupabaseMobileStore,
-    'createSubmission' | 'saveAiPrediction' | 'signOut' | 'signIn' | 'markSubmissionScanned' | 'attachProofImage' | 'confirmSubmission'
+    'createSubmission' | 'saveAiPrediction' | 'signOut' | 'signIn' | 'markSubmissionScanned' | 'attachProofImage' | 'confirmSubmission' | 'loadInitialData'
   >,
   student: UserProfile,
   data: MobileInitialData,
@@ -52,12 +54,33 @@ export async function runSupabaseWriteSmoke(
     note: 'Smoke E2E proof image'
   });
   const confirmed = await store.confirmSubmission(submission.id, 1, volunteer.id, 'Smoke E2E volunteer confirmation', data.wasteTypes);
+  const verified = await store.loadInitialData(volunteer as UserProfile);
+  const verifiedSubmission = verified.submissions.find(item => item.id === submission.id);
+  if (verifiedSubmission?.status !== 'POINT_CONFIRMED') {
+    throw new Error(`Smoke write chưa thấy recycling_submissions POINT_CONFIRMED cho ${submission.id}`);
+  }
+  const verifiedPoint = verified.pointTransactions.find(item => item.submissionId === submission.id);
+  if (!verifiedPoint) {
+    throw new Error(`Smoke write chưa thấy point_history cho ${submission.id}`);
+  }
+  const verifiedProof = verified.proofImages.find(item => item.submissionId === submission.id) ?? verifiedSubmission.proofImage;
+  if (!verifiedProof) {
+    throw new Error(`Smoke write chưa thấy proof_images cho ${submission.id}`);
+  }
+  const verifiedUser = verified.users.find(item => item.id === student.id);
+  const previousPoints = Number(student.points ?? 0);
+  const verifiedUserPoints = Number(verifiedUser?.points ?? NaN);
+  if (!verifiedUser || !Number.isFinite(verifiedUserPoints) || verifiedUserPoints < previousPoints + confirmed.point.points) {
+    throw new Error(`Smoke write chưa thấy users.points tăng cho ${student.id}`);
+  }
 
   return {
     submissionId: submission.id,
     predictionId: prediction.id,
     qrToken: submission.qrToken,
     proofId: proof.id,
-    points: confirmed.point.points
+    pointId: verifiedPoint.id,
+    points: confirmed.point.points,
+    verifiedUserPoints
   };
 }

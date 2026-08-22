@@ -14,6 +14,9 @@ const expiresInMinutes = 45;
 export const authService: AuthService = {
   signIn: (role, email, password) => {
     const matched = mockUsers.find(user => user.role === role && user.email.toLowerCase() === email.trim().toLowerCase());
+    if (matched?.status === 'pending') throw new Error('Tài khoản tình nguyện viên đang chờ admin phê duyệt.');
+    if (matched?.status === 'rejected') throw new Error('Yêu cầu cấp quyền tình nguyện viên đã bị từ chối.');
+    if (matched?.status === 'locked') throw new Error('Tài khoản đang bị khóa.');
     if (matched) return matched;
     return mockUsers.find(user => user.role === role) ?? mockUsers[0];
   },
@@ -24,7 +27,7 @@ export const authService: AuthService = {
     role,
     group: role === 'student' ? 'Sinh vien Eco-loop' : 'Tinh nguyen vien Eco-loop',
     points: 0,
-    status: 'active'
+    status: role === 'volunteer' ? 'pending' : 'active'
   }),
   loadProfile: userId => mockUsers.find(user => user.id === userId)
 };

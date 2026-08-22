@@ -10,10 +10,18 @@ import h5py
 
 app = FastAPI()
 
+
+def parse_cors_origins(raw_origins):
+    if not raw_origins or not raw_origins.strip():
+        return ["*"]
+
+    origins = [origin.strip() for origin in raw_origins.split(",")]
+    return [origin for origin in origins if origin] or ["*"]
+
 # ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=parse_cors_origins(os.getenv("CORS_ORIGINS")),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

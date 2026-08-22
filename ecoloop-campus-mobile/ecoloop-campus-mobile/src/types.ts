@@ -35,7 +35,9 @@ export type UserProfile = {
   role: UserRole;
   group: string;
   points: number;
-  status: 'active' | 'locked';
+  status: 'active' | 'locked' | 'pending' | 'rejected';
+  avatarKey?: string;
+  avatarUrl?: string;
 };
 
 export type BinStation = {

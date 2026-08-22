@@ -24,6 +24,11 @@ export default function RegisterScreen({ navigation }: Props) {
     if (!name.trim() || !email.trim() || !password.trim()) return;
     try {
       await signUp(name.trim(), email.trim(), password, role);
+      if (role === 'volunteer') {
+        Alert.alert('Đã gửi yêu cầu', 'Tài khoản tình nguyện viên sẽ dùng được sau khi admin phê duyệt.', [
+          { text: 'Đăng nhập', onPress: () => navigation.navigate('Login') }
+        ]);
+      }
     } catch (error) {
       Alert.alert('Không tạo được tài khoản', messageOf(error));
     }
@@ -37,9 +42,9 @@ export default function RegisterScreen({ navigation }: Props) {
           <Text style={styles.title}>Tạo tài khoản</Text>
           <View style={styles.roleRow}>
             <RoleButton label="Sinh viên" selected={role === 'student'} onPress={() => setRole('student')} />
-            <RoleButton label="Volunteer" selected={role === 'volunteer'} onPress={() => setRole('volunteer')} />
+            <RoleButton label="Tình nguyện viên" selected={role === 'volunteer'} onPress={() => setRole('volunteer')} />
           </View>
-          <Text style={styles.subtitle}>{role === 'student' ? 'Đăng ký bằng email sinh viên.' : 'Đăng ký bằng email tình nguyện viên.'}</Text>
+          <Text style={styles.subtitle}>{role === 'student' ? 'Đăng ký bằng email sinh viên.' : 'Gửi yêu cầu cấp quyền trực trạm. Admin sẽ phê duyệt trước khi sử dụng.'}</Text>
           <TextInput value={name} onChangeText={setName} placeholder="Họ và tên" style={styles.input} placeholderTextColor={colors.muted} />
           <TextInput value={email} onChangeText={setEmail} placeholder="Email" style={styles.input} placeholderTextColor={colors.muted} keyboardType="email-address" autoCapitalize="none" />
           <TextInput value={password} onChangeText={setPassword} placeholder="Mật khẩu" secureTextEntry style={styles.input} placeholderTextColor={colors.muted} />

@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import QRCode from 'react-native-qrcode-svg';
 import { AppButton } from '../components/AppButton';
@@ -8,8 +10,10 @@ import { useAppContext } from '../context/AppContext';
 import { RecyclingSubmission, WasteType } from '../types';
 import { colors, radius } from '../theme/colors';
 import { predictionService, suggestWasteTypeFromClass } from '../services/predictionService';
+import { getSubmissionExpiryInfo } from '../services/submissionExpiry';
 import { buildSubmitAiSuggestion, SubmitAiSuggestion } from './submitAiFlow';
-import { buildSubmissionQrPayload } from '../services/qrPayload';
+import { buildSubmissionQrPayload, extractStationQrCode } from '../services/qrPayload';
+import { launchImageLibraryWithFallback } from '../services/imagePickerFallback';
 
 const feedbackTypes = [
   { id: 'bin_full', label: 'Thùng đầy' },
@@ -31,12 +35,15 @@ function isMissingCameraActivity(error: unknown) {
 
 function aiRuntimeLabel(suggestion: AiSuggestion) {
   if (suggestion.runtime === 'local') return 'Chạy trên thiết bị';
-  if (suggestion.runtime === 'remote') return suggestion.fallbackReason ? 'FastAPI fallback' : 'FastAPI';
+  if (suggestion.runtime === 'remote') return suggestion.fallbackReason ? 'Dịch vụ AI dự phòng' : 'Dịch vụ AI';
   return 'AI';
 }
 
 export default function SubmitScreen() {
   const { stations, wasteTypes, createSubmission, saveAiPrediction, submitFeedback, isLoading, syncSource } = useAppContext();
+  const [stationCameraPermission, requestStationCameraPermission] = useCameraPermissions();
+  const isFocused = useIsFocused();
+  const { width: windowWidth } = useWindowDimensions();
   const [stationId, setStationId] = useState(stations[0]?.id ?? '');
   const [wasteTypeId, setWasteTypeId] = useState(wasteTypes[0]?.id ?? '');
   const [quantity, setQuantity] = useState('1');
@@ -45,10 +52,80 @@ export default function SubmitScreen() {
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AiSuggestion | null>(null);
+  const [stationScannerEnabled, setStationScannerEnabled] = useState(false);
+  const [stationScannerPaused, setStationScannerPaused] = useState(false);
+  const [stationDropdownOpen, setStationDropdownOpen] = useState(false);
+  const [stationScanMessage, setStationScanMessage] = useState('Đưa QR trên trạm vào khung vuông để chọn trạm tự động.');
+  const [clockNow, setClockNow] = useState(new Date());
 
+  const selectedStation = useMemo(() => stations.find(item => item.id === stationId) ?? stations[0], [stationId, stations]);
   const selectedWaste = useMemo(() => wasteTypes.find(item => item.id === wasteTypeId) ?? wasteTypes[0], [wasteTypeId, wasteTypes]);
   const quantityNumber = Number(quantity.replace(',', '.'));
   const estimatedPoints = selectedWaste && Number.isFinite(quantityNumber) ? Math.max(0, Math.round(quantityNumber * selectedWaste.pointPerUnit)) : 0;
+  const qrExpiryInfo = latestSubmission ? getSubmissionExpiryInfo(latestSubmission.expiredAt, clockNow) : null;
+  const stationScannerSize = Math.max(220, Math.min(300, windowWidth - 96));
+  const stationScanFrameSize = Math.min(210, stationScannerSize - 48);
+
+  useEffect(() => {
+    if (!stations.length) return;
+    if (!stations.some(station => station.id === stationId)) setStationId(stations[0].id);
+  }, [stationId, stations]);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setStationScannerEnabled(false);
+      return;
+    }
+
+    if (!stationCameraPermission) {
+      void requestStationCameraPermission();
+      return;
+    }
+
+    setStationScannerEnabled(Boolean(stationCameraPermission.granted));
+  }, [isFocused, requestStationCameraPermission, stationCameraPermission]);
+
+  useEffect(() => {
+    if (!latestSubmission) return;
+    setClockNow(new Date());
+    const timer = setInterval(() => setClockNow(new Date()), 15000);
+    return () => clearInterval(timer);
+  }, [latestSubmission]);
+
+  const startStationScanner = async () => {
+    if (!stationCameraPermission?.granted) {
+      const permission = await requestStationCameraPermission();
+      if (!permission.granted) {
+        Alert.alert('Cần quyền camera', 'Hãy cấp quyền camera để quét QR trạm.');
+        return;
+      }
+    }
+    setStationScannerEnabled(true);
+  };
+
+  const findStationFromQr = (payload: string) => {
+    const qrCode = extractStationQrCode(payload);
+    const normalized = qrCode.trim().toUpperCase();
+    return stations.find(station =>
+      [station.qrCode, station.id, station.name]
+        .filter(Boolean)
+        .some(value => String(value).trim().toUpperCase() === normalized)
+    );
+  };
+
+  const handleStationQrScanned = (payload: string) => {
+    if (stationScannerPaused) return;
+    setStationScannerPaused(true);
+    const station = findStationFromQr(payload);
+    if (station) {
+      setStationId(station.id);
+      setStationDropdownOpen(false);
+      setStationScanMessage(`Đã chọn ${station.name}`);
+    } else {
+      setStationScanMessage('QR này chưa khớp trạm Eco-loop trong dữ liệu app.');
+    }
+    setTimeout(() => setStationScannerPaused(false), 1600);
+  };
 
   const handleCreate = async () => {
     if (!stationId || !wasteTypeId || !selectedWaste) {
@@ -86,8 +163,8 @@ export default function SubmitScreen() {
         Alert.alert('AI đã nhận diện', suggestion.saveWarning);
       }
     } catch (error) {
-      Alert.alert('AI chưa phản hồi', `${messageOf(error)}
-Kiểm tra backend FastAPI, URL API và reverse port 8000 trên Android Studio Emulator.`);
+      Alert.alert('AI chưa xử lý được ảnh', `${messageOf(error)}
+Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
     } finally {
       setAiLoading(false);
     }
@@ -104,7 +181,7 @@ Kiểm tra backend FastAPI, URL API và reverse port 8000 trên Android Studio E
       if (!result.canceled && result.assets[0]) await runAiPrediction(result.assets[0], 'camera');
     } catch (error) {
       if (isMissingCameraActivity(error)) {
-        Alert.alert('Không mở được camera', 'LDPlayer này chưa có ứng dụng camera. Tôi sẽ mở thư viện ảnh để bạn chọn ảnh thay thế.');
+        Alert.alert('Không mở được camera', 'Thiết bị chưa mở được camera. Bạn có thể chọn ảnh từ thư viện để tiếp tục.');
         await handleAiPick();
         return;
       }
@@ -119,7 +196,7 @@ Kiểm tra backend FastAPI, URL API và reverse port 8000 trên Android Studio E
       return;
     }
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.75 });
+      const result = await launchImageLibraryWithFallback({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.75 });
       if (!result.canceled && result.assets[0]) await runAiPrediction(result.assets[0], 'upload');
     } catch (error) {
       Alert.alert('Không mở được thư viện ảnh', messageOf(error));
@@ -159,21 +236,74 @@ Kiểm tra backend FastAPI, URL API và reverse port 8000 trên Android Studio E
 
         <View style={styles.glassCard}>
           <Text style={styles.sectionTitle}>1. Chọn trạm thu gom</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {stations.map(station => {
-              const isActive = stationId === station.id;
-              return (
-                <Pressable
-                  key={station.id}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => setStationId(station.id)}
-                >
-                  <Text style={[styles.chipTitle, isActive && styles.chipTextActive]} numberOfLines={2}>{station.name}</Text>
-                  <Text style={[styles.chipMeta, isActive && styles.chipTextActive]} numberOfLines={2}>{station.location}</Text>
+          <View style={[styles.stationScannerBox, { width: stationScannerSize, height: stationScannerSize }]}>
+            {stationScannerEnabled ? (
+              <CameraView
+                style={StyleSheet.absoluteFillObject}
+                ratio="1:1"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onBarcodeScanned={({ data }) => handleStationQrScanned(data)}
+              >
+                <View style={styles.stationScanOverlay}>
+                  <View style={styles.stationMask} />
+                  <View style={[styles.stationScanMiddleRow, { height: stationScanFrameSize }]}>
+                    <View style={styles.stationMask} />
+                    <View style={[styles.studentScanFrame, { width: stationScanFrameSize, height: stationScanFrameSize }]}>
+                      <View style={[styles.scanCorner, styles.scanTopLeft]} />
+                      <View style={[styles.scanCorner, styles.scanTopRight]} />
+                      <View style={[styles.scanCorner, styles.scanBottomLeft]} />
+                      <View style={[styles.scanCorner, styles.scanBottomRight]} />
+                    </View>
+                    <View style={styles.stationMask} />
+                  </View>
+                  <View style={styles.stationMask} />
+                </View>
+              </CameraView>
+            ) : (
+              <View style={styles.stationScannerPlaceholder}>
+                <Text style={styles.stationScannerTitle}>Camera quét QR trạm</Text>
+                <Pressable style={styles.stationScannerButton} onPress={startStationScanner}>
+                  <Text style={styles.stationScannerButtonText}>Bật camera</Text>
                 </Pressable>
-              );
-            })}
-          </ScrollView>
+              </View>
+            )}
+          </View>
+          <Text style={styles.stationScannerHint}>{stationScanMessage}</Text>
+          <Text style={styles.sectionTitle}>Hoặc chọn trạm thu gom</Text>
+          <View style={styles.stationDropdownWrap}>
+            <Pressable
+              style={styles.stationDropdownButton}
+              onPress={() => setStationDropdownOpen(!stationDropdownOpen)}
+              accessibilityRole="button"
+              accessibilityLabel="Chọn trạm thu gom"
+            >
+              <View style={styles.stationDropdownTextGroup}>
+                <Text style={styles.stationDropdownValue} numberOfLines={1}>{selectedStation?.name ?? 'Chọn trạm'}</Text>
+                <Text style={styles.stationDropdownMeta} numberOfLines={1}>{selectedStation?.location ?? 'Chưa có vị trí trạm'}</Text>
+              </View>
+              <Text style={styles.stationDropdownIcon}>{stationDropdownOpen ? '▲' : '▼'}</Text>
+            </Pressable>
+            {stationDropdownOpen && (
+              <View style={styles.stationDropdownMenu}>
+                {stations.map(station => {
+                  const isActive = stationId === station.id;
+                  return (
+                    <Pressable
+                      key={station.id}
+                      style={[styles.stationDropdownOption, isActive && styles.stationDropdownOptionActive]}
+                      onPress={() => {
+                        setStationId(station.id);
+                        setStationDropdownOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.stationDropdownOptionTitle, isActive && styles.stationDropdownOptionTextActive]} numberOfLines={1}>{station.name}</Text>
+                      <Text style={[styles.stationDropdownOptionMeta, isActive && styles.stationDropdownOptionTextActive]} numberOfLines={1}>{station.location}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </View>
 
           <Text style={styles.sectionTitle}>2. Phân loại AI (Tùy chọn)</Text>
           <View style={styles.aiContainer}>
@@ -238,16 +368,25 @@ Kiểm tra backend FastAPI, URL API và reverse port 8000 trên Android Studio E
           <AppButton title={isLoading ? 'Đang tạo...' : 'TẠO MÃ QR'} disabled={isLoading} onPress={handleCreate} />
         </View>
 
-        {latestSubmission && (
-          <View style={[styles.glassCard, styles.qrCard]}>
+        {latestSubmission && qrExpiryInfo && (
+          <View style={[styles.glassCard, styles.qrCard, qrExpiryInfo.expired && styles.qrCardExpired]}>
             <Text style={styles.qrTitle}>MÃ QR CỦA BẠN</Text>
-            <View style={styles.qrPlaceholder}>
-              <QRCode value={buildSubmissionQrPayload(latestSubmission)} size={164} backgroundColor="#ffffff" color="#111827" />
-            </View>
+            {qrExpiryInfo.expired ? (
+              <View style={styles.qrExpiredBox}>
+                <Text style={styles.qrExpiredTitle}>Mã QR đã hết hạn</Text>
+                <Text style={styles.qrExpiredText}>Tạo mã QR mới trước khi đưa cho tình nguyện viên xác nhận.</Text>
+              </View>
+            ) : (
+              <View style={styles.qrPlaceholder}>
+                <QRCode value={buildSubmissionQrPayload(latestSubmission)} size={164} backgroundColor="#ffffff" color="#111827" />
+              </View>
+            )}
             <Text style={styles.qrPlaceholderText} numberOfLines={1} ellipsizeMode="middle">{latestSubmission.qrToken}</Text>
             <Text style={styles.qrInstruction}>Đưa mã QR này cho Tình nguyện viên tại trạm Eco-loop để xác nhận số lượng thực tế và cộng Ecopoint.</Text>
-            <Text style={styles.qrMeta}>Điểm vẫn cần volunteer xác nhận trước khi cộng vào ví.</Text>
-            <Text style={styles.qrMeta}>Hết hạn: {latestSubmission.expiredAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</Text>
+            <Text style={styles.qrMeta}>Điểm được cộng sau khi lượt gửi rác được xác nhận.</Text>
+            <Text style={[styles.qrExpiryLabel, qrExpiryInfo.expired && styles.qrExpiryExpired]}>{qrExpiryInfo.label}</Text>
+            <Text style={styles.qrMeta}>{qrExpiryInfo.detail}</Text>
+            {qrExpiryInfo.expired && <AppButton title="Tạo mã QR mới" variant="light" disabled={isLoading} onPress={handleCreate} />}
           </View>
         )}
 
@@ -288,7 +427,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     paddingTop: 48,
-    paddingBottom: 160,
+    paddingBottom: 32,
   },
   header: {
     alignItems: 'center',
@@ -351,6 +490,147 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   chipTextActive: {
+    color: '#ffffff',
+  },
+  stationScannerBox: {
+    alignSelf: 'center',
+    borderRadius: 28,
+    backgroundColor: colors.ink,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  stationScanOverlay: {
+    flex: 1,
+  },
+  stationMask: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.48)',
+  },
+  stationScanMiddleRow: {
+    flexDirection: 'row',
+  },
+  studentScanFrame: {
+    position: 'relative',
+    backgroundColor: 'transparent',
+  },
+  scanCorner: {
+    position: 'absolute',
+    width: 34,
+    height: 34,
+    borderColor: colors.green,
+    borderWidth: 5,
+  },
+  scanTopLeft: { top: 0, left: 0, borderBottomWidth: 0, borderRightWidth: 0, borderTopLeftRadius: 14 },
+  scanTopRight: { top: 0, right: 0, borderBottomWidth: 0, borderLeftWidth: 0, borderTopRightRadius: 14 },
+  scanBottomLeft: { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0, borderBottomLeftRadius: 14 },
+  scanBottomRight: { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0, borderBottomRightRadius: 14 },
+  stationScannerPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  stationScannerTitle: {
+    color: colors.white,
+    fontWeight: '900',
+    fontSize: 17,
+    marginBottom: 12,
+  },
+  stationScannerButton: {
+    minHeight: 48,
+    borderRadius: 999,
+    backgroundColor: '#f47c65',
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stationScannerButtonText: {
+    color: colors.white,
+    fontWeight: '900',
+  },
+  stationScannerHint: {
+    color: '#205063',
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  stationDropdownWrap: {
+    marginBottom: 14,
+    position: 'relative',
+    zIndex: 30,
+    elevation: 10,
+  },
+  stationDropdownButton: {
+    minHeight: 64,
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#b2eaf5',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  stationDropdownTextGroup: {
+    flex: 1,
+  },
+  stationDropdownValue: {
+    color: '#205063',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  stationDropdownMeta: {
+    color: '#6b7280',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  stationDropdownIcon: {
+    color: '#205063',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  stationDropdownMenu: {
+    position: 'absolute',
+    top: 76,
+    left: 0,
+    right: 0,
+    zIndex: 40,
+    elevation: 12,
+    borderRadius: 18,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: '#e5f8fc',
+    overflow: 'hidden',
+    shadowColor: '#5bbcdc',
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  stationDropdownOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ecfdf5',
+  },
+  stationDropdownOptionActive: {
+    backgroundColor: '#10b981',
+  },
+  stationDropdownOptionTitle: {
+    color: '#1f2937',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  stationDropdownOptionMeta: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  stationDropdownOptionTextActive: {
     color: '#ffffff',
   },
   aiContainer: {
@@ -464,6 +744,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#059669',
     borderColor: '#34d399',
   },
+  qrCardExpired: {
+    backgroundColor: '#b45309',
+    borderColor: '#f59e0b',
+  },
   qrTitle: {
     color: '#ffffff',
     fontWeight: '900',
@@ -478,6 +762,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+  },
+  qrExpiredBox: {
+    backgroundColor: '#ffffff',
+    width: 220,
+    minHeight: 168,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 18,
+    marginBottom: 16,
+  },
+  qrExpiredTitle: {
+    color: '#b45309',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  qrExpiredText: {
+    color: '#4b5563',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+    marginTop: 8,
+    textAlign: 'center',
   },
   qrPlaceholderText: {
     fontSize: 13,
@@ -495,6 +803,15 @@ const styles = StyleSheet.create({
   qrMeta: {
     color: '#a7f3d0',
     fontWeight: 'bold',
+  },
+  qrExpiryLabel: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  qrExpiryExpired: {
+    color: '#fff7ed',
   },
   typeRow: {
     flexDirection: 'row',

@@ -55,6 +55,16 @@ class AppEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"message": "Eco-loop Campus Backend Running"})
 
+    def test_parse_cors_origins_defaults_to_wildcard(self):
+        self.assertEqual(app.parse_cors_origins(""), ["*"])
+        self.assertEqual(app.parse_cors_origins(None), ["*"])
+
+    def test_parse_cors_origins_splits_comma_separated_values(self):
+        self.assertEqual(
+            app.parse_cors_origins("https://admin.example.vn, http://localhost:3000"),
+            ["https://admin.example.vn", "http://localhost:3000"],
+        )
+
     def test_predict_returns_model_not_loaded_when_model_missing(self):
         app.model = None
 

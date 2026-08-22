@@ -7,7 +7,7 @@ test('local AI service is disabled in Expo Go until a native TFLite runtime is i
   assert.equal(service.isAvailable(), false);
   await assert.rejects(
     () => service.predictImage({ uri: 'file:///tmp/bottle.jpg' }),
-    /Android dev build.*TFLite.*FastAPI fallback/
+    /AI trên thiết bị chưa sẵn sàng/
   );
 });
 

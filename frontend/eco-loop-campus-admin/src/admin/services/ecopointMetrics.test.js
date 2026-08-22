@@ -117,3 +117,16 @@ test("buildGroupLeaderboard returns empty rows for malformed history", () => {
 
   expect(result).toEqual([]);
 });
+test("leaderboards can use current user points for total leaderboard", () => {
+  expect(buildUserLeaderboard(users, [], { useProfilePoints: true })[0]).toEqual(expect.objectContaining({ userId: "SV001", totalPoints: 245, scanCount: 0 }));
+  expect(buildGroupLeaderboard(users, [], { useProfilePoints: true })[0]).toEqual(expect.objectContaining({ group: "CNTT K18", totalPoints: 245, scanCount: 0 }));
+});
+
+test("profile-point leaderboards respect selected class or faculty filter", () => {
+  const targetGroup = users[1].group;
+  const userRows = buildUserLeaderboard(users, history, { useProfilePoints: true, userGroup: targetGroup });
+  const groupRows = buildGroupLeaderboard(users, history, { useProfilePoints: true, userGroup: targetGroup });
+
+  expect(userRows.map(row => row.userId)).toEqual(["SV002"]);
+  expect(groupRows.map(row => row.group)).toEqual([targetGroup]);
+});

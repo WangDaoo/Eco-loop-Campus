@@ -29,9 +29,10 @@ const formatPercent = value => `${Math.round(safeNumber(value) * 100)}%`;
 const statusCode = value => String(value || "").trim().toLowerCase();
 const groupCode = value => String(value || "").trim().toLocaleLowerCase("vi-VN");
 const normalizeBinGroup = value => BIN_GROUPS.find(group => groupCode(group.label) === groupCode(value))?.label || String(value || "").trim();
-const isPendingScan = item => statusCode(item.status) === "pending";
-const isMaintenanceBin = bin => statusCode(bin.status) === "maintenance";
-const isBinAttention = bin => isMaintenanceBin(bin) || statusCode(bin.status) === "full" || safePercent(bin.capacity) >= BIN_CAPACITY_WARNING;
+const safeList = items => Array.isArray(items) ? items.filter(Boolean) : [];
+const isPendingScan = item => Boolean(item) && statusCode(item.status) === "pending";
+const isMaintenanceBin = bin => Boolean(bin) && statusCode(bin.status) === "maintenance";
+const isBinAttention = bin => Boolean(bin) && (isMaintenanceBin(bin) || statusCode(bin.status) === "full" || safePercent(bin.capacity) >= BIN_CAPACITY_WARNING);
 
 function countBy(items, getKey) {
   return items.reduce((acc, item) => {
@@ -88,11 +89,14 @@ function makeGroupData(groupCounts) {
 }
 
 function makePriorityItems(predictions, bins, feedback, confidenceThreshold = LOW_CONFIDENCE_THRESHOLD) {
-  const openFeedback = feedback.filter(isOpenFeedback);
+  const safePredictions = safeList(predictions);
+  const safeBins = safeList(bins);
+  const safeFeedback = safeList(feedback);
+  const openFeedback = safeFeedback.filter(isOpenFeedback);
   const threshold = safeNumber(confidenceThreshold) || LOW_CONFIDENCE_THRESHOLD;
-  const lowConfidenceScans = predictions.filter(item => isPendingScan(item) && safeNumber(item.confidence) < threshold);
-  const pendingScans = predictions.filter(isPendingScan);
-  const binAlerts = bins.filter(isBinAttention);
+  const lowConfidenceScans = safePredictions.filter(item => isPendingScan(item) && safeNumber(item.confidence) < threshold);
+  const pendingScans = safePredictions.filter(isPendingScan);
+  const binAlerts = safeBins.filter(isBinAttention);
   const items = [];
 
   if (openFeedback.length) {
@@ -173,18 +177,18 @@ export default function DashboardPage() {
     const response = await saveBin(updatedBin);
     setDashboard(current => ({
       ...current,
-      bins: current.bins.map(item => item.id === bin.id ? response.data : item),
+      bins: safeList(current.bins).map(item => item.id === bin.id ? response.data : item),
     }));
     setSource(response.source);
     setError(response.error);
     return response.data;
   };
 
-  const predictions = dashboard.predictions;
-  const bins = dashboard.bins;
-  const users = dashboard.users;
-  const feedback = dashboard.feedback || [];
-  const pointHistory = dashboard.pointHistory || [];
+  const predictions = safeList(dashboard.predictions);
+  const bins = safeList(dashboard.bins);
+  const users = safeList(dashboard.users);
+  const feedback = safeList(dashboard.feedback);
+  const pointHistory = safeList(dashboard.pointHistory);
   const modelThreshold = safeNumber(dashboard.settings?.threshold) || LOW_CONFIDENCE_THRESHOLD;
   const groupCounts = countBy(predictions, item => normalizeBinGroup(item.binGroup));
   const pendingCount = predictions.filter(isPendingScan).length;
@@ -325,3 +329,9 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+export const __testing = {
+  isMaintenanceBin,
+  isBinAttention,
+  makePriorityItems,
+};

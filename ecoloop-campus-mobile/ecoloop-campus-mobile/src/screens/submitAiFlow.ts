@@ -61,8 +61,8 @@ export async function buildSubmitAiSuggestion({
   const note = !wasteType
     ? 'AI đã nhận diện nhưng chưa map được sang loại rác trong app. Hãy chọn thủ công.'
     : prediction.confidence < 0.65
-      ? 'Độ tin cậy thấp. Nên để volunteer kiểm tra kỹ trước khi xác nhận Ecopoint.'
-      : 'AI chỉ hỗ trợ gợi ý. Ecopoint vẫn cần volunteer xác nhận.';
+      ? 'Độ tin cậy thấp. Nên để tình nguyện viên kiểm tra kỹ trước khi xác nhận Ecopoint.'
+      : 'AI chỉ hỗ trợ gợi ý. Ecopoint vẫn cần tình nguyện viên xác nhận.';
 
   return {
     ...prediction,

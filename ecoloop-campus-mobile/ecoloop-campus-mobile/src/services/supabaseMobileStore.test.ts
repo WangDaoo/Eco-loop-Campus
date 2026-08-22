@@ -10,7 +10,12 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
 }
 
-function makeFakeSupabase(seed: Tables, authUser = { id: 'student-1', email: 'student@school.edu.vn' }, errorTables: Record<string, string> = {}) {
+function makeFakeSupabase(
+  seed: Tables,
+  authUser = { id: 'student-1', email: 'student@school.edu.vn' },
+  errorTables: Record<string, string> = {},
+  rpcHandlers: Record<string, (params: Row) => Row | Promise<Row>> = {}
+) {
   const tables: Tables = clone(seed);
   const calls: Row[] = [];
 
@@ -107,7 +112,7 @@ function makeFakeSupabase(seed: Tables, authUser = { id: 'student-1', email: 'st
     }
   }
 
-  return {
+  const fake: any = {
     tables,
     calls,
     auth: {
@@ -117,6 +122,10 @@ function makeFakeSupabase(seed: Tables, authUser = { id: 'student-1', email: 'st
       },
       async signUp(input: { email: string; password: string; options?: { data?: Row } }) {
         calls.push({ action: 'signUp', email: input.email, password: input.password });
+        return { data: { user: authUser }, error: null };
+      },
+      async updateUser(input: { password?: string }) {
+        calls.push({ action: 'updateUser', password: input.password });
         return { data: { user: authUser }, error: null };
       },
       async signOut() {
@@ -145,6 +154,24 @@ function makeFakeSupabase(seed: Tables, authUser = { id: 'student-1', email: 'st
       return new Query(table);
     }
   };
+  if (Object.keys(rpcHandlers).length > 0) {
+    fake.rpc = async (name: string, params: Row) => {
+      calls.push({ action: 'rpc', name, params });
+      const handler = rpcHandlers[name];
+      if (!handler) return { data: null, error: { message: `function ${name} does not exist` } };
+      return { data: await handler(params), error: null };
+    };
+  }
+  return fake;
+}
+
+function makeMissingRpcSupabase(seed: Tables) {
+  const fake: any = makeFakeSupabase(seed);
+  fake.rpc = async (name: string, params: Row) => {
+    fake.calls.push({ action: 'rpc', name, params });
+    return { data: null, error: { message: `Could not find the function public.${name} in the schema cache` } };
+  };
+  return fake;
 }
 
 function makeNoReturningUpdateSupabase(seed: Tables, noReturnTables: string[]) {
@@ -203,6 +230,64 @@ const baseTables: Tables = {
   proof_images: []
 };
 
+test('Supabase mobile store creates registration profile without optional avatar columns', async () => {
+  const authUser = { id: 'new-student', email: 'new.student@school.edu.vn' };
+  const fake = makeFakeSupabase({ ...baseTables, users: [] }, authUser);
+  const store = createSupabaseMobileStore(fake as any);
+
+  const profile = await store.signUp('Nguyen Van Moi', authUser.email, 'secret-123', 'student');
+
+  assert.equal(profile.id, authUser.id);
+  assert.equal(fake.tables.users[0].name, 'Nguyen Van Moi');
+  assert.equal(fake.tables.users[0].role, 'student');
+  assert.equal(Object.hasOwn(fake.tables.users[0], 'avatar_key'), false);
+  assert.equal(Object.hasOwn(fake.tables.users[0], 'avatar_url'), false);
+});
+
+test('Supabase mobile store verifies the current password before updating Auth password', async () => {
+  const fake = makeFakeSupabase(baseTables);
+  const store = createSupabaseMobileStore(fake as any);
+
+  await store.updatePassword('student@school.edu.vn', 'old-secret-123', 'new-secret-123');
+
+  assert.deepEqual(fake.calls.find((call: Row) => call.action === 'signIn'), {
+    action: 'signIn',
+    email: 'student@school.edu.vn',
+    password: 'old-secret-123'
+  });
+  assert.deepEqual(fake.calls.find((call: Row) => call.action === 'updateUser'), {
+    action: 'updateUser',
+    password: 'new-secret-123'
+  });
+});
+
+test('Supabase mobile store creates volunteer registrations as pending for admin approval', async () => {
+  const authUser = { id: 'new-volunteer', email: 'new.volunteer@school.edu.vn' };
+  const fake = makeFakeSupabase({ ...baseTables, users: [] }, authUser);
+  const store = createSupabaseMobileStore(fake as any);
+
+  const profile = await store.signUp('Tinh Nguyen Vien Moi', authUser.email, 'secret-123', 'volunteer');
+
+  assert.equal(profile.status, 'pending');
+  assert.equal(fake.tables.users[0].role, 'volunteer');
+  assert.equal(fake.tables.users[0].status, 'pending');
+});
+
+test('Supabase mobile store blocks pending volunteer sign-in until admin approval', async () => {
+  const fake = makeFakeSupabase({
+    ...baseTables,
+    users: [
+      { id: 'vol-1', name: 'Long', email: 'volunteer@school.edu.vn', role: 'volunteer', group: 'CLB Moi truong', points: 0, status: 'pending' }
+    ]
+  }, { id: 'vol-1', email: 'volunteer@school.edu.vn' });
+  const store = createSupabaseMobileStore(fake as any);
+
+  await assert.rejects(
+    () => store.signIn('volunteer', 'volunteer@school.edu.vn', 'secret'),
+    /đang chờ admin phê duyệt/
+  );
+});
+
 test('Supabase mobile store signs in, loads data, creates QR submission, and confirms points', async () => {
   const fake = makeFakeSupabase(baseTables);
   const store = createSupabaseMobileStore(fake as any);
@@ -237,7 +322,85 @@ test('Supabase mobile store signs in, loads data, creates QR submission, and con
   const confirmed = await store.confirmSubmission(submission.id, 1.5, 'vol-1', 'Hop le', data.wasteTypes);
   assert.equal(confirmed.submission.status, 'POINT_CONFIRMED');
   assert.equal(confirmed.point.points, 60);
-  assert.equal(fake.tables.users.find(row => row.id === 'student-1')?.points, 80);
+  assert.equal(fake.tables.users.find((row: Row) => row.id === 'student-1')?.points, 80);
+});
+
+test('Supabase mobile store uses RPC for recycling submission lifecycle when RPC is available', async () => {
+  const createdRow = {
+    id: 'sub-rpc',
+    user_id: 'student-1',
+    bin_id: 'bin-1',
+    waste_type_id: 'paper',
+    quantity: 2,
+    unit: 'kg',
+    qr_token: 'ECO-RPC',
+    status: 'CREATED',
+    created_at: '2026-08-22T08:00:00.000Z',
+    expired_at: '2026-08-22T08:45:00.000Z'
+  };
+  const scannedRow = { ...createdRow, status: 'QR_SCANNED', verified_by: 'vol-1', verified_at: '2026-08-22T08:05:00.000Z' };
+  const confirmedRow = { ...scannedRow, status: 'POINT_CONFIRMED', actual_quantity: 1.5, volunteer_note: 'Hop le' };
+  const pointRow = {
+    id: 'point-rpc',
+    user_id: 'student-1',
+    submission_id: 'sub-rpc',
+    points: 60,
+    status: 'confirmed',
+    source: 'volunteer_verification',
+    description: 'Xac nhan 1.5 kg Giay sach',
+    created_at: '2026-08-22T08:06:00.000Z'
+  };
+  const fake = makeFakeSupabase(baseTables, { id: 'student-1', email: 'student@school.edu.vn' }, {}, {
+    create_recycling_submission: params => {
+      assert.deepEqual(params, { p_bin_id: 'bin-1', p_waste_type_id: 'paper', p_quantity: 2 });
+      return createdRow;
+    },
+    scan_recycling_qr: params => {
+      assert.deepEqual(params, { p_qr_token: 'ECO-RPC', p_station_id: 'bin-1' });
+      return { result: 'SUCCESS', submission: scannedRow, note: 'QR hop le' };
+    },
+    confirm_recycling_submission: params => {
+      assert.deepEqual(params, { p_submission_id: 'sub-rpc', p_actual_quantity: 1.5, p_volunteer_note: 'Hop le' });
+      return { submission: confirmedRow, point: pointRow, updated_user_points: 80 };
+    },
+    reject_recycling_submission: params => {
+      assert.deepEqual(params, { p_submission_id: 'sub-rpc', p_volunteer_note: 'Sai loai rac' });
+      return { ...createdRow, status: 'REJECTED', volunteer_note: 'Sai loai rac' };
+    },
+    request_recycling_review: params => {
+      assert.deepEqual(params, { p_submission_id: 'sub-rpc', p_volunteer_note: 'Can admin review' });
+      return { ...createdRow, status: 'PENDING_REVIEW', volunteer_note: 'Can admin review' };
+    }
+  });
+  const store = createSupabaseMobileStore(fake as any);
+  const wasteTypes = baseTables.waste_types.map(row => ({
+    id: String(row.id),
+    name: String(row.name),
+    unit: 'kg' as const,
+    pointPerUnit: Number(row.point_per_unit),
+    recycleMethod: String(row.recycle_method),
+    status: 'active' as const
+  }));
+
+  const created = await store.createSubmission('student-1', { binId: 'bin-1', wasteTypeId: 'paper', quantity: 2 }, wasteTypes);
+  const scanned = await store.markSubmissionScanned(created.qrToken, 'vol-1', 'bin-1');
+  const confirmed = await store.confirmSubmission(created.id, 1.5, 'vol-1', 'Hop le', wasteTypes);
+  const rejected = await store.rejectSubmission(created.id, 'vol-1', 'Sai loai rac');
+  const review = await store.requestReview(created.id, 'vol-1', 'Can admin review');
+
+  assert.equal(created.id, 'sub-rpc');
+  assert.equal(scanned.result, 'SUCCESS');
+  assert.equal(confirmed.submission.status, 'POINT_CONFIRMED');
+  assert.equal(confirmed.point.points, 60);
+  assert.equal(rejected.status, 'REJECTED');
+  assert.equal(review.status, 'PENDING_REVIEW');
+  assert.deepEqual(fake.calls.filter((call: Row) => call.action === 'rpc').map((call: Row) => call.name), [
+    'create_recycling_submission',
+    'scan_recycling_qr',
+    'confirm_recycling_submission',
+    'reject_recycling_submission',
+    'request_recycling_review'
+  ]);
 });
 
 test('Supabase mobile store blocks point confirmation until QR scan succeeds', async () => {
@@ -275,6 +438,42 @@ test('Supabase mobile store blocks point confirmation until QR scan succeeds', a
   assert.equal(fake.tables.recycling_submissions[0].status, 'CREATED');
 });
 
+test('Supabase mobile store refuses atomic confirmation when live RPC is missing', async () => {
+  const fake = makeMissingRpcSupabase({
+    ...baseTables,
+    recycling_submissions: [
+      {
+        id: 'sub-scanned',
+        user_id: 'student-1',
+        bin_id: 'bin-1',
+        waste_type_id: 'paper',
+        quantity: 1,
+        unit: 'kg',
+        qr_token: 'ECO-SCANNED',
+        status: 'QR_SCANNED',
+        created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+        expired_at: new Date(Date.now() + 45 * 60 * 1000).toISOString()
+      }
+    ]
+  });
+  const store = createSupabaseMobileStore(fake as any);
+
+  await assert.rejects(
+    () => store.confirmSubmission('sub-scanned', 1, 'vol-1', 'Hop le', baseTables.waste_types.map(row => ({
+      id: String(row.id),
+      name: String(row.name),
+      unit: 'kg' as const,
+      pointPerUnit: Number(row.point_per_unit),
+      recycleMethod: String(row.recycle_method),
+      status: 'active' as const
+    }))),
+    /RPC confirm_recycling_submission chưa được triển khai/
+  );
+  assert.equal(fake.tables.point_history.length, 0);
+  assert.equal(fake.tables.recycling_submissions[0].status, 'QR_SCANNED');
+  assert.equal(fake.tables.users.find((row: Row) => row.id === 'student-1')?.points, 20);
+});
+
 test('Supabase mobile store confirms points even when users update does not return a row', async () => {
   const fake = makeNoReturningUpdateSupabase({
     ...baseTables,
@@ -306,7 +505,7 @@ test('Supabase mobile store confirms points even when users update does not retu
 
   assert.equal(confirmed.submission.status, 'POINT_CONFIRMED');
   assert.equal(confirmed.point.points, 40);
-  assert.equal(fake.tables.users.find(row => row.id === 'student-1')?.points, 60);
+  assert.equal(fake.tables.users.find((row: Row) => row.id === 'student-1')?.points, 60);
 });
 
 test('Supabase mobile store marks expired QR submissions as EXPIRED during scan', async () => {
@@ -379,7 +578,7 @@ test('Supabase mobile store returns scan outcomes for wrong station, used QR, an
   assert.equal(used.submission?.status, 'POINT_CONFIRMED');
   assert.equal(invalid.result, 'INVALID_TOKEN');
   assert.equal(invalid.submission, undefined);
-  assert.deepEqual(fake.tables.qr_scan_logs.slice(0, 3).map(row => row.result), ['INVALID_TOKEN', 'ALREADY_USED', 'WRONG_STATION']);
+  assert.deepEqual(fake.tables.qr_scan_logs.slice(0, 3).map((row: Row) => row.result), ['INVALID_TOKEN', 'ALREADY_USED', 'WRONG_STATION']);
 });
 
 test('Supabase mobile store submits feedback and requests reward redemption', async () => {
@@ -446,7 +645,7 @@ test('Supabase mobile store uploads AI prediction images before saving review ro
 
     assert.equal(prediction.imageUrl, 'https://cdn.example/prediction-images/mobile-ai/student-1/ai-20260802080000-222333.jpg');
     assert.equal(fake.tables.predictions[0].image_url, prediction.imageUrl);
-    assert.equal(fake.calls.find(call => call.action === 'storageUpload')?.bucket, 'prediction-images');
+    assert.equal(fake.calls.find((call: Row) => call.action === 'storageUpload')?.bucket, 'prediction-images');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -480,7 +679,7 @@ test('Supabase mobile store saves proof image rows for volunteer verification', 
   assert.equal(fake.tables.proof_images[0].status, 'pending');
 });
 
-test('Supabase mobile store reports missing mobile schema with actionable setup hint', async () => {
+test('Supabase mobile store reports missing mobile tables with actionable setup hint', async () => {
   const fake = makeFakeSupabase(baseTables, { id: 'student-1', email: 'student@school.edu.vn' }, {
     waste_types: 'relation "public.waste_types" does not exist',
     recycling_submissions: 'permission denied for table recycling_submissions'
@@ -491,7 +690,7 @@ test('Supabase mobile store reports missing mobile schema with actionable setup 
 
   assert.equal(health.ok, false);
   assert.deepEqual(health.missingTables, ['waste_types', 'recycling_submissions']);
-  assert.match(health.message, /schema.sql/);
+  assert.match(health.message, /đồng bộ dữ liệu vận hành/);
 });
 
 test('Supabase mobile store marks operating data incomplete when stations or waste types are empty', () => {
@@ -525,7 +724,7 @@ test('Supabase mobile store advances user mission progress in user_missions', as
   assert.equal(fake.tables.user_missions[0].status, 'completed');
   assert.equal(fake.tables.point_history[0].points, 100);
   assert.equal(fake.tables.point_history[0].source, 'mission_reward');
-  assert.equal(fake.tables.users.find(row => row.id === 'student-1')?.points, 120);
+  assert.equal(fake.tables.users.find((row: Row) => row.id === 'student-1')?.points, 120);
 });
 
 test('Supabase mobile store does not pay mission reward twice after completion', async () => {
@@ -543,5 +742,5 @@ test('Supabase mobile store does not pay mission reward twice after completion',
 
   assert.equal(mission.completed, true);
   assert.equal(fake.tables.point_history.length, 0);
-  assert.equal(fake.tables.users.find(row => row.id === 'student-1')?.points, 20);
+  assert.equal(fake.tables.users.find((row: Row) => row.id === 'student-1')?.points, 20);
 });

@@ -47,7 +47,9 @@ function role(value: unknown): UserRole {
 }
 
 function userStatus(value: unknown): UserProfile['status'] {
-  return text(value, 'active').trim().toLowerCase() === 'locked' ? 'locked' : 'active';
+  const normalized = text(value, 'active').trim().toLowerCase();
+  if (normalized === 'locked' || normalized === 'pending' || normalized === 'rejected') return normalized;
+  return 'active';
 }
 
 function binStatus(value: unknown): BinStation['status'] {
@@ -129,7 +131,7 @@ function nonce(random: () => number) {
 }
 
 export function mapUserRow(row: Row): UserProfile {
-  return {
+  const profile: UserProfile = {
     id: text(row.id),
     name: text(row.name, 'Nguoi dung Eco-loop'),
     email: text(row.email),
@@ -138,6 +140,11 @@ export function mapUserRow(row: Row): UserProfile {
     points: number(row.points),
     status: userStatus(row.status)
   };
+  const avatarKey = text(row.avatarKey ?? row.avatar_key).trim();
+  const avatarUrl = text(row.avatarUrl ?? row.avatar_url).trim();
+  if (avatarKey) profile.avatarKey = avatarKey;
+  if (avatarUrl) profile.avatarUrl = avatarUrl;
+  return profile;
 }
 
 export function toUserRow(user: UserProfile): Row {
@@ -148,7 +155,9 @@ export function toUserRow(user: UserProfile): Row {
     role: user.role,
     group: user.group,
     points: user.points,
-    status: user.status
+    status: user.status,
+    avatar_key: user.avatarKey ?? null,
+    avatar_url: user.avatarUrl ?? null
   };
 }
 

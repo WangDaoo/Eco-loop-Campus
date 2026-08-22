@@ -1,11 +1,25 @@
 import React from 'react';
 import { StyleSheet, Text, View, Image } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
 import { getPredictionStatusText, getPredictionStatusTone, getPredictionSubtitle } from '../services/predictionPresentation';
+import { getSubmissionStatusLabel, getSubmissionStatusTone, getWasteTypeDisplayName } from '../services/submissionPresentation';
 import { RewardRedemption } from '../types';
 import { colors } from '../theme/colors';
+
+function pointStatusText(status: 'pending' | 'confirmed' | 'rejected') {
+  switch (status) {
+    case 'confirmed':
+      return 'Đã cộng';
+    case 'rejected':
+      return 'Bị từ chối';
+    case 'pending':
+    default:
+      return 'Chờ xử lý';
+  }
+}
 
 function redemptionStatusText(status: RewardRedemption['status']) {
   switch (status) {
@@ -40,17 +54,18 @@ export default function HistoryScreen() {
     currentUser.role === 'student' ? aiPredictions.filter(item => item.userId === currentUser.id) : aiPredictions;
 
   return (
-    <Screen>
+    <Screen scroll>
       <Text style={styles.title}>{currentUser.role === 'student' ? 'Lịch sử của bạn' : 'Lịch sử xác minh'}</Text>
       <Text style={styles.section}>Giao dịch tái chế</Text>
       {userSubmissions.map(item => {
         const station = stations.find(stationItem => stationItem.id === item.binId);
-        const waste = wasteTypes.find(wasteItem => wasteItem.id === item.wasteTypeId);
+        const wasteName = getWasteTypeDisplayName(wasteTypes, item.wasteTypeId);
+        const tone = getSubmissionStatusTone(item.status);
         return (
           <Card key={item.id} style={styles.item}>
             <View style={styles.row}>
-              <Text style={styles.action}>{waste?.name ?? item.wasteTypeId}</Text>
-              <Text style={styles.status}>{item.status}</Text>
+              <Text style={styles.action}>{wasteName}</Text>
+              <Text style={[styles.statusBadge, styles[tone]]}>{getSubmissionStatusLabel(item.status)}</Text>
             </View>
             <Text style={styles.time}>{item.quantity} {item.unit} tại {station?.name ?? item.binId}</Text>
             <Text style={styles.time}>QR: {item.qrToken}</Text>
@@ -90,7 +105,7 @@ export default function HistoryScreen() {
         <Card key={item.id} style={styles.item}>
           <Text style={styles.action}>{item.description}</Text>
           <Text style={[styles.amount, item.type === 'earn' ? styles.earn : styles.spend]}>{item.type === 'earn' ? '+' : '-'}{item.points} Ecopoint</Text>
-          <Text style={styles.time}>{item.createdAt.toLocaleDateString('vi-VN')} - {item.status}</Text>
+          <Text style={styles.time}>{item.createdAt.toLocaleDateString('vi-VN')} - {pointStatusText(item.status)}</Text>
         </Card>
       ))}
 
@@ -108,10 +123,13 @@ export default function HistoryScreen() {
           </Card>
         ))
       ) : (
-        <View style={styles.emptyContainer}>
-          <Image source={require('../assets/eco_cloud.png')} style={styles.mascot} />
-          <Text style={styles.empty}>Chưa có yêu cầu đổi thưởng.</Text>
-        </View>
+        <Card style={styles.rewardEmptyCard}>
+          <View style={styles.rewardEmptyIconWrap}>
+            <Ionicons name="gift-outline" size={32} color={colors.ecoDarkBlue} />
+          </View>
+          <Text style={styles.rewardEmptyTitle}>Chưa có yêu cầu đổi thưởng</Text>
+          <Text style={styles.rewardEmptyText}>Khi bạn đổi quà, yêu cầu sẽ xuất hiện tại đây để theo dõi trạng thái.</Text>
+        </Card>
       )}
     </Screen>
   );
@@ -128,11 +146,47 @@ const styles = StyleSheet.create({
   success: { backgroundColor: colors.mint, color: colors.green },
   warning: { backgroundColor: colors.gold, color: colors.ink },
   danger: { backgroundColor: colors.coral, color: colors.white },
+  info: { backgroundColor: colors.ecoPill, color: colors.ecoDarkBlue },
+  muted: { backgroundColor: colors.cream, color: colors.muted },
   amount: { color: colors.coralDark, fontSize: 18, fontWeight: '900', marginTop: 5 },
   earn: { color: colors.green },
   spend: { color: colors.coralDark },
   time: { color: colors.muted, marginTop: 4 },
   emptyContainer: { alignItems: 'center', marginVertical: 20 },
   mascot: { width: 120, height: 120, resizeMode: 'contain', marginBottom: 12 },
-  empty: { color: colors.muted, fontWeight: '700', textAlign: 'center' }
+  empty: { color: colors.muted, fontWeight: '700', textAlign: 'center' },
+  rewardEmptyCard: {
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: colors.ecoPill,
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingVertical: 24,
+  },
+  rewardEmptyIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    backgroundColor: colors.ecoBlue,
+    borderBottomWidth: 4,
+    borderBottomColor: colors.ecoCardShadow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  rewardEmptyTitle: {
+    color: colors.ecoDarkBlue,
+    fontSize: 17,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  rewardEmptyText: {
+    color: '#659bad',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 20,
+    marginTop: 6,
+    maxWidth: 280,
+    textAlign: 'center',
+  }
 });

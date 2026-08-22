@@ -51,9 +51,34 @@ test('AppProvider creates offline Ecopoint rewards when missions complete', () =
   assert.match(source, /setPointTransactions\(items => \[rewardPoint, \.\.\.items\]\)/);
 });
 
-test('AppProvider exposes explicit offline demo login without pretending to use Supabase', () => {
+test('AppProvider exposes explicit local preview login without pretending to use remote data', () => {
   assert.match(source, /signInDemo: \(role: UserProfile\['role'\]\) => Promise<void>/);
   assert.match(source, /resetMockSession/);
   assert.match(source, /setSyncSource\('mock'\)/);
-  assert.match(source, /Demo offline/);
+  assert.match(source, /dữ liệu lưu trên thiết bị/);
+});
+test('AppProvider exposes avatar updates and keeps current user plus leaderboard users in sync', () => {
+  assert.match(source, /updateAvatar: \(avatarKey: string\) => Promise<void>/);
+  assert.match(source, /remoteStore\.updateAvatar/);
+  assert.match(source, /avatarKey/);
+  assert.match(source, /setCurrentUser\(nextUser\)/);
+  assert.match(source, /setUsers\(items => items\.map/);
+});
+
+test('AppProvider exposes password updates through Supabase Auth', () => {
+  assert.match(source, /updatePassword: \(email: string, currentPassword: string, newPassword: string\) => Promise<void>/);
+  assert.match(source, /remoteStore\.updatePassword\(email, currentPassword, newPassword\)/);
+});
+
+test('AppProvider keeps pending volunteer registrations outside the authenticated app shell', () => {
+  assert.match(source, /user\.status !== 'active'/);
+  assert.match(source, /setIsAuthenticated\(false\)/);
+  assert.match(source, /await remoteStore\.signOut\(\)/);
+});
+
+test('AppProvider surfaces Supabase mutation errors instead of falling back to local success', () => {
+  assert.match(source, /const failRemoteMutation = \(error: unknown\): never => \{/);
+  assert.match(source, /catch \(error\) \{\s*failRemoteMutation\(error\);\s*\}/);
+  assert.match(source, /remoteStore\.confirmSubmission[\s\S]*catch \(error\) \{\s*failRemoteMutation\(error\);\s*\}/);
+  assert.match(source, /remoteStore\.attachProofImage[\s\S]*catch \(error\) \{\s*failRemoteMutation\(error\);\s*\}/);
 });

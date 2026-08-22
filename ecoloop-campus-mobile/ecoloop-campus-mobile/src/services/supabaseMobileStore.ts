@@ -37,8 +37,7 @@ import {
   mapUserRow,
   mapWasteTypeRow,
   toSubmissionRow,
-  toPredictionRow,
-  toUserRow
+  toPredictionRow
 } from './supabaseAdapters';
 
 type Row = Record<string, any>;
@@ -48,6 +47,7 @@ type SupabaseLike = {
   auth: {
     signInWithPassword(input: { email: string; password: string }): Promise<{ data: { user?: { id: string; email?: string | null } | null }; error: SupabaseError }>;
     signUp(input: { email: string; password: string; options?: { data?: Row } }): Promise<{ data: { user?: { id: string; email?: string | null } | null }; error: SupabaseError }>;
+    updateUser(input: { password?: string }): Promise<{ data: { user?: { id: string; email?: string | null } | null }; error: SupabaseError }>;
     signOut(): Promise<{ error: SupabaseError }>;
     getSession(): Promise<{ data: { session?: { user: { id: string; email?: string | null } } | null }; error: SupabaseError }>;
   };
@@ -58,6 +58,7 @@ type SupabaseLike = {
       getPublicUrl(path: string): { data: { publicUrl: string } };
     };
   };
+  rpc?: (name: string, params?: Row) => PromiseLike<{ data: Row | null; error: SupabaseError }>;
   channel?: (name: string) => any;
   removeChannel?: (channel: any) => Promise<unknown>;
 };
@@ -93,9 +94,11 @@ export type SupabaseMobileStore = {
   getOperatingReadiness(data: Pick<MobileInitialData, 'stations' | 'wasteTypes'>): OperatingReadiness;
   signIn(role: UserRole, email: string, password: string): Promise<UserProfile>;
   signUp(name: string, email: string, password: string, role: UserRole): Promise<UserProfile>;
+  updatePassword(email: string, currentPassword: string, newPassword: string): Promise<void>;
   signOut(): Promise<void>;
   loadSessionProfile(): Promise<UserProfile | undefined>;
   loadInitialData(profile: UserProfile): Promise<MobileInitialData>;
+  updateAvatar(userId: string, avatarKey: string): Promise<UserProfile>;
   createSubmission(
     userId: string,
     input: CreateSubmissionInput,
@@ -164,16 +167,36 @@ function predictionExtensionFrom(input: SavePredictionInput) {
   return 'jpg';
 }
 
+function unknownMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function normalizeProofUploadUri(uri: string, submissionId: string, proofId: string, extension: string) {
+  if (!uri.startsWith('content://')) return uri;
+  try {
+    const fileSystem = require('expo-file-system') as { cacheDirectory?: string; copyAsync?: (input: { from: string; to: string }) => Promise<void> };
+    const cacheDirectory = typeof fileSystem.cacheDirectory === 'string' ? fileSystem.cacheDirectory : '';
+    if (!cacheDirectory || typeof fileSystem.copyAsync !== 'function') return uri;
+    const targetUri = `${cacheDirectory}ecoloop-proof-${submissionId}-${proofId}.${extension}`;
+    await fileSystem.copyAsync({ from: uri, to: targetUri });
+    return targetUri;
+  } catch (error) {
+    throw new Error(`Khong chuan bi duoc anh minh chung: ${unknownMessage(error)}`);
+  }
+}
+
 async function resolveProofImageUrl(client: SupabaseLike, submissionId: string, proofId: string, input: CreateProofImageInput) {
   if (input.imageUrl?.trim()) return input.imageUrl.trim();
   if (!input.imageUri?.trim()) throw new Error('Chua co anh minh chung');
   if (!client.storage) return input.imageUri.trim();
 
-  const response = await fetch(input.imageUri);
-  const blob = await response.blob();
-  const path = `${submissionId}/${proofId}.${extensionFrom(input)}`;
+  const extension = extensionFrom(input);
+  const uploadUri = await normalizeProofUploadUri(input.imageUri.trim(), submissionId, proofId, extension);
+  const response = await fetch(uploadUri);
+  const fileBody = await response.arrayBuffer();
+  const path = `${submissionId}/${proofId}.${extension}`;
   const bucket = client.storage.from('proof-images');
-  const upload = await bucket.upload(path, blob, {
+  const upload = await bucket.upload(path, fileBody, {
     contentType: input.mimeType ?? 'image/jpeg',
     upsert: true
   });
@@ -202,7 +225,7 @@ function errorMessage(error: SupabaseError, fallback: string) {
   const message = error?.message;
   if (!message) return fallback;
   if (message.toLowerCase().includes('invalid login credentials')) {
-    return `${fallback}: email ho?c m?t kh?u kh?ng ??ng, ho?c t?i kho?n ch?a ???c t?o trong Supabase Auth.`;
+    return `${fallback}: email hoặc mật khẩu chưa đúng, hoặc tài khoản chưa được cấp quyền trong Eco-loop Campus.`;
   }
   return `${fallback}: ${message}`;
 }
@@ -210,6 +233,33 @@ function errorMessage(error: SupabaseError, fallback: string) {
 function ensureOk<T>(result: { data: T; error: SupabaseError }, fallback: string): T {
   if (result.error) throw new Error(errorMessage(result.error, fallback));
   return result.data;
+}
+
+function isMissingRpc(error: SupabaseError) {
+  const message = String(error?.message ?? '').toLowerCase();
+  return message.includes('function') && (message.includes('does not exist') || message.includes('could not find'));
+}
+
+async function tryRpc(client: SupabaseLike, name: string, params: Row, fallback: string) {
+  if (!client.rpc) return undefined;
+  const result = await client.rpc(name, params);
+  if (result.error) {
+    if (isMissingRpc(result.error)) {
+      throw new Error(`RPC ${name} chưa được triển khai trên Supabase. Cần cập nhật schema SQL trước khi chạy luồng QR/Ecopoint.`);
+    }
+    throw new Error(errorMessage(result.error, fallback));
+  }
+  return result.data ?? undefined;
+}
+
+function mapRpcScanOutcome(row: Row): QRScanOutcome {
+  const result = String(row.result ?? 'INVALID_TOKEN').trim().toUpperCase() as QRScanOutcome['result'];
+  const submission = row.submission && typeof row.submission === 'object' ? mapSubmissionRow(row.submission as Row) : undefined;
+  return {
+    result,
+    submission,
+    note: typeof row.note === 'string' ? row.note : ''
+  };
 }
 
 
@@ -250,6 +300,18 @@ async function singleBy(client: SupabaseLike, table: string, column: string, val
 async function insertRow(client: SupabaseLike, table: string, row: Row) {
   const result = await client.from(table).insert(row).select('*').single();
   return ensureOk<Row>(result, `Khong ghi duoc bang ${table}`);
+}
+
+function toUserRegistrationRow(profile: UserProfile): Row {
+  return {
+    id: profile.id,
+    name: profile.name,
+    email: profile.email,
+    role: profile.role,
+    group: profile.group,
+    points: profile.points,
+    status: profile.status
+  };
 }
 
 async function updateRow(client: SupabaseLike, table: string, column: string, value: string, patch: Row) {
@@ -300,8 +362,8 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
         ok,
         missingTables,
         message: ok
-          ? 'Supabase schema da san sang cho Eco-loop Campus mobile.'
-          : `Supabase thieu hoac chan bang mobile (${missingTables.join(', ')}). Hay chay frontend/eco-loop-campus-admin/supabase/schema.sql trong Supabase SQL Editor.`
+          ? 'Dữ liệu vận hành đã sẵn sàng cho Eco-loop Campus mobile.'
+          : `Hệ thống chưa sẵn sàng cho mobile: thiếu hoặc chưa cấp quyền các bảng ${missingTables.join(', ')}. Vui lòng đồng bộ dữ liệu vận hành trước khi tiếp tục.`
       };
     },
 
@@ -311,13 +373,15 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
 
     async signIn(role, email, password) {
       const authResult = await client.auth.signInWithPassword({ email: email.trim(), password });
-      const user = ensureOk(authResult, 'Dang nhap Supabase that bai').user;
-      if (!user) throw new Error('Dang nhap Supabase khong tra ve user');
+      const user = ensureOk(authResult, 'Đăng nhập không thành công').user;
+      if (!user) throw new Error('Không nhận được thông tin tài khoản');
 
       const profile = await findProfile(client, user);
-      if (!profile) throw new Error('Tai khoan chua co ho so Eco-loop Campus');
-      if (profile.status === 'locked') throw new Error('Tai khoan dang bi khoa');
-      if (profile.role !== role) throw new Error(`Tai khoan nay co vai tro ${profile.role}, khong phai ${role}`);
+      if (!profile) throw new Error('Tài khoản chưa có hồ sơ Eco-loop Campus');
+      if (profile.status === 'pending') throw new Error('Tài khoản tình nguyện viên đang chờ admin phê duyệt.');
+      if (profile.status === 'rejected') throw new Error('Yêu cầu cấp quyền tình nguyện viên đã bị từ chối. Vui lòng liên hệ ban vận hành nếu cần kiểm tra lại.');
+      if (profile.status === 'locked') throw new Error('Tài khoản đang bị khóa');
+      if (profile.role !== role) throw new Error(`Tài khoản này không thuộc vai trò đang chọn`);
       return profile;
     },
 
@@ -327,30 +391,43 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
         password,
         options: { data: { name: name.trim(), role } }
       });
-      const user = ensureOk(authResult, 'Dang ky Supabase that bai').user;
-      if (!user) throw new Error('Dang ky Supabase khong tra ve user');
+      const user = ensureOk(authResult, 'Không tạo được tài khoản').user;
+      if (!user) throw new Error('Không nhận được thông tin tài khoản mới');
 
       const profile: UserProfile = {
         id: user.id,
         name: name.trim(),
         email: email.trim(),
         role,
-        group: role === 'student' ? 'Sinh vien Eco-loop' : 'Tinh nguyen vien Eco-loop',
+        group: role === 'student' ? 'Sinh viên Eco-loop' : 'Tình nguyện viên Eco-loop',
         points: 0,
-        status: 'active'
+        status: role === 'volunteer' ? 'pending' : 'active'
       };
-      const row = await insertRow(client, 'users', toUserRow(profile));
+      const row = await insertRow(client, 'users', toUserRegistrationRow(profile));
       return mapUserRow(row);
+    },
+
+    async updatePassword(email, currentPassword, newPassword) {
+      const cleanedEmail = email.trim();
+      const cleanedCurrentPassword = currentPassword.trim();
+      const cleaned = newPassword.trim();
+      if (!cleanedEmail) throw new Error('Không tìm thấy email tài khoản hiện tại');
+      if (!cleanedCurrentPassword) throw new Error('Nhập mật khẩu hiện tại trước khi đổi mật khẩu');
+      if (cleaned.length < 6) throw new Error('Mật khẩu mới cần có ít nhất 6 ký tự');
+      const verification = await client.auth.signInWithPassword({ email: cleanedEmail, password: cleanedCurrentPassword });
+      if (verification.error) throw new Error(errorMessage(verification.error, 'Mật khẩu hiện tại chưa đúng'));
+      const result = await client.auth.updateUser({ password: cleaned });
+      if (result.error) throw new Error(errorMessage(result.error, 'Không đổi được mật khẩu'));
     },
 
     async signOut() {
       const result = await client.auth.signOut();
-      if (result.error) throw new Error(errorMessage(result.error, 'Dang xuat Supabase that bai'));
+      if (result.error) throw new Error(errorMessage(result.error, 'Không đăng xuất được'));
     },
 
     async loadSessionProfile() {
       const sessionResult = await client.auth.getSession();
-      const session = ensureOk(sessionResult, 'Khong doc duoc session Supabase').session;
+      const session = ensureOk(sessionResult, 'Không đọc được phiên đăng nhập').session;
       if (!session?.user) return undefined;
       return findProfile(client, session.user);
     },
@@ -397,9 +474,20 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
       };
     },
 
+    async updateAvatar(userId, avatarKey) {
+      const row = await updateRow(client, 'users', 'id', userId, { avatar_key: avatarKey });
+      return mapUserRow(row);
+    },
+
     async createSubmission(userId, input, wasteTypes, now = new Date(), random = Math.random) {
       const wasteType = wasteTypes.find(item => item.id === input.wasteTypeId);
       if (!wasteType) throw new Error('Loai rac khong hop le');
+      const rpcRow = await tryRpc(client, 'create_recycling_submission', {
+        p_bin_id: input.binId,
+        p_waste_type_id: input.wasteTypeId,
+        p_quantity: input.quantity
+      }, 'Khong tao duoc giao dich gui rac');
+      if (rpcRow) return mapSubmissionRow(rpcRow);
       const draft = buildSubmissionDraft({ userId, input, wasteType, now, random });
       const row = await insertRow(client, 'recycling_submissions', toSubmissionRow(draft));
       return mapSubmissionRow(row);
@@ -414,6 +502,11 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
 
     async markSubmissionScanned(qrToken, volunteerId, stationId) {
       const token = qrToken.trim().toUpperCase();
+      const rpcOutcome = await tryRpc(client, 'scan_recycling_qr', {
+        p_qr_token: token,
+        p_station_id: stationId ?? null
+      }, 'Khong quet duoc QR giao dich');
+      if (rpcOutcome) return mapRpcScanOutcome(rpcOutcome);
       const current = await maybeSingle(client, 'recycling_submissions', 'qr_token', token);
       if (!current) {
         await writeQrLog(client, token, volunteerId, stationId, 'INVALID_TOKEN');
@@ -449,6 +542,17 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
     },
 
     async confirmSubmission(submissionId, actualQuantity, volunteerId, volunteerNote, wasteTypes) {
+      const rpcResult = await tryRpc(client, 'confirm_recycling_submission', {
+        p_submission_id: submissionId,
+        p_actual_quantity: actualQuantity,
+        p_volunteer_note: volunteerNote ?? ''
+      }, 'Khong xac nhan duoc giao dich');
+      if (rpcResult) {
+        const submissionRow = rpcResult.submission && typeof rpcResult.submission === 'object' ? rpcResult.submission as Row : undefined;
+        const pointRow = rpcResult.point && typeof rpcResult.point === 'object' ? rpcResult.point as Row : undefined;
+        if (!submissionRow || !pointRow) throw new Error('RPC confirm khong tra du thong tin giao dich va diem');
+        return { submission: mapSubmissionRow(submissionRow), point: mapPointHistoryRow(pointRow) };
+      }
       const current = mapSubmissionRow(await singleBy(client, 'recycling_submissions', 'id', submissionId));
       const wasteType = wasteTypes.find(item => item.id === current.wasteTypeId);
       if (!wasteType) throw new Error('Loai rac khong hop le');
@@ -488,6 +592,11 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
     },
 
     async rejectSubmission(submissionId, volunteerId, volunteerNote) {
+      const rpcRow = await tryRpc(client, 'reject_recycling_submission', {
+        p_submission_id: submissionId,
+        p_volunteer_note: volunteerNote ?? ''
+      }, 'Khong tu choi duoc giao dich');
+      if (rpcRow) return mapSubmissionRow(rpcRow.submission && typeof rpcRow.submission === 'object' ? rpcRow.submission as Row : rpcRow);
       const row = await updateRow(client, 'recycling_submissions', 'id', submissionId, {
         status: 'REJECTED',
         verified_by: volunteerId,
@@ -498,6 +607,11 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
     },
 
     async requestReview(submissionId, volunteerId, volunteerNote) {
+      const rpcRow = await tryRpc(client, 'request_recycling_review', {
+        p_submission_id: submissionId,
+        p_volunteer_note: volunteerNote ?? ''
+      }, 'Khong gui duoc yeu cau admin review');
+      if (rpcRow) return mapSubmissionRow(rpcRow.submission && typeof rpcRow.submission === 'object' ? rpcRow.submission as Row : rpcRow);
       const row = await updateRow(client, 'recycling_submissions', 'id', submissionId, {
         status: 'PENDING_REVIEW',
         verified_by: volunteerId,

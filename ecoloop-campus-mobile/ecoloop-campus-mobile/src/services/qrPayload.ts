@@ -6,6 +6,11 @@ function normalizeToken(value: string) {
   return value.trim().toUpperCase();
 }
 
+function readStringField(value: Record<string, unknown>, keys: string[]) {
+  const result = keys.map(key => value[key]).find(item => typeof item === 'string');
+  return typeof result === 'string' ? result : '';
+}
+
 function findEcoToken(value: string) {
   return value.match(/ECO-[A-Z0-9-]+/i)?.[0];
 }
@@ -44,4 +49,34 @@ export function buildSubmissionQrPayload(submission: SubmissionQrInput) {
     binId: submission.binId,
     version: 1
   });
+}
+
+export function extractStationQrCode(payload: string) {
+  const raw = payload.trim();
+  if (!raw) return '';
+
+  try {
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    const code = readStringField(json, ['qrCode', 'qr_code', 'stationQr', 'station_qr', 'stationId', 'station_id', 'binId', 'bin_id']);
+    if (code) return normalizeToken(code);
+  } catch {
+    // QR trạm có thể là mã thuần hoặc deep link, không phải JSON.
+  }
+
+  try {
+    const url = new URL(raw);
+    const code =
+      url.searchParams.get('station') ??
+      url.searchParams.get('stationId') ??
+      url.searchParams.get('station_id') ??
+      url.searchParams.get('qrCode') ??
+      url.searchParams.get('qr_code') ??
+      url.searchParams.get('binId') ??
+      url.searchParams.get('bin_id');
+    if (code) return normalizeToken(code);
+  } catch {
+    // Không phải URL hợp lệ, dùng chuỗi gốc.
+  }
+
+  return normalizeToken(raw);
 }

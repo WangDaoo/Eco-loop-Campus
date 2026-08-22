@@ -46,6 +46,19 @@ const seedSupabase = () => {
     point_history: [
       { id: 901, prediction_id: "scan-recycle", user_id: "SV001", bin_id: "BIN-A1-RECYCLE", class: "plastic", bin_group: "Tái chế", action: "Duyệt Nhựa", points: 5, timestamp: "2026-07-07T09:30:00.000Z", created_at: "2026-07-07T09:30:00.000Z" },
     ],
+    waste_types: [
+      { id: "plastic-bottle", name: "Chai nhựa", unit: "item", point_per_unit: 10, recycle_method: "Làm sạch", status: "active" },
+    ],
+    recycling_submissions: [
+      { id: "sub-review", user_id: "SV001", bin_id: "BIN-A1-RECYCLE", waste_type_id: "plastic-bottle", quantity: 1, actual_quantity: 1, status: "PENDING_REVIEW", qr_token: "ECO-REVIEW-001", volunteer_note: "Cần admin kiểm tra", created_at: "2026-07-07T10:10:00.000Z", expired_at: "2026-07-07T10:55:00.000Z", verified_at: "2026-07-07T10:20:00.000Z" },
+    ],
+    proof_images: [
+      { id: "proof-review", submission_id: "sub-review", image_url: "https://storage.example/proof.jpg", image_hash: "hash-1", captured_at: "2026-07-07T10:19:00.000Z", verification_code: "RVW-001", status: "pending", note: "Ảnh minh chứng" },
+    ],
+    rewards: [
+      { id: "coffee", title: "Cà phê căn tin", description: "Giảm 50% cho 1 ly bất kỳ", cost_points: 300, status: "active", color: "#F6B83F" },
+      { id: "book", title: "Voucher nhà sách", description: "Giảm 20% dụng cụ học tập", cost_points: 500, status: "active", color: "#78C96D" },
+    ],
   };
 };
 
@@ -334,6 +347,20 @@ test("updateUserStatus rejects unsupported statuses before writing users", async
   expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("users", { status: " archived " });
   expect(mockTables.users.find(item => item.id === "SV001").status).toBe("active");
   expect(localStorage.getItem("ecoGuardianUsers")).toBeNull();
+});
+
+test("updateUserStatus accepts account approval statuses", async () => {
+  const store = require("./admin/services/supabaseStore");
+  const volunteer = { id: "TN001", name: "Tình nguyện viên mới", email: "volunteer.new@school.edu.vn", role: "volunteer", group: "CLB Môi trường", points: 0, status: "pending" };
+  mockTables.users = [...mockTables.users, volunteer];
+
+  const approved = await store.updateUserStatus(volunteer, "active");
+  const rejected = await store.updateUserStatus({ ...volunteer, status: "pending" }, "rejected");
+
+  expect(approved.data.status).toBe("active");
+  expect(rejected.data.status).toBe("rejected");
+  expect(mockSupabaseUpdate).toHaveBeenCalledWith("users", { status: "active" });
+  expect(mockSupabaseUpdate).toHaveBeenCalledWith("users", { status: "rejected" });
 });
 
 test("updateBinStatus rejects unsupported statuses before writing bins", async () => {
@@ -1118,6 +1145,30 @@ test("users page filters users by account status", async () => {
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Trần Hoàng Nam")).toBeInTheDocument();
   expect(within(usersTable).queryByText("Nguyễn Minh Anh")).not.toBeInTheDocument();
+});
+
+test("users page lets admins approve or reject pending volunteer accounts", async () => {
+  mockTables.users = [
+    ...mockTables.users,
+    { id: "TN001", name: "Tình nguyện viên mới", email: "volunteer.new@school.edu.vn", role: "volunteer", group: "CLB Môi trường", points: 0, status: "pending" },
+  ];
+  window.location.hash = "#/users";
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/trạng thái/i), { target: { value: "pending" } });
+
+  const usersTable = screen.getByRole("table");
+  const volunteerRow = (await within(usersTable).findByText("Tình nguyện viên mới")).closest("tr");
+  expect(within(volunteerRow).getByText("Cần duyệt")).toBeInTheDocument();
+  expect(within(volunteerRow).getByRole("button", { name: "Duyệt" })).toBeInTheDocument();
+  expect(within(volunteerRow).getByRole("button", { name: "Từ chối" })).toBeInTheDocument();
+
+  fireEvent.click(within(volunteerRow).getByRole("button", { name: "Duyệt" }));
+
+  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("users", { status: "active" }));
+  expect(await screen.findByText(/đã duyệt tài khoản/i)).toBeInTheDocument();
 });
 
 test("users page normalizes dirty account status values", async () => {
@@ -2964,6 +3015,24 @@ test("ecopoints page reads point history from Supabase", async () => {
   expect(screen.getAllByText("Thùng tái chế A1").length).toBeGreaterThan(0);
 });
 
+test("ecopoints page shows recycling submissions awaiting admin review and lets admins reject them", async () => {
+  window.location.hash = "#/ecopoints";
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /giao dịch gửi rác/i })).toBeInTheDocument();
+  expect(await screen.findByText("ECO-REVIEW-001")).toBeInTheDocument();
+  expect(screen.getAllByText("Nguyễn Minh Anh").length).toBeGreaterThan(0);
+  expect(screen.getByText("Chai nhựa")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /xem ảnh/i })).toHaveAttribute("href", "https://storage.example/proof.jpg");
+
+  fireEvent.click(screen.getByRole("button", { name: /từ chối giao dịch eco-review-001/i }));
+
+  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("recycling_submissions", expect.objectContaining({ status: "REJECTED" })));
+  expect(await screen.findByText(/đã từ chối giao dịch gửi rác/i)).toBeInTheDocument();
+});
+
 test("ecopoints page shows local fallback alert when Supabase data fails", async () => {
   mockSupabaseFailure = true;
   window.location.hash = "#/ecopoints";
@@ -3166,6 +3235,27 @@ test("admins can request and approve reward redemptions", async () => {
     reward_label: "Voucher căn tin 100 điểm",
     cost_points: 100,
     status: "pending",
+  })));
+});
+
+test("ecopoints page lets admins manage reward products", async () => {
+  window.location.hash = "#/ecopoints";
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /sản phẩm đổi thưởng/i })).toBeInTheDocument();
+  expect(await screen.findByText("Cà phê căn tin")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText(/tên sản phẩm/i), { target: { value: "Bình nước Eco-loop" } });
+  fireEvent.change(screen.getByLabelText(/điểm cần đổi/i), { target: { value: "450" } });
+  fireEvent.change(screen.getByLabelText(/mô tả sản phẩm/i), { target: { value: "Bình nước dùng nhiều lần" } });
+  fireEvent.click(screen.getByRole("button", { name: /lưu sản phẩm đổi thưởng/i }));
+
+  await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
+    title: "Bình nước Eco-loop",
+    cost_points: 450,
+    status: "active",
   })));
 });
 

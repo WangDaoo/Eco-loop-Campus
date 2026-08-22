@@ -7,7 +7,7 @@ type SyncSource = 'mock' | 'supabase';
 export { getSyncStatusCopy } from './syncStatusCopy';
 
 export function SyncStatusBadge({ syncSource, syncError }: { syncSource: SyncSource; syncError: string }) {
-  // Hide demo warning banner as requested by user
+  // The login screen keeps connection details quiet; operational pages surface errors in context.
   return null;
 }
 

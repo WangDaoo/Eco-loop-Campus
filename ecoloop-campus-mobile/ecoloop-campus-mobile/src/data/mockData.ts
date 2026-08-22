@@ -7,27 +7,29 @@ export const mockUsers: UserProfile[] = [
     name: 'Eco Hero',
     email: 'student@ecoloop.edu.vn',
     role: 'student',
-    group: 'Khoa Cong nghe thong tin',
+    group: 'Khoa Công nghệ thông tin',
     points: 8386,
-    status: 'active'
+    status: 'active',
+    avatarKey: 'sprout'
   },
   {
     id: 'volunteer-001',
-    name: 'Tinh nguyen vien E1',
+    name: 'Tình nguyện viên E1',
     email: 'volunteer@ecoloop.edu.vn',
     role: 'volunteer',
-    group: 'CLB Moi truong',
+    group: 'CLB Môi trường',
     points: 0,
-    status: 'active'
+    status: 'active',
+    avatarKey: 'wave'
   }
 ];
 
 export const mockStations: BinStation[] = [
   {
     id: 'station-e1',
-    name: 'Tram thu gom E1',
+    name: 'Trạm thu gom E1',
     binGroup: 'Plastic, Paper, Metal',
-    location: 'Sanh toa E1',
+    location: 'Sảnh tòa E1',
     building: 'E1',
     floor: '1',
     qrCode: 'STATION-E1',
@@ -40,9 +42,9 @@ export const mockStations: BinStation[] = [
   },
   {
     id: 'station-lib',
-    name: 'Thu vien trung tam',
+    name: 'Thư viện trung tâm',
     binGroup: 'Paper, Plastic',
-    location: 'Tang tret thu vien',
+    location: 'Tầng trệt thư viện',
     building: 'LIB',
     floor: 'G',
     qrCode: 'STATION-LIB',
@@ -85,7 +87,7 @@ export const mockSubmissions: RecyclingSubmission[] = [
     id: 'sub-001',
     userId: 'student-001',
     binId: 'station-e1',
-    wasteTypeId: 'plastic-bottle',
+    wasteTypeId: 'plastic-pet',
     quantity: 5,
     unit: 'item',
     qrToken: 'ECO-SUB-001',
@@ -121,7 +123,7 @@ export const mockSubmissions: RecyclingSubmission[] = [
     expiredAt: new Date(Date.now() + 1000 * 60 * 30),
     verifiedBy: 'volunteer-001',
     verifiedAt: new Date(Date.now() - 1000 * 60 * 5),
-    volunteerNote: 'Nghi ngo sai loai, yeu cau review'
+    volunteerNote: 'Nghi ngờ sai loại, yêu cầu review'
   }
 ];
 
@@ -135,7 +137,7 @@ export const mockPointTransactions: EcoPointTransaction[] = [
     points: 48,
     type: 'earn',
     status: 'confirmed',
-    description: 'Xac nhan 1.2 kg giay sach tai Thu vien trung tam',
+    description: 'Xác nhận 1.2 kg giấy sạch tại Thư viện trung tâm',
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 25)
   },
   {
@@ -144,20 +146,20 @@ export const mockPointTransactions: EcoPointTransaction[] = [
     points: 200,
     type: 'spend',
     status: 'confirmed',
-    description: 'Doi Voucher Shopee 20%',
+    description: 'Đổi Voucher Shopee 20%',
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48)
   }
 ];
 
 export const mockMissions: Mission[] = [
-  { id: 'submit-3', title: 'Gui rac tai che 3 lan', description: 'Tao va duoc xac nhan 3 giao dich trong tuan.', current: 1, target: 3, rewardPoints: 100, actionLabel: 'Gửi rác', completed: false, status: 'active' },
-  { id: 'paper-week', title: 'Tuan giay sach', description: 'Nop it nhat 2 kg giay sach.', current: 1.2, target: 2, rewardPoints: 120, actionLabel: 'Tiep tuc', completed: false, status: 'active' }
+  { id: 'submit-3', title: 'Gửi rác tái chế 3 lần', description: 'Tạo và được xác nhận 3 giao dịch trong tuần.', current: 1, target: 3, rewardPoints: 100, actionLabel: 'Gửi rác', completed: false, status: 'active' },
+  { id: 'paper-week', title: 'Tuần giấy sạch', description: 'Nộp ít nhất 2 kg giấy sạch.', current: 1.2, target: 2, rewardPoints: 120, actionLabel: 'Tiếp tục', completed: false, status: 'active' }
 ];
 
 export const mockRewards: Reward[] = [
-  { id: 'coffee', title: 'Ca phe canteen', description: 'Giam 50% cho 1 ly bat ky', costPoints: 300, status: 'active', color: colors.gold },
-  { id: 'book', title: 'Voucher nha sach', description: 'Giam 20% dung cu hoc tap', costPoints: 500, status: 'active', color: colors.leaf },
-  { id: 'tree', title: 'Trong 1 cay xanh', description: 'Ghi ten ban vao vuon Ecoloop', costPoints: 800, status: 'active', color: colors.green }
+  { id: 'coffee', title: 'Cà phê canteen', description: 'Giảm 50% cho 1 ly bất kỳ', costPoints: 300, status: 'active', color: colors.gold },
+  { id: 'book', title: 'Voucher nhà sách', description: 'Giảm 20% dụng cụ học tập', costPoints: 500, status: 'active', color: colors.leaf },
+  { id: 'tree', title: 'Trồng 1 cây xanh', description: 'Ghi tên bạn vào vườn Ecoloop', costPoints: 800, status: 'active', color: colors.green }
 ];
 
 export const mockFeedbacks: Feedback[] = [];
@@ -166,12 +168,12 @@ export const mockRewardRedemptions: RewardRedemption[] = [];
 
 export const mockQrScanLogs: QRScanLog[] = [
   {
-    id: 'scan-demo-001',
+    id: 'scan-local-001',
     qrToken: 'ECO-SUB-001',
     scannedBy: 'volunteer-001',
     stationId: 'station-e1',
     result: 'SUCCESS',
-    note: 'Quet QR demo tai ca truc',
+    note: 'Quét QR tại ca trực',
     scannedAt: new Date(Date.now() - 1000 * 60 * 8)
   }
 ];

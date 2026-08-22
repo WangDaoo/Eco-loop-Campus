@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native';
+import { Screen, DEFAULT_BOTTOM_CLEARANCE } from '../components/Screen';
 import { CampusMapSVG } from '../components/CampusMapSVG';
 import { useAppContext } from '../context/AppContext';
 import {
@@ -28,7 +28,7 @@ export default function MapScreen() {
     selectedLevel === 'warning' ? colors.gold      : colors.green;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <Screen noPadding style={styles.safe}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Bản đồ GIS campus</Text>
@@ -72,7 +72,7 @@ export default function MapScreen() {
         {/* Cảnh báo */}
         {attentionStations.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>⚠️ Cần chú ý ({attentionStations.length})</Text>
+            <Text style={styles.sectionTitle}>Cần chú ý ({attentionStations.length})</Text>
             {attentionStations.map(s => {
               const lv = getStationCapacityLevel(s);
               const ac = lv === 'full' ? colors.coralDark : colors.gold;
@@ -120,12 +120,12 @@ export default function MapScreen() {
           })}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f0faf4' },
+  safe: { flex: 1, backgroundColor: colors.bgPink },
 
   header: {
     paddingHorizontal: 20,
@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   map: { flex: 1 },
 
   scrollArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 140, gap: 10 },
+  scrollContent: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: DEFAULT_BOTTOM_CLEARANCE + 16, gap: 10 },
 
   detailCard: {
     backgroundColor: colors.white,

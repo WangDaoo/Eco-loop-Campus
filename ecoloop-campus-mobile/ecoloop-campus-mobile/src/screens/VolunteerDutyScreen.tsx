@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
+import { getStationStatusLabel } from '../services/stationPresentation';
 import { QRScanLog } from '../types';
 import { colors, radius } from '../theme/colors';
 
@@ -37,7 +38,7 @@ export default function VolunteerDutyScreen() {
     .slice(0, 5);
 
   return (
-    <Screen>
+    <Screen scroll>
       <Text style={styles.kicker}>{currentUser.group}</Text>
       <Text style={styles.title}>Ca trực tình nguyện viên</Text>
       <Card style={styles.summary}>
@@ -51,7 +52,7 @@ export default function VolunteerDutyScreen() {
         <Pressable key={station.id} onPress={() => setDutyStation(station.id)}>
           <Card style={[styles.station, station.id === dutyStationId && styles.stationActive]}>
             <Text style={styles.stationTitle}>{station.name}</Text>
-            <Text style={styles.stationMeta}>{station.location} - {station.status} - {station.capacity}% sức chứa</Text>
+            <Text style={styles.stationMeta}>{station.location} - {getStationStatusLabel(station.status)} - {station.capacity}% sức chứa</Text>
             <Text style={styles.stationHint}>{station.id === dutyStationId ? 'Đang chọn' : 'Chạm để nhận ca'}</Text>
           </Card>
         </Pressable>

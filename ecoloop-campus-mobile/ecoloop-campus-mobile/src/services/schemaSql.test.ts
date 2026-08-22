@@ -31,3 +31,17 @@ test('Supabase schema seeds mobile collection stations used by Eco-loop Campus a
   assert.match(schema, /student@school\.edu\.vn/);
   assert.match(schema, /volunteer@school\.edu\.vn/);
 });
+
+test('Supabase schema defines atomic mobile QR and Ecopoint RPC functions', () => {
+  const schemaPath = resolve('../../frontend/eco-loop-campus-admin/supabase/schema.sql');
+  const schema = readFileSync(schemaPath, 'utf8');
+
+  assert.match(schema, /create or replace function public\.create_recycling_submission/i);
+  assert.match(schema, /create or replace function public\.scan_recycling_qr/i);
+  assert.match(schema, /create or replace function public\.confirm_recycling_submission/i);
+  assert.match(schema, /create or replace function public\.reject_recycling_submission/i);
+  assert.match(schema, /create or replace function public\.request_recycling_review/i);
+  assert.match(schema, /for update skip locked/i);
+  assert.match(schema, /grant execute on function public\.create_recycling_submission/i);
+  assert.match(schema, /grant execute on function public\.confirm_recycling_submission/i);
+});

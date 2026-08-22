@@ -11,6 +11,14 @@ test('HistoryScreen renders reward redemption requests from context', () => {
   assert.match(source, /costPoints/);
 });
 
+test('HistoryScreen uses a dedicated reward redemption empty state', () => {
+  assert.match(source, /Ionicons/);
+  assert.match(source, /rewardEmptyCard/);
+  assert.match(source, /gift-outline/);
+  assert.match(source, /Khi bạn đổi quà, yêu cầu sẽ xuất hiện tại đây để theo dõi trạng thái\./);
+  assert.doesNotMatch(source, /eco_cloud\.png/);
+});
+
 test('HistoryScreen renders realtime AI prediction review history from context', () => {
   assert.match(source, /aiPredictions/);
   assert.match(source, /Lịch sử AI/);

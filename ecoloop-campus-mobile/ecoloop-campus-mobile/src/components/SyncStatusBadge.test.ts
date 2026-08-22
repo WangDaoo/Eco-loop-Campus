@@ -4,21 +4,21 @@ import { getSyncStatusCopy } from './syncStatusCopy';
 
 test('sync status copy highlights realtime Supabase when connected', () => {
   assert.deepEqual(getSyncStatusCopy('supabase', ''), {
-    title: 'Realtime Supabase',
+    title: 'Đang đồng bộ',
     detail: 'Dữ liệu đang đồng bộ trực tiếp.',
     tone: 'success'
   });
 });
 
-test('sync status copy explains offline demo and setup error', () => {
+test('sync status copy explains local data and setup error', () => {
   assert.deepEqual(getSyncStatusCopy('mock', ''), {
-    title: 'Demo offline',
-    detail: 'App đang dùng dữ liệu mẫu trên máy.',
+    title: 'Dữ liệu trên thiết bị',
+    detail: 'Một số nội dung đang được lưu tạm trên máy.',
     tone: 'neutral'
   });
 
   const errorCopy = getSyncStatusCopy('mock', 'Supabase thiếu dữ liệu vận hành: bins');
-  assert.equal(errorCopy.title, 'Cần kiểm tra Supabase');
+  assert.equal(errorCopy.title, 'Cần đồng bộ dữ liệu');
   assert.equal(errorCopy.tone, 'warning');
   assert.match(errorCopy.detail, /bins/);
 });

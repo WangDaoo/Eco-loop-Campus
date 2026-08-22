@@ -5,10 +5,10 @@ import test from 'node:test';
 
 const source = readFileSync(join(__dirname, 'LoginScreen.tsx'), 'utf8');
 
-test('LoginScreen offers an explicit offline demo path with clear copy', () => {
+test('LoginScreen offers an explicit local preview path with clear copy', () => {
   assert.match(source, /signInDemo/);
-  assert.match(source, /Dùng demo offline/);
-  assert.match(source, /không ghi Supabase/);
+  assert.match(source, /Xem trước bằng dữ liệu trên máy/);
+  assert.match(source, /dữ liệu lưu trên thiết bị/);
   assert.match(source, /handleDemo/);
 });
 

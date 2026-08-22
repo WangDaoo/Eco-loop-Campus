@@ -8,13 +8,17 @@ import { buildGroupLeaderboard, buildUserLeaderboard, filterPointHistory } from 
 import {
   listPointHistory,
   listPointRules,
+  listRecyclingSubmissions,
+  listRewards,
   listRewardRedemptions,
   listUsers,
   saveManualPointHistory,
   savePointRules,
+  saveRewardProduct,
   saveRewardRedemption,
   sourceText,
   updateRewardRedemption,
+  updateRecyclingSubmissionReview,
 } from "../services/supabaseStore";
 
 const ecoPointDateFormatter = new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" });
@@ -42,15 +46,38 @@ const REWARD_OPTIONS = [
 
 const initialManualForm = { userId: "", points: 10, action: "Nộp rác sự kiện xanh" };
 const initialRewardForm = { userId: "", rewardLabel: REWARD_OPTIONS[0].label };
+const initialRewardProductForm = { id: "", title: "", costPoints: 100, description: "", status: "active", color: "#2F8F5B" };
+
+const SUBMISSION_STATUS_LABELS = {
+  CREATED: "Chờ tình nguyện viên",
+  QR_SCANNED: "Đã quét QR",
+  POINT_CONFIRMED: "Đã cộng điểm",
+  PENDING_REVIEW: "Chờ admin kiểm tra",
+  REJECTED: "Từ chối",
+  EXPIRED: "Hết hạn",
+  LOCKED: "Đã khóa",
+};
+
+const submissionStatusCode = value => String(value || "").trim().toUpperCase();
+const submissionStatusLabel = value => SUBMISSION_STATUS_LABELS[submissionStatusCode(value)] || value || "Không rõ";
+const canRejectSubmission = row => !["POINT_CONFIRMED", "REJECTED", "EXPIRED", "LOCKED"].includes(submissionStatusCode(row.status));
+const formatSubmissionQuantity = row => {
+  const quantity = row.actualQuantity ?? row.quantity;
+  const unit = row.wasteTypeUnit ? ` ${row.wasteTypeUnit}` : "";
+  return `${quantity}${unit}`;
+};
 
 export default function EcoPointsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [rules, setRules] = useState([]);
   const [history, setHistory] = useState([]);
   const [users, setUsers] = useState([]);
-  const [rewards, setRewards] = useState([]);
+  const [rewardRequests, setRewardRequests] = useState([]);
+  const [rewardProducts, setRewardProducts] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
   const [manualForm, setManualForm] = useState(initialManualForm);
   const [rewardForm, setRewardForm] = useState(initialRewardForm);
+  const [rewardProductForm, setRewardProductForm] = useState(initialRewardProductForm);
   const [source, setSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -66,14 +93,16 @@ export default function EcoPointsPage() {
     let active = true;
     async function loadData() {
       setLoading(true);
-      const [rulesResponse, historyResponse, usersResponse, rewardsResponse] = await Promise.all([listPointRules(), listPointHistory(), listUsers(), listRewardRedemptions()]);
+      const [rulesResponse, historyResponse, usersResponse, rewardRequestsResponse, rewardProductsResponse, submissionsResponse] = await Promise.all([listPointRules(), listPointHistory(), listUsers(), listRewardRedemptions(), listRewards(), listRecyclingSubmissions()]);
       if (!active) return;
       setRules(rulesResponse.data);
       setHistory(historyResponse.data);
       setUsers(usersResponse.data);
-      setRewards(rewardsResponse.data);
-      setSource([rulesResponse, historyResponse, usersResponse, rewardsResponse].some(item => item.source === "local") ? "local" : rulesResponse.source);
-      setError(rulesResponse.error || historyResponse.error || usersResponse.error || rewardsResponse.error);
+      setRewardRequests(rewardRequestsResponse.data);
+      setRewardProducts(rewardProductsResponse.data);
+      setSubmissions(submissionsResponse.data);
+      setSource([rulesResponse, historyResponse, usersResponse, rewardRequestsResponse, rewardProductsResponse, submissionsResponse].some(item => item.source === "local") ? "local" : rulesResponse.source);
+      setError(rulesResponse.error || historyResponse.error || usersResponse.error || rewardRequestsResponse.error || rewardProductsResponse.error || submissionsResponse.error);
       setLoading(false);
     }
     loadData();
@@ -94,6 +123,7 @@ export default function EcoPointsPage() {
     binGroup: normalizeLabelFilter(searchParams.get("binGroup"), binGroupOptions),
     userId: searchParams.get("userId") || "",
   };
+  const { dateFrom, dateTo, userGroup, binGroup, userId } = filters;
 
   const updateFilter = (key, value) => {
     const next = new URLSearchParams(searchParams);
@@ -102,10 +132,20 @@ export default function EcoPointsPage() {
     setSearchParams(next);
   };
 
-  const visibleUserGroups = filters.userGroup && !userGroups.includes(filters.userGroup) ? [filters.userGroup, ...userGroups] : userGroups;
-  const filteredHistory = useMemo(() => filterPointHistory(history, users, filters), [history, users, filters.dateFrom, filters.dateTo, filters.userGroup, filters.binGroup, filters.userId]);
-  const userLeaderboard = useMemo(() => buildUserLeaderboard(users, filteredHistory).slice(0, 10), [users, filteredHistory]);
-  const groupLeaderboard = useMemo(() => buildGroupLeaderboard(users, filteredHistory).slice(0, 10), [users, filteredHistory]);
+  const visibleUserGroups = userGroup && !userGroups.includes(userGroup) ? [userGroup, ...userGroups] : userGroups;
+  const filteredHistory = useMemo(() => filterPointHistory(history, users, { dateFrom, dateTo, userGroup, binGroup, userId }), [history, users, dateFrom, dateTo, userGroup, binGroup, userId]);
+  const useProfilePointsForLeaderboard = !(dateFrom || dateTo || binGroup || userId);
+  const userLeaderboard = useMemo(() => buildUserLeaderboard(users, filteredHistory, { useProfilePoints: useProfilePointsForLeaderboard, userGroup }).slice(0, 10), [users, filteredHistory, useProfilePointsForLeaderboard, userGroup]);
+  const groupLeaderboard = useMemo(() => buildGroupLeaderboard(users, filteredHistory, { useProfilePoints: useProfilePointsForLeaderboard, userGroup }).slice(0, 10), [users, filteredHistory, useProfilePointsForLeaderboard, userGroup]);
+  const rewardOptions = useMemo(() => {
+    const catalogOptions = rewardProducts
+      .filter(item => item.status === "active")
+      .map(item => ({ id: item.id, label: `${item.title} ${item.costPoints} điểm`, points: Number(item.costPoints || 0) }));
+    const catalogLabels = new Set(catalogOptions.map(item => labelCode(item.label)));
+    const legacyOptions = REWARD_OPTIONS.filter(item => !catalogLabels.has(labelCode(item.label)));
+    return [...catalogOptions, ...legacyOptions];
+  }, [rewardProducts]);
+  const rewardSelectValue = rewardOptions.some(item => item.label === rewardForm.rewardLabel) ? rewardForm.rewardLabel : rewardOptions[0]?.label || "";
 
   const updateRule = (id, updates) => {
     setRules(current => current.map(rule => rule.id === id ? { ...rule, ...updates } : rule));
@@ -150,7 +190,7 @@ export default function EcoPointsPage() {
 
   const submitReward = async event => {
     event.preventDefault();
-    const rewardOption = REWARD_OPTIONS.find(item => item.label === rewardForm.rewardLabel) || REWARD_OPTIONS[0];
+    const rewardOption = rewardOptions.find(item => item.label === rewardSelectValue) || rewardOptions[0];
     const selectedUser = users.find(item => item.id === rewardForm.userId);
     if (!rewardForm.userId || !selectedUser) {
       showToast("Chọn người đổi thưởng trước khi tạo yêu cầu", "danger");
@@ -167,18 +207,54 @@ export default function EcoPointsPage() {
       status: "pending",
     });
     const user = users.find(item => item.id === response.data.userId);
-    setRewards(current => [{ ...response.data, userName: user?.name || response.data.userId, userGroup: user?.group || "" }, ...current.filter(item => item.id !== response.data.id)]);
+    setRewardRequests(current => [{ ...response.data, userName: user?.name || response.data.userId, userGroup: user?.group || "" }, ...current.filter(item => item.id !== response.data.id)]);
     setSource(response.source);
     setError(response.error);
     showToast("Đã tạo yêu cầu đổi thưởng");
   };
 
+  const submitRewardProduct = async event => {
+    event.preventDefault();
+    const costPoints = Number(rewardProductForm.costPoints);
+    if (!rewardProductForm.title.trim()) {
+      showToast("Nhập tên sản phẩm đổi thưởng", "danger");
+      return;
+    }
+    if (!Number.isFinite(costPoints) || costPoints < 0) {
+      showToast("Điểm cần đổi không hợp lệ", "danger");
+      return;
+    }
+    const response = await saveRewardProduct({ ...rewardProductForm, costPoints });
+    if (!response.data) {
+      setSource(response.source);
+      setError(response.error);
+      showToast("Chưa lưu được sản phẩm đổi thưởng", "danger");
+      return;
+    }
+    setRewardProducts(current => [response.data, ...current.filter(item => item.id !== response.data.id)].sort((a, b) => Number(a.costPoints || 0) - Number(b.costPoints || 0)));
+    setRewardProductForm(initialRewardProductForm);
+    setSource(response.source);
+    setError(response.error);
+    showToast("Đã lưu sản phẩm đổi thưởng");
+  };
+
   const reviewReward = async (reward, status) => {
     const response = await updateRewardRedemption(reward, { status, reviewedAt: new Date().toISOString() });
-    setRewards(current => current.map(item => item.id === reward.id ? { ...item, ...response.data } : item));
+    setRewardRequests(current => current.map(item => item.id === reward.id ? { ...item, ...response.data } : item));
     setSource(response.source);
     setError(response.error);
     showToast(status === "approved" ? "Đã duyệt đổi thưởng" : "Đã từ chối đổi thưởng");
+  };
+
+  const rejectRecyclingSubmission = async row => {
+    const response = await updateRecyclingSubmissionReview(row, {
+      status: "REJECTED",
+      volunteerNote: row.volunteerNote || "Admin từ chối sau khi kiểm tra",
+    });
+    setSubmissions(current => current.map(item => item.id === row.id ? { ...item, ...response.data } : item));
+    setSource(response.source);
+    setError(response.error);
+    showToast(response.source === "supabase" ? "Đã từ chối giao dịch gửi rác" : "Chưa đồng bộ được thao tác từ chối", response.source === "supabase" ? "success" : "danger");
   };
 
   const historyColumns = [
@@ -217,6 +293,37 @@ export default function EcoPointsPage() {
         <div className="eg-table-actions">
           <button type="button" className="eg-small-btn success" onClick={() => reviewReward(row, "approved")}>Duyệt</button>
           <button type="button" className="eg-small-btn danger" onClick={() => reviewReward(row, "rejected")}>Từ chối</button>
+        </div>
+      ) : <span className="eg-muted-block">Đã xử lý</span>,
+    },
+  ];
+
+  const rewardProductColumns = [
+    { key: "title", label: "Sản phẩm", render: row => <strong>{row.title}</strong> },
+    { key: "description", label: "Mô tả", render: row => <span className="eg-text-cell">{row.description || "Chưa có mô tả"}</span> },
+    { key: "costPoints", label: "Điểm cần đổi", render: row => <strong>{row.costPoints}</strong> },
+    { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status} /> },
+    {
+      key: "actions",
+      label: "Thao tác",
+      render: row => <button type="button" className="eg-small-btn" onClick={() => setRewardProductForm(row)}>Sửa</button>,
+    },
+  ];
+
+  const submissionColumns = [
+    { key: "qrToken", label: "QR", render: row => <strong>{row.qrToken}</strong> },
+    { key: "userName", label: "Sinh viên", render: row => <div><strong>{row.userName}</strong>{row.userGroup && <span className="eg-muted-block">{row.userGroup}</span>}</div> },
+    { key: "binName", label: "Trạm", render: row => <div><strong>{row.binName}</strong>{row.binLocation && <span className="eg-muted-block">{row.binLocation}</span>}</div> },
+    { key: "wasteTypeName", label: "Loại rác", render: row => <div><strong>{row.wasteTypeName}</strong><span className="eg-muted-block">{formatSubmissionQuantity(row)}</span></div> },
+    { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status}>{submissionStatusLabel(row.status)}</StatusBadge> },
+    { key: "proof", label: "Minh chứng", render: row => row.proofImageUrl ? <a href={row.proofImageUrl} target="_blank" rel="noreferrer">Xem ảnh</a> : `${row.proofCount || 0} ảnh` },
+    { key: "volunteerNote", label: "Ghi chú", render: row => <span className="eg-text-cell">{row.volunteerNote || "-"}</span> },
+    {
+      key: "actions",
+      label: "Thao tác",
+      render: row => canRejectSubmission(row) ? (
+        <div className="eg-table-actions">
+          <button type="button" className="eg-small-btn danger" aria-label={`Từ chối giao dịch ${row.qrToken}`} onClick={() => rejectRecyclingSubmission(row)}>Từ chối</button>
         </div>
       ) : <span className="eg-muted-block">Đã xử lý</span>,
     },
@@ -291,7 +398,7 @@ export default function EcoPointsPage() {
 
         <section className="eg-card">
           <div className="eg-card-head"><h2>Quy đổi phần thưởng</h2></div>
-          <form className="eg-form eg-inline-form" onSubmit={submitReward}>
+          <form className="eg-form eg-reward-redemption-form" onSubmit={submitReward}>
             <label>
               Người đổi thưởng
               <select aria-label="Người đổi thưởng" value={rewardForm.userId} onChange={event => setRewardForm(current => ({ ...current, userId: event.target.value }))}>
@@ -301,14 +408,58 @@ export default function EcoPointsPage() {
             </label>
             <label>
               Mốc phần thưởng
-              <select aria-label="Mốc phần thưởng" value={rewardForm.rewardLabel} onChange={event => setRewardForm(current => ({ ...current, rewardLabel: event.target.value }))}>
-                {REWARD_OPTIONS.map(option => <option key={option.label} value={option.label}>{option.label}</option>)}
+              <select aria-label="Mốc phần thưởng" value={rewardSelectValue} onChange={event => setRewardForm(current => ({ ...current, rewardLabel: event.target.value }))}>
+                {rewardOptions.map(option => <option key={option.label} value={option.label}>{option.label}</option>)}
               </select>
             </label>
             <button type="submit" className="eg-primary-btn">Tạo yêu cầu đổi thưởng</button>
           </form>
         </section>
       </div>
+
+      <section className="eg-card">
+        <div className="eg-card-head"><h2>Sản phẩm đổi thưởng</h2></div>
+        <form className="eg-form eg-reward-product-form" onSubmit={submitRewardProduct}>
+          <label>
+            Tên sản phẩm
+            <input aria-label="Tên sản phẩm" value={rewardProductForm.title} onChange={event => setRewardProductForm(current => ({ ...current, title: event.target.value }))} />
+          </label>
+          <label>
+            Điểm cần đổi
+            <input aria-label="Điểm cần đổi" type="number" min="0" value={rewardProductForm.costPoints} onChange={event => setRewardProductForm(current => ({ ...current, costPoints: event.target.value }))} />
+          </label>
+          <label>
+            Trạng thái
+            <select aria-label="Trạng thái sản phẩm" value={rewardProductForm.status} onChange={event => setRewardProductForm(current => ({ ...current, status: event.target.value }))}>
+              <option value="active">Đang áp dụng</option>
+              <option value="inactive">Tạm ẩn</option>
+            </select>
+          </label>
+          <label>
+            Màu hiển thị
+            <input aria-label="Màu hiển thị" type="color" value={rewardProductForm.color} onChange={event => setRewardProductForm(current => ({ ...current, color: event.target.value }))} />
+          </label>
+          <label className="eg-wide-field">
+            Mô tả sản phẩm
+            <textarea aria-label="Mô tả sản phẩm" rows="3" value={rewardProductForm.description} onChange={event => setRewardProductForm(current => ({ ...current, description: event.target.value }))} />
+          </label>
+          <div className="eg-form-actions">
+            {rewardProductForm.id && <button type="button" className="eg-secondary-btn" onClick={() => setRewardProductForm(initialRewardProductForm)}>Tạo mới</button>}
+            <button type="submit" className="eg-primary-btn">Lưu sản phẩm đổi thưởng</button>
+          </div>
+        </form>
+        <DataTable columns={rewardProductColumns} rows={rewardProducts} emptyText="Chưa có sản phẩm đổi thưởng." />
+      </section>
+
+      <section className="eg-card">
+        <div className="eg-card-head">
+          <div>
+            <h2>Giao dịch gửi rác</h2>
+            <p>Theo dõi QR sinh viên, ảnh minh chứng và trạng thái xác minh từ tình nguyện viên.</p>
+          </div>
+        </div>
+        <DataTable columns={submissionColumns} rows={submissions} emptyText="Chưa có giao dịch gửi rác." />
+      </section>
 
       <div className="eg-rule-grid">
         {rules.map(rule => (
@@ -350,7 +501,7 @@ export default function EcoPointsPage() {
 
       <section className="eg-card">
         <div className="eg-card-head"><h2>Yêu cầu đổi thưởng</h2></div>
-        <DataTable columns={rewardColumns} rows={rewards} emptyText="Chưa có yêu cầu đổi thưởng." />
+        <DataTable columns={rewardColumns} rows={rewardRequests} emptyText="Chưa có yêu cầu đổi thưởng." />
       </section>
       <Toast message={toast} tone={toastTone} onClose={() => setToast("")} />
     </div>

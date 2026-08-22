@@ -8,7 +8,7 @@ import {
   normalizePrediction,
 } from "../data/wasteConfig";
 import { FEEDBACK_PRIORITIES, FEEDBACK_STATUSES, normalizeFeedback } from "../data/feedbackConfig";
-import { seedBins, seedFeedback, seedUsers } from "../data/seedData";
+import { seedBins, seedFeedback, seedRewardProducts, seedUsers } from "../data/seedData";
 import * as localStore from "./storage";
 
 const SUPABASE = "supabase";
@@ -52,8 +52,9 @@ const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
 const PREDICTION_SOURCES = ["upload", "camera"];
 const REWARD_STATUSES = ["pending", "approved", "rejected"];
 const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
+const REWARD_CATALOG_STATUSES = ["active", "inactive"];
 const USER_ROLES = ["student", "teacher", "volunteer", "admin"];
-const USER_STATUS_ACTIONS = ["active", "locked"];
+const USER_STATUS_ACTIONS = ["active", "locked", "pending", "rejected"];
 const BIN_STATUS_ACTIONS = ["active", "full", "maintenance"];
 
 function normalizedPredictionStatusAction(value) {
@@ -64,6 +65,11 @@ function normalizedPredictionStatusAction(value) {
 function normalizedRewardStatus(value, fallback = "pending") {
   const status = normalizedStatus(value, "");
   return REWARD_STATUSES.includes(status) ? status : fallback;
+}
+
+function normalizedRewardCatalogStatus(value, fallback = "active") {
+  const status = normalizedStatus(value, "");
+  return REWARD_CATALOG_STATUSES.includes(status) ? status : fallback;
 }
 
 function normalizedRewardStatusAction(value) {
@@ -136,6 +142,18 @@ function buildPredictionImagePath(fileName, now = new Date(), random = Math.rand
   return `ai-reviews/${date}/${nonce}-${safeImageFileName(fileName)}`;
 }
 
+function buildRewardProductId(title = "reward") {
+  const slug = String(title || "reward")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "reward";
+  return `${slug}-${Date.now()}`;
+}
+
 function normalizedClassKey(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
@@ -182,12 +200,14 @@ function toBin(bin) {
 }
 
 function fromUser(row) {
-  const { created_at: createdAtSnake, ...rest } = row;
+  const { created_at: createdAtSnake, avatar_key: avatarKeySnake, avatar_url: avatarUrlSnake, ...rest } = row;
   const points = Number(row.points ?? 0);
   return {
     ...rest,
     points: Number.isFinite(points) ? points : 0,
     createdAt: row.createdAt || createdAtSnake,
+    avatarKey: row.avatarKey || avatarKeySnake || '',
+    avatarUrl: row.avatarUrl || avatarUrlSnake || '',
   };
 }
 
@@ -202,6 +222,8 @@ function toUser(user) {
     points: Number.isFinite(points) ? points : 0,
     status: user.status,
     created_at: user.createdAt || new Date().toISOString(),
+    avatar_key: user.avatarKey || null,
+    avatar_url: user.avatarUrl || null,
   };
 }
 
@@ -339,6 +361,112 @@ function toRewardRedemption(item) {
   };
 }
 
+function fromRewardCatalog(row) {
+  const { cost_points: costPointsSnake, created_at: createdAtSnake, ...rest } = row;
+  const costPoints = Number(row.costPoints ?? costPointsSnake ?? 0);
+  return {
+    ...rest,
+    id: row.id,
+    title: row.title || "",
+    description: row.description || "",
+    costPoints: Number.isFinite(costPoints) ? costPoints : 0,
+    status: normalizedRewardCatalogStatus(row.status),
+    color: row.color || "#2F8F5B",
+    createdAt: row.createdAt || createdAtSnake,
+  };
+}
+
+function fromWasteType(row) {
+  const { point_per_unit: pointPerUnitSnake, recycle_method: recycleMethodSnake, ...rest } = row || {};
+  const pointPerUnit = Number(row?.pointPerUnit ?? pointPerUnitSnake ?? 0);
+  return {
+    ...rest,
+    id: row?.id || "",
+    name: row?.name || row?.id || "",
+    unit: row?.unit || "",
+    pointPerUnit: Number.isFinite(pointPerUnit) ? pointPerUnit : 0,
+    recycleMethod: row?.recycleMethod || recycleMethodSnake || "",
+    status: row?.status || "active",
+  };
+}
+
+function fromProofImage(row) {
+  const {
+    submission_id: submissionIdSnake,
+    image_url: imageUrlSnake,
+    image_hash: imageHashSnake,
+    captured_at: capturedAtSnake,
+    verification_code: verificationCodeSnake,
+    ...rest
+  } = row || {};
+  return {
+    ...rest,
+    id: row?.id || "",
+    submissionId: row?.submissionId || submissionIdSnake || "",
+    imageUrl: row?.imageUrl || imageUrlSnake || "",
+    imageHash: row?.imageHash || imageHashSnake || "",
+    capturedAt: row?.capturedAt || capturedAtSnake || "",
+    verificationCode: row?.verificationCode || verificationCodeSnake || "",
+    status: row?.status || "pending",
+    note: row?.note || "",
+  };
+}
+
+function fromRecyclingSubmission(row) {
+  const {
+    user_id: userIdSnake,
+    bin_id: binIdSnake,
+    waste_type_id: wasteTypeIdSnake,
+    actual_quantity: actualQuantitySnake,
+    qr_token: qrTokenSnake,
+    expired_at: expiredAtSnake,
+    created_at: createdAtSnake,
+    verified_by: verifiedBySnake,
+    verified_at: verifiedAtSnake,
+    volunteer_note: volunteerNoteSnake,
+    ...rest
+  } = row || {};
+  const quantity = Number(row?.quantity ?? 0);
+  const actualQuantity = normalizeNumber(row?.actualQuantity ?? actualQuantitySnake, null);
+  return {
+    ...rest,
+    id: row?.id || "",
+    userId: row?.userId || userIdSnake || "",
+    binId: row?.binId || binIdSnake || "",
+    wasteTypeId: row?.wasteTypeId || wasteTypeIdSnake || "",
+    quantity: Number.isFinite(quantity) ? quantity : 0,
+    actualQuantity,
+    status: row?.status || "CREATED",
+    qrToken: row?.qrToken || qrTokenSnake || "",
+    expiredAt: row?.expiredAt || expiredAtSnake || "",
+    createdAt: row?.createdAt || createdAtSnake || "",
+    verifiedBy: row?.verifiedBy || verifiedBySnake || "",
+    verifiedAt: row?.verifiedAt || verifiedAtSnake || "",
+    volunteerNote: row?.volunteerNote || volunteerNoteSnake || "",
+  };
+}
+
+function toRecyclingSubmissionUpdate(item) {
+  return {
+    status: item.status,
+    actual_quantity: item.actualQuantity ?? null,
+    verified_at: item.verifiedAt || null,
+    volunteer_note: item.volunteerNote || "",
+  };
+}
+
+function toRewardCatalog(item) {
+  const normalized = fromRewardCatalog(item);
+  return {
+    id: normalized.id || buildRewardProductId(normalized.title),
+    title: normalized.title,
+    description: normalized.description || "",
+    cost_points: Number(normalized.costPoints || 0),
+    status: normalized.status || "active",
+    color: normalized.color || "#2F8F5B",
+  };
+}
+
 function enrichPointHistory(history, users, bins) {
   return history.map(item => {
     const user = users.find(row => row.id === item.userId);
@@ -348,6 +476,28 @@ function enrichPointHistory(history, users, bins) {
       userName: item.userName || user?.name || item.userId || "Không rõ người dùng",
       binName: item.binName || bin?.name || item.binId || "Chưa gắn thùng",
       binLocation: bin?.location || "",
+    };
+  });
+}
+
+function enrichRecyclingSubmissions(submissions, users, bins, wasteTypes, proofImages) {
+  return submissions.map(item => {
+    const user = users.find(row => row.id === item.userId);
+    const bin = bins.find(row => row.id === item.binId);
+    const wasteType = wasteTypes.find(row => row.id === item.wasteTypeId);
+    const proofs = proofImages.filter(row => row.submissionId === item.id);
+    return {
+      ...item,
+      userName: user?.name || item.userId || "Không rõ người dùng",
+      userGroup: user?.group || "",
+      binName: bin?.name || item.binId || "Chưa gắn trạm",
+      binLocation: bin?.location || "",
+      wasteTypeName: wasteType?.name || item.wasteTypeId || "Chưa rõ loại rác",
+      wasteTypeUnit: wasteType?.unit || "",
+      pointPerUnit: wasteType?.pointPerUnit || 0,
+      proofImages: proofs,
+      proofCount: proofs.length,
+      proofImageUrl: proofs.find(row => row.imageUrl)?.imageUrl || "",
     };
   });
 }
@@ -802,6 +952,68 @@ export async function listRewardRedemptions() {
   return result(data, source, error);
 }
 
+export async function listRewards() {
+  const rows = await readTable("rewards", localStore.getRewards, fromRewardCatalog);
+  return result([...rows.data].sort((a, b) => Number(a.costPoints || 0) - Number(b.costPoints || 0)), rows.source, rows.error);
+}
+
+export async function listRecyclingSubmissions() {
+  const [submissions, users, bins, wasteTypes, proofImages] = await Promise.all([
+    readTable("recycling_submissions", () => [], fromRecyclingSubmission),
+    listUsers(),
+    listBins(),
+    readTable("waste_types", () => [], fromWasteType),
+    readTable("proof_images", () => [], fromProofImage),
+  ]);
+  const sources = [submissions, users, bins, wasteTypes, proofImages];
+  const source = sources.some(item => item.source === LOCAL) ? LOCAL : SUPABASE;
+  const error = sources.find(item => item.error)?.error || null;
+  const data = enrichRecyclingSubmissions(submissions.data, users.data, bins.data, wasteTypes.data, proofImages.data)
+    .sort((a, b) => new Date(b.createdAt || b.verifiedAt || 0) - new Date(a.createdAt || a.verifiedAt || 0));
+  return result(data, source, error);
+}
+
+export async function updateRecyclingSubmissionReview(item, updates) {
+  const current = fromRecyclingSubmission(item);
+  const nextStatus = String(updates.status || current.status || "").trim().toUpperCase();
+  if (!nextStatus || ["POINT_CONFIRMED", "LOCKED"].includes(String(current.status || "").trim().toUpperCase())) {
+    return result(current, LOCAL, new Error("Invalid recycling submission status"));
+  }
+  const next = fromRecyclingSubmission({
+    ...current,
+    status: nextStatus,
+    volunteerNote: typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : current.volunteerNote,
+    verifiedAt: updates.verifiedAt || new Date().toISOString(),
+  });
+  try {
+    const response = await client().from("recycling_submissions").update(toRecyclingSubmissionUpdate(next)).eq("id", current.id);
+    if (response.error) throw response.error;
+    return result(next, SUPABASE);
+  } catch (error) {
+    return result(next, LOCAL, error);
+  }
+}
+
+export async function saveRewardProduct(item) {
+  const title = typeof item.title === "string" ? item.title.trim() : "";
+  const description = typeof item.description === "string" ? item.description.trim() : "";
+  const costPoints = Number(item.costPoints);
+  const status = normalizedRewardCatalogStatus(item.status || "active", "");
+  if (!title || !Number.isFinite(costPoints) || costPoints < 0 || !status) {
+    return result(null, LOCAL, new Error("Invalid reward product"));
+  }
+  const payload = fromRewardCatalog({
+    ...item,
+    id: item.id || buildRewardProductId(title),
+    title,
+    description,
+    costPoints,
+    status,
+    color: item.color || "#2F8F5B",
+  });
+  return upsert("rewards", toRewardCatalog(payload), payload, row => localStore.saveReward(row));
+}
+
 export async function saveRewardRedemption(item) {
   const userId = typeof item.userId === "string" ? item.userId.trim() : "";
   const rewardLabel = typeof item.rewardLabel === "string" ? item.rewardLabel.trim() : "";
@@ -898,6 +1110,7 @@ export async function seedDefaults() {
       seedMissingRows("bins", seedBins, toBin),
       seedMissingRows("feedback", seedFeedback, toFeedback),
       seedMissingRows("point_rules", DEFAULT_POINT_RULES, toPointRule),
+      seedMissingRows("rewards", seedRewardProducts, toRewardCatalog),
       seedModelSettingsIfMissing(),
     ]);
     return result(seededCounts.some(Boolean), SUPABASE);
@@ -924,6 +1137,12 @@ export const __testing = {
   toFeedback,
   fromRewardRedemption,
   toRewardRedemption,
+  fromRewardCatalog,
+  toRewardCatalog,
+  fromWasteType,
+  fromProofImage,
+  fromRecyclingSubmission,
+  toRecyclingSubmissionUpdate,
   fromSettings,
   toSettings,
   fromUser,

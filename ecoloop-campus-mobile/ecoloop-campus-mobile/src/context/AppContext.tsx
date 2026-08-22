@@ -89,6 +89,8 @@ type AppContextValue = {
   signInDemo: (role: UserProfile['role']) => Promise<void>;
   signUp: (name: string, email: string, password: string, role: UserProfile['role']) => Promise<void>;
   signOut: () => Promise<void>;
+  updateAvatar: (avatarKey: string) => Promise<void>;
+  updatePassword: (email: string, currentPassword: string, newPassword: string) => Promise<void>;
   requestReward: (reward: Reward) => Promise<boolean>;
   handleMissionAction: (id: string) => void;
   createSubmission: (input: CreateSubmissionInput) => Promise<RecyclingSubmission>;
@@ -148,6 +150,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [dutyStationId, setDutyStationId] = useState(mockStations[0]?.id ?? '');
   const remoteStore = useMemo(() => (isSupabaseConfigured && supabase ? createSupabaseMobileStore(supabase) : null), []);
 
+  const failRemoteMutation = (error: unknown): never => {
+    const message = messageOf(error);
+    setSyncError(message);
+    throw error instanceof Error ? error : new Error(message);
+  };
+
   const resetMockSession = useCallback((role: UserProfile['role'] = 'student') => {
     const user = mockUsers.find(item => item.role === role) ?? mockUsers[0];
     setCurrentUser(user);
@@ -164,7 +172,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setQrScanLogs(mockQrScanLogs);
     setDutyStationId(mockStations[0]?.id ?? '');
     setSyncSource('mock');
-    setSyncError('Demo offline - dữ liệu mẫu trên máy, không ghi Supabase.');
+    setSyncError('Đang dùng dữ liệu lưu trên thiết bị. Các thay đổi chưa đồng bộ lên hệ thống.');
   }, []);
 
   const hydrateRemoteData = useCallback(
@@ -218,6 +226,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         const profile = await remoteStore.loadSessionProfile();
         if (!active || !profile) return;
+        if (profile.status !== 'active') {
+          await remoteStore.signOut();
+          setIsAuthenticated(false);
+          setSyncError('Tài khoản đang chờ phê duyệt hoặc chưa được mở để sử dụng.');
+          return;
+        }
         setCurrentUser(profile);
         setIsAuthenticated(true);
         await hydrateRemoteData(profile);
@@ -438,6 +452,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (remoteStore) {
         const user = await remoteStore.signUp(name, email, password, role);
+        if (user.status !== 'active') {
+          setCurrentUser(user);
+          setIsAuthenticated(false);
+          setSyncSource('supabase');
+          setSyncError('Tài khoản tình nguyện viên đang chờ admin phê duyệt.');
+          await remoteStore.signOut();
+          return;
+        }
         setCurrentUser(user);
         setIsAuthenticated(true);
         await hydrateRemoteData(user);
@@ -445,6 +467,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       const user = authService.signUp(name, email, password, role);
+      if (user.status !== 'active') {
+        setCurrentUser(user);
+        setIsAuthenticated(false);
+        setSyncSource('mock');
+        setSyncError('Tài khoản tình nguyện viên đang chờ admin phê duyệt.');
+        return;
+      }
       setCurrentUser(user);
       setIsAuthenticated(true);
       setSyncSource('mock');
@@ -475,6 +504,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setWasteTypes(mockWasteTypes);
       setDutyStationId(mockStations[0]?.id ?? '');
       setSyncSource(remoteStore ? 'supabase' : 'mock');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateAvatar = async (avatarKey: string) => {
+    const nextUser = { ...currentUser, avatarKey };
+
+    if (remoteStore && syncSource === 'supabase') {
+      try {
+        const remoteUser = await remoteStore.updateAvatar(currentUser.id, avatarKey);
+        setCurrentUser(remoteUser);
+        setUsers(items => items.map(item => (item.id === remoteUser.id ? remoteUser : item)));
+        return;
+      } catch (error) {
+        setSyncError(messageOf(error));
+      }
+    }
+
+    setCurrentUser(nextUser);
+    setUsers(items => items.map(item => (item.id === nextUser.id ? nextUser : item)));
+  };
+
+  const updatePassword = async (email: string, currentPassword: string, newPassword: string) => {
+    setIsLoading(true);
+    try {
+      if (!remoteStore || !isAuthenticated) throw new Error('Đổi mật khẩu cần đăng nhập bằng tài khoản Eco-loop Campus.');
+      await remoteStore.updatePassword(email, currentPassword, newPassword);
     } finally {
       setIsLoading(false);
     }
@@ -576,7 +633,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await advanceMissionsForAction(missionIdsForSubmission(submission));
         return submission;
       } catch (error) {
-        setSyncError(messageOf(error));
+        failRemoteMutation(error);
       }
     }
 
@@ -596,7 +653,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await advanceMissionsForAction(missionIdsForFeedback());
         return feedback;
       } catch (error) {
-        setSyncError(messageOf(error));
+        failRemoteMutation(error);
       }
     }
 
@@ -633,13 +690,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (outcome.submission) setSubmissions(items => [outcome.submission!, ...items.filter(item => item.id !== outcome.submission!.id)]);
         return outcome;
       } catch (error) {
-        setSyncError(messageOf(error));
+        failRemoteMutation(error);
       }
     }
 
     const submission = findSubmissionByQr(token);
     if (!submission) {
-      recordOfflineQrLog('INVALID_TOKEN', 'QR không tồn tại trong dữ liệu demo');
+      recordOfflineQrLog('INVALID_TOKEN', 'QR không tồn tại trong dữ liệu trên thiết bị');
       return { result: 'INVALID_TOKEN', note: 'QR không tồn tại trong hệ thống' };
     }
     if (submission.expiredAt.getTime() < Date.now()) {
@@ -675,7 +732,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setPointTransactions(items => [result.point, ...items.filter(item => item.id !== result.point.id)]);
         return;
       } catch (error) {
-        setSyncError(messageOf(error));
+        failRemoteMutation(error);
       }
     }
 
@@ -690,7 +747,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
         return;
       } catch (error) {
-        setSyncError(messageOf(error));
+        failRemoteMutation(error);
       }
     }
 
@@ -704,7 +761,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
         return;
       } catch (error) {
-        setSyncError(messageOf(error));
+        failRemoteMutation(error);
       }
     }
 
@@ -723,7 +780,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
         return updatedSubmission;
       } catch (error) {
-        setSyncError(messageOf(error));
+        failRemoteMutation(error);
       }
     }
 
@@ -769,6 +826,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       signInDemo,
       signUp,
       signOut,
+      updateAvatar,
+      updatePassword,
       requestReward,
       handleMissionAction,
       createSubmission,
@@ -800,7 +859,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       feedbacks,
       rewardRedemptions,
       qrScanLogs,
-      dutyStationId
+      dutyStationId,
+      updateAvatar,
+      updatePassword
     ]
   );
 

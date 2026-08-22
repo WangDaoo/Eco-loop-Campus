@@ -2,11 +2,10 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import { RootStackParamList, StudentTabParamList, VolunteerTabParamList } from './src/types';
-import { colors } from './src/theme/colors';
 import SplashScreen from './src/screens/SplashScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -20,12 +19,11 @@ import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import AboutScreen from './src/screens/AboutScreen';
 import VolunteerDutyScreen from './src/screens/VolunteerDutyScreen';
 import SubmitScreen from './src/screens/SubmitScreen';
+import { CustomTabBar } from './src/components/CustomTabBar';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const StudentTab = createBottomTabNavigator<StudentTabParamList>();
 const VolunteerTab = createBottomTabNavigator<VolunteerTabParamList>();
-
-import { CustomTabBar } from './src/components/CustomTabBar';
 
 function StudentTabs() {
   return (
@@ -94,8 +92,10 @@ function RootNavigator() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <RootNavigator />
-    </AppProvider>
+    <SafeAreaProvider>
+      <AppProvider>
+        <RootNavigator />
+      </AppProvider>
+    </SafeAreaProvider>
   );
 }
