@@ -22,6 +22,7 @@ Dự án dùng AI như một lớp hỗ trợ, không phải toàn bộ nghiệp
 - [Features](#features)
 - [Deployment and Local URLs](#deployment-and-local-urls)
 - [Installation and Setup](#installation-and-setup)
+- [Public Setup with Cloudflare Tunnel](#public-setup-with-cloudflare-tunnel)
 - [Usage](#usage)
 - [Project Structure](#project-structure)
 - [Mobile App Direction](#mobile-app-direction)
@@ -193,7 +194,12 @@ Current system boundaries:
 
 ## Deployment and Local URLs
 
-The current verified setup is local development. Public deployment URLs are not treated as the source of truth for this project phase.
+The project can run in two modes:
+
+- **Local mode** for development on one machine.
+- **Public demo mode** for exposing the web admin and FastAPI backend through Cloudflare quick tunnels.
+
+Public quick tunnel URLs are temporary. When the tunnel window is closed, the URL stops working and a new URL will be generated on the next launch.
 
 | Service | URL |
 |---|---|
@@ -202,6 +208,7 @@ The current verified setup is local development. Public deployment URLs are not 
 | Backend API | `http://127.0.0.1:8000` |
 | Backend docs | `http://127.0.0.1:8000/docs` |
 | AI predict endpoint | `http://127.0.0.1:8000/predict` |
+| AI queue endpoint | `http://127.0.0.1:8000/predict/jobs` |
 
 ---
 
@@ -271,6 +278,154 @@ From project root:
 start_backend.bat
 start_frontend.bat
 ```
+
+## Public Setup with Cloudflare Tunnel
+
+This setup is intended for demoing Eco-loop Campus from another laptop, phone, emulator, or external network without deploying to a paid server. It exposes:
+
+- FastAPI backend through a public `https://*.trycloudflare.com` URL.
+- React admin web through a second public `https://*.trycloudflare.com` URL.
+- Web build configured to call the public API URL instead of `127.0.0.1`.
+
+### What the scripts do automatically
+
+The root launchers check and prepare the Windows runtime before starting the project:
+
+- Check Python 3.10 for backend.
+- Check Node.js and npm for frontend.
+- Download `cloudflared-windows-amd64.exe` into `scripts/tools/cloudflared.exe` when missing.
+- Create backend `.venv` when missing.
+- Install backend dependencies from `backend/requirements.txt`.
+- Install frontend dependencies when `node_modules` is missing.
+- Build the React admin web before serving it publicly.
+- Write generated tunnel URLs into `.runtime/api_public_url.txt` and `.runtime/web_public_url.txt`.
+
+### One-command public startup
+
+From the repository root, run:
+
+```bat
+scripts\start_laptop_server.bat
+```
+
+This opens the backend first, waits for `.runtime\api_public_url.txt`, then opens the frontend. Use the URLs printed in the terminal windows or read them from:
+
+```text
+.runtime/api_public_url.txt
+.runtime/web_public_url.txt
+```
+
+Expected local services:
+
+```text
+API local: http://127.0.0.1:8000
+Web local: http://127.0.0.1:3000
+API public: https://<random>.trycloudflare.com
+Web public: https://<random>.trycloudflare.com
+```
+
+### Manual public startup
+
+If you want to control the order manually, run backend first:
+
+```bat
+start_backend.bat
+```
+
+Wait until `.runtime\api_public_url.txt` exists and contains a Cloudflare URL. Then run:
+
+```bat
+start_frontend.bat
+```
+
+The frontend launcher reads `.runtime\api_public_url.txt` and builds the web admin with:
+
+```env
+REACT_APP_API_URL=<api-public-url>
+```
+
+If the backend public URL is not ready, the frontend falls back to:
+
+```env
+REACT_APP_API_URL=http://127.0.0.1:8000
+```
+
+That fallback works only on the same laptop. For other devices, restart `start_frontend.bat` after the API public URL is available.
+
+### Public API checks
+
+After backend starts, verify:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/predict/queue
+```
+
+Then test the public URL from `.runtime\api_public_url.txt`:
+
+```powershell
+$api = Get-Content .runtime\api_public_url.txt
+Invoke-WebRequest -UseBasicParsing "$api/"
+Invoke-WebRequest -UseBasicParsing "$api/predict/queue"
+```
+
+Expected backend root response:
+
+```json
+{"message":"Eco-loop Campus Backend Running"}
+```
+
+### Public web checks
+
+After frontend starts, open:
+
+```text
+http://127.0.0.1:3000/#/login
+```
+
+For public access, open the URL in `.runtime\web_public_url.txt`:
+
+```powershell
+$web = Get-Content .runtime\web_public_url.txt
+Start-Process "$web/#/login"
+```
+
+In the admin web, test:
+
+- `#/dashboard` for KPI data.
+- `#/ai-test` for AI upload through `/predict/jobs`.
+- `#/users` for user and volunteer approval management.
+- `#/ecopoints` for rewards, redemption requests, points, and leaderboard.
+
+### Mobile APK and emulator setup for public API
+
+For an APK that runs outside Expo Go/Metro, build it with the public API URL:
+
+```env
+EXPO_PUBLIC_API_URL=<api-public-url>
+EXPO_PUBLIC_SUPABASE_URL=<supabase-project-url>
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<supabase-publishable-key>
+```
+
+If the APK is already built with an old Cloudflare URL, rebuild and reinstall the APK after the tunnel URL changes. For Android Studio Emulator local-only testing, `http://10.0.2.2:8000` can still be used instead of a public URL, but that address will not work for other real devices.
+
+### Security notes
+
+- Do not commit `.env`, `.runtime`, Supabase keys, tunnel URLs, or generated local logs.
+- Cloudflare quick tunnel URLs are suitable for demo/testing, not a permanent production domain.
+- Keep the Supabase publishable key only in environment files; never paste real keys into README, reports, screenshots, or commits.
+- Public web access still depends on Supabase Auth and role checks. Admin pages require a user in `public.users` with role `admin` and status `active`.
+
+### Troubleshooting public startup
+
+| Problem | Fix |
+|---|---|
+| Frontend public URL opens but AI fails | Start `start_backend.bat` first, confirm `.runtime\api_public_url.txt`, then rerun `start_frontend.bat`. |
+| `.runtime\api_public_url.txt` is missing | Check the `Eco-loop Campus API Public` window. Cloudflare tunnel may still be starting or blocked by network/firewall. |
+| `cloudflared` is missing | Run `start_backend.bat` or `scripts\start_laptop_server.bat`; the runtime checker downloads it into `scripts\tools`. |
+| TensorFlow install fails | Use Python 3.10 and rerun `start_backend.bat`. The launcher creates `backend\.venv` with Python 3.10. |
+| Web public still calls `127.0.0.1:8000` | Delete `frontend\eco-loop-campus-admin\build`, confirm API public URL exists, then rerun `start_frontend.bat`. |
+| Quick tunnel URL expired | Keep both tunnel windows open. If closed, restart backend/frontend and use the new URLs. |
 
 ---
 
