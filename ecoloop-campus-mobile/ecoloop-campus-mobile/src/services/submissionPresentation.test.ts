@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mockWasteTypes } from '../data/mockData';
+import { WasteType } from '../types';
 import { getSubmissionStatusLabel, getSubmissionStatusTone, getWasteTypeDisplayName } from './submissionPresentation';
+
+const wasteTypes: WasteType[] = [
+  { id: 'plastic-pet', name: 'Nhựa PET', unit: 'kg', pointPerUnit: 10, recycleMethod: '', status: 'active' }
+];
 
 test('maps recycling submission statuses to Vietnamese labels', () => {
   assert.equal(getSubmissionStatusLabel('CREATED'), 'Chờ tình nguyện viên');
@@ -24,6 +28,6 @@ test('maps recycling submission statuses to UI tones', () => {
 });
 
 test('maps legacy waste type ids to current Vietnamese labels', () => {
-  assert.equal(getWasteTypeDisplayName(mockWasteTypes, 'plastic-bottle'), 'Nhựa PET');
-  assert.equal(getWasteTypeDisplayName(mockWasteTypes, 'plastic-pet'), 'Nhựa PET');
+  assert.equal(getWasteTypeDisplayName(wasteTypes, 'plastic-bottle'), 'Nhựa PET');
+  assert.equal(getWasteTypeDisplayName(wasteTypes, 'plastic-pet'), 'Nhựa PET');
 });

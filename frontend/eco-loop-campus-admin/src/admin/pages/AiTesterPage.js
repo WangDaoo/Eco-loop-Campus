@@ -4,7 +4,7 @@ import { useLocation } from "react-router-dom";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { getBinGroup, getWasteLabel } from "../data/wasteConfig";
-import { listBins, savePredictionRecord, sourceText, uploadPredictionImage } from "../services/supabaseStore";
+import { listBins, savePredictionRecord, uploadPredictionImage } from "../services/supabaseStore";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
 const AI_QUEUE_POLL_MS = 1000;
@@ -34,7 +34,6 @@ export default function AiTesterPage() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
   const [toastTone, setToastTone] = useState("success");
-  const [source, setSource] = useState(null);
   const [bins, setBins] = useState([]);
   const [cameraOn, setCameraOn] = useState(false);
   const videoRef = useRef(null);
@@ -49,7 +48,6 @@ export default function AiTesterPage() {
     listBins().then(response => {
       if (!active) return;
       setBins(response.data);
-      setSource(response.source);
     });
     return () => {
       active = false;
@@ -130,9 +128,8 @@ export default function AiTesterPage() {
         thumbnailUrl: imageMeta.thumbnailUrl,
       });
       setResult(record.data);
-      setSource(record.source);
       setToastTone("success");
-      setToast(imageUpload.error ? `Đã lưu lượt kiểm thử AI (${sourceText(record.source)}), nhưng chưa lưu được ảnh xem trước` : `Đã lưu lượt kiểm thử AI (${sourceText(record.source)})`);
+      setToast(imageUpload.error ? "Đã lưu lượt kiểm thử AI, nhưng chưa lưu được ảnh xem trước." : "Đã lưu lượt kiểm thử AI vào Supabase.");
     } catch (error) {
       setResult(null);
       setToastTone("danger");
@@ -228,7 +225,6 @@ export default function AiTesterPage() {
           <span>Backend hiện tại: {API_URL}</span>
           <h1>Kiểm thử AI</h1>
         </div>
-        {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
       </div>
 
       {qrBinId && (

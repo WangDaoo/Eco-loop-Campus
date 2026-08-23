@@ -8,7 +8,7 @@ import StatusBadge from "../components/StatusBadge";
 import { BIN_GROUPS } from "../data/wasteConfig";
 import { downloadCsv } from "../services/csv";
 import { buildReportSummary, filterReportData, makeDailyReportData, makeReportCsvRows } from "../services/reportMetrics";
-import { listBins, listFeedback, listPointHistory, listPredictions, sourceText } from "../services/supabaseStore";
+import { listBins, listFeedback, listPointHistory, listPredictions } from "../services/supabaseStore";
 
 function countBy(items, getKey) {
   return items.reduce((acc, item) => {
@@ -47,7 +47,6 @@ export default function ReportsPage() {
   const [bins, setBins] = useState([]);
   const [feedback, setFeedback] = useState([]);
   const [pointHistory, setPointHistory] = useState([]);
-  const [source, setSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -66,7 +65,6 @@ export default function ReportsPage() {
       setBins(binResult.data);
       setFeedback(feedbackResult.data);
       setPointHistory(pointResult.data);
-      setSource([predictionResult, binResult, feedbackResult, pointResult].some(item => item.source === "local") ? "local" : "supabase");
       setError([predictionResult, binResult, feedbackResult, pointResult].find(item => item.error)?.error || null);
       setLoading(false);
     }
@@ -130,13 +128,12 @@ export default function ReportsPage() {
           <h1>Báo cáo</h1>
         </div>
         <div className="eg-button-row">
-          {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
           <button type="button" className="eg-primary-btn" onClick={() => downloadCsv("eco-loop-campus-report.csv", csvRows)}><DownloadSimple size={18} /> Xuất CSV</button>
         </div>
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải báo cáo...</section>}
-      {error && <section className="eg-alert">Supabase chưa sẵn sàng, đang dùng dữ liệu dự phòng localStorage.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card eg-filter-panel" aria-label="Bộ lọc báo cáo">
         <label>Từ ngày<input aria-label="Từ ngày" type="date" value={filters.dateFrom} onChange={event => updateFilter("dateFrom", event.target.value)} /></label>

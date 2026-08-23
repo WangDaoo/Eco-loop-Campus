@@ -15,7 +15,7 @@ function messageOf(error: unknown) {
 }
 
 export default function LoginScreen({ navigation }: Props) {
-  const { signIn, signInDemo, isLoading, syncError, syncSource } = useAppContext();
+  const { signIn, isLoading, syncError, syncSource } = useAppContext();
   const [role, setRole] = useState<UserRole>('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,14 +26,6 @@ export default function LoginScreen({ navigation }: Props) {
       await signIn(role, email, password);
     } catch (error) {
       Alert.alert('Không đăng nhập được', messageOf(error));
-    }
-  };
-
-  const handleDemo = async () => {
-    try {
-      await signInDemo(role);
-    } catch (error) {
-      Alert.alert('Không mở được chế độ xem trước', messageOf(error));
     }
   };
 
@@ -52,8 +44,6 @@ export default function LoginScreen({ navigation }: Props) {
           <TextInput value={password} onChangeText={setPassword} placeholder="Mật khẩu" secureTextEntry style={styles.input} placeholderTextColor={colors.muted} />
           <SyncStatusBadge syncSource={syncSource} syncError={syncError} />
           <AppButton title={isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'} disabled={isLoading || !email.trim() || !password.trim()} onPress={handleSubmit} />
-          <Text style={styles.demoCopy}>Bạn có thể xem trước ứng dụng bằng dữ liệu lưu trên thiết bị này.</Text>
-          <AppButton title="Xem trước bằng dữ liệu trên máy" variant="light" disabled={isLoading} onPress={handleDemo} />
 
           <Text style={styles.link} onPress={() => navigation.navigate('Register')}>Chưa có tài khoản? Đăng ký</Text>
         </View>
@@ -82,6 +72,5 @@ const styles = StyleSheet.create({
   roleText: { color: colors.muted, fontWeight: '900' },
   roleTextSelected: { color: colors.white },
   input: { backgroundColor: colors.white, borderRadius: radius.md, padding: 15, fontSize: 16, color: colors.ink },
-  demoCopy: { color: colors.muted, fontWeight: '700', textAlign: 'center', fontSize: 12 },
   link: { color: colors.coralDark, fontWeight: '800', textAlign: 'center', marginTop: 8 }
 });

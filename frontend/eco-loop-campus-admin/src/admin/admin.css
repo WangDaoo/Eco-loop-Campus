@@ -2042,6 +2042,81 @@ a.eg-priority-item:focus-visible {
   align-items: end;
 }
 
+.eg-avatar-command {
+  grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.55fr);
+}
+
+.eg-avatar-form {
+  grid-template-columns: 150px repeat(auto-fit, minmax(190px, 1fr));
+  align-items: end;
+}
+
+.eg-avatar-form-preview {
+  grid-row: span 2;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  min-height: 148px;
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius);
+  background: #f8fafc;
+}
+
+.eg-avatar-preset-preview {
+  width: 58px;
+  height: 58px;
+  display: inline-grid;
+  place-items: center;
+  border: 4px solid #ffffff;
+  border-radius: 18px;
+  background: var(--avatar-bg);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+
+.eg-avatar-preset-preview.is-lg {
+  width: 96px;
+  height: 96px;
+  border-radius: 28px;
+}
+
+.eg-avatar-preset-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.eg-avatar-face {
+  position: relative;
+  width: 72%;
+  height: 72%;
+  border: 3px solid var(--avatar-face);
+  border-radius: 46% 46% 38% 38%;
+  background: #ffffff;
+}
+
+.eg-avatar-face::before,
+.eg-avatar-face::after {
+  content: "";
+  position: absolute;
+  top: 38%;
+  width: 7px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--avatar-face);
+}
+
+.eg-avatar-face::before {
+  left: 28%;
+  transform: rotate(18deg);
+}
+
+.eg-avatar-face::after {
+  right: 28%;
+  transform: rotate(-18deg);
+}
+
 .eg-reward-redemption-form .eg-primary-btn,
 .eg-reward-product-form .eg-primary-btn {
   min-height: 42px;

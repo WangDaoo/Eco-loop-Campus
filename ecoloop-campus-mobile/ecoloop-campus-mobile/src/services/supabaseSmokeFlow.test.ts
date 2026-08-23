@@ -16,8 +16,9 @@ test('write smoke flow executes student QR to volunteer proof confirmation', asy
     feedbacks: [],
     rewards: [],
     rewardRedemptions: [],
-  qrScanLogs: [],
-  proofImages: []
+    qrScanLogs: [],
+    proofImages: [],
+    avatarOptions: []
   };
   const store = {
     async createSubmission() {
@@ -83,7 +84,8 @@ test('write smoke flow fails when confirmation does not persist proof and wallet
     rewards: [],
     rewardRedemptions: [],
     qrScanLogs: [],
-    proofImages: []
+    proofImages: [],
+    avatarOptions: []
   };
   const store = {
     async createSubmission() {

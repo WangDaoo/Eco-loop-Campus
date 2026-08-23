@@ -7,6 +7,7 @@ export const USERS_KEY = "ecoGuardianUsers";
 export const BINS_KEY = "ecoGuardianBins";
 export const FEEDBACK_KEY = "ecoGuardianFeedback";
 export const MODEL_THRESHOLD_KEY = "ecoGuardianModelThreshold";
+export const AVATAR_PRESETS_KEY = "ecoGuardianAvatarPresets";
 
 export const BIN_GROUPS = [
   { id: "organic", label: "Hữu cơ", color: "#2ca87f" },

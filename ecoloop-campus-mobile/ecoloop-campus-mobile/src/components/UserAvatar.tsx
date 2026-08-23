@@ -1,35 +1,28 @@
 import React from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { Svg, Rect, Path, Circle, Ellipse } from 'react-native-svg';
+import { DEFAULT_AVATAR_PRESETS, visibleAvatarPresets } from '../data/avatarPresets';
+import { AvatarPreset } from '../types';
 
-export type AvatarOption = {
-  key: string;
-  label: string;
-  background: string;
-  tile: string;
-  accent: string;
-  face: string;
-};
+export type AvatarOption = AvatarPreset;
 
-export const AVATAR_OPTIONS: AvatarOption[] = [
-  { key: 'sprout', label: 'Mầm xanh', background: '#cbf9e4', tile: '#a8f2ab', accent: '#8bc34a', face: '#2c6e6e' },
-  { key: 'sunny', label: 'Nắng xanh', background: '#fff1a8', tile: '#c8f4a6', accent: '#f0b84f', face: '#2c6e6e' },
-  { key: 'wave', label: 'Biển sạch', background: '#bcefff', tile: '#91e0f2', accent: '#38a3c7', face: '#256a7a' },
-  { key: 'berry', label: 'Hoa campus', background: '#f7c4df', tile: '#d5f6b8', accent: '#d8669f', face: '#2c6e6e' },
-];
+export const AVATAR_OPTIONS: AvatarOption[] = DEFAULT_AVATAR_PRESETS;
 
-export function resolveAvatarOption(avatarKey?: string) {
-  return AVATAR_OPTIONS.find(option => option.key === avatarKey) || AVATAR_OPTIONS[0];
+export function resolveAvatarOption(avatarKey?: string, avatarOptions: AvatarOption[] = AVATAR_OPTIONS) {
+  const options = visibleAvatarPresets(avatarOptions);
+  return options.find(option => option.key === avatarKey) || options[0] || AVATAR_OPTIONS[0];
 }
 
 type Props = {
   avatarKey?: string;
   avatarUrl?: string;
+  avatarOptions?: AvatarOption[];
   size?: number;
 };
 
-export function UserAvatar({ avatarKey, avatarUrl, size = 224 }: Props) {
-  const option = resolveAvatarOption(avatarKey);
+export function UserAvatar({ avatarKey, avatarUrl, avatarOptions, size = 224 }: Props) {
+  const option = resolveAvatarOption(avatarKey, avatarOptions);
+  const imageUri = avatarUrl || option.imageUrl;
   const outerRadius = Math.max(24, Math.round(size * 0.18));
   const innerRadius = Math.max(20, Math.round(size * 0.14));
   const avatarFrameBleed = Math.max(4, Math.round(size * 0.07));
@@ -39,8 +32,8 @@ export function UserAvatar({ avatarKey, avatarUrl, size = 224 }: Props) {
     <View style={[styles.container, { width: size, height: size, borderRadius: outerRadius }]}>
       <View style={[styles.bgWhite, { borderRadius: outerRadius, top: -avatarFrameBleed, left: -avatarFrameBleed, right: -avatarFrameBleed, bottom: -avatarFrameBleed }]} />
       <View style={[styles.inner, { backgroundColor: option.background, borderRadius: innerRadius, padding: avatarInnerPadding }]}>
-        {avatarUrl ? (
-          <Image source={{ uri: avatarUrl }} style={styles.image} resizeMode="cover" />
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
         ) : (
           <Svg viewBox="0 0 100 100" width="100%" height="100%">
             <Rect x="0" y="0" width="100" height="100" fill={option.tile} />

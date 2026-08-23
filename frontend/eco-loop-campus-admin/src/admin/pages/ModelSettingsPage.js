@@ -3,12 +3,11 @@ import DataTable from "../components/DataTable";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { WASTE_CLASSES } from "../data/wasteConfig";
-import { getModelSettings, saveModelThreshold, sourceText } from "../services/supabaseStore";
+import { getModelSettings, saveModelThreshold } from "../services/supabaseStore";
 
 export default function ModelSettingsPage() {
   const [threshold, setThreshold] = useState(0.65);
   const [settings, setSettings] = useState({ modelName: "MobileNetV2", classCount: WASTE_CLASSES.length });
-  const [source, setSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState("");
@@ -21,7 +20,6 @@ export default function ModelSettingsPage() {
       if (!active) return;
       setSettings(response.data);
       setThreshold(response.data.threshold || 0.65);
-      setSource(response.source);
       setError(response.error);
       setLoading(false);
     }
@@ -34,7 +32,6 @@ export default function ModelSettingsPage() {
   const saveThreshold = async () => {
     const response = await saveModelThreshold(threshold);
     setSettings(response.data);
-    setSource(response.source);
     setError(response.error);
     setToast("Đã lưu cài đặt model");
   };
@@ -53,13 +50,12 @@ export default function ModelSettingsPage() {
           <h1>Cài đặt model</h1>
         </div>
         <div className="eg-button-row">
-          {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
           <button type="button" className="eg-primary-btn" onClick={saveThreshold}>Lưu cài đặt</button>
         </div>
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải cài đặt model...</section>}
-      {error && <section className="eg-alert">Supabase chưa sẵn sàng, đang dùng dữ liệu dự phòng localStorage.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <div className="eg-two-col model-grid">
         <section className="eg-card">

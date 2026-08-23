@@ -205,7 +205,7 @@ const baseTables: Tables = {
     { id: 'vol-1', name: 'Long', email: 'volunteer@school.edu.vn', role: 'volunteer', group: 'CLB Moi truong', points: 0, status: 'active' }
   ],
   bins: [
-    { id: 'bin-1', name: 'Tram E1', bin_group: 'Tai che', location: 'Sanh E1', building: 'E1', floor: '1', qr_code: 'STATION-E1', status: 'active', capacity: 30 }
+    { id: 'bin-1', name: 'Tram E1', bin_group: 'Tai che', location: 'Sanh E1', building: 'E1', floor: '1', qr_code: 'ECL-ST-STATION-E1', status: 'active', capacity: 30 }
   ],
   waste_types: [
     { id: 'paper', name: 'Giay sach', unit: 'kg', point_per_unit: 40, recycle_method: 'Giu kho', status: 'active' }
@@ -229,6 +229,11 @@ const baseTables: Tables = {
   ],
   proof_images: []
 };
+
+baseTables.avatar_presets = [
+  { key: 'sprout', label: 'Mầm xanh', image_url: 'https://cdn.example/avatar/sprout.png', background: '#cbf9e4', tile: '#a8f2ab', accent: '#8bc34a', face: '#2c6e6e', status: 'active', sort_order: 1 },
+  { key: 'hidden', label: 'Đã ẩn', image_url: 'https://cdn.example/avatar/hidden.png', background: '#f8fafc', tile: '#e2e8f0', accent: '#94a3b8', face: '#334155', status: 'inactive', sort_order: 99 }
+];
 
 test('Supabase mobile store creates registration profile without optional avatar columns', async () => {
   const authUser = { id: 'new-student', email: 'new.student@school.edu.vn' };
@@ -301,6 +306,8 @@ test('Supabase mobile store signs in, loads data, creates QR submission, and con
   assert.equal(data.wasteTypes[0].pointPerUnit, 40);
   assert.equal(data.rewards[0].id, 'coffee');
   assert.equal(data.rewards[0].costPoints, 30);
+  assert.equal(data.avatarOptions[0].key, 'sprout');
+  assert.equal(data.avatarOptions.some(option => option.key === 'hidden'), false);
   assert.equal(data.missions[0].id, 'submit-3');
   assert.equal(data.missions[0].current, 1);
 
@@ -311,7 +318,7 @@ test('Supabase mobile store signs in, loads data, creates QR submission, and con
     now,
     () => 0.654321
   );
-  assert.equal(submission.qrToken, `ECO-${now.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}-654321`);
+  assert.equal(submission.qrToken, `ECL-SUB-${now.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}-654321`);
   assert.equal(fake.tables.recycling_submissions[0].status, 'CREATED');
 
   const scanned = await store.markSubmissionScanned(submission.qrToken, 'vol-1', 'bin-1');

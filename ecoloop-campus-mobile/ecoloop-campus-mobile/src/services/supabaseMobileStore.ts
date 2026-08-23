@@ -1,4 +1,5 @@
 import {
+  AvatarPreset,
   BinStation,
   CreateFeedbackInput,
   CreateProofImageInput,
@@ -35,6 +36,7 @@ import {
   mergeMissionProgress,
   mapSubmissionRow,
   mapUserRow,
+  mapAvatarPresetRow,
   mapWasteTypeRow,
   toSubmissionRow,
   toPredictionRow
@@ -76,6 +78,7 @@ export type MobileInitialData = {
   rewardRedemptions: RewardRedemption[];
   proofImages: ProofImage[];
   qrScanLogs: QRScanLog[];
+  avatarOptions: AvatarPreset[];
 };
 
 export type SchemaHealth = {
@@ -124,7 +127,7 @@ export type SupabaseMobileStore = {
   subscribeRealtime?(handlers: Partial<Record<RealtimeTable, (payload: RealtimePayload) => void>>): () => void;
 };
 
-type RealtimeTable = 'users' | 'bins' | 'waste_types' | 'predictions' | 'recycling_submissions' | 'point_history' | 'feedback' | 'missions' | 'user_missions' | 'rewards' | 'reward_redemptions' | 'qr_scan_logs' | 'proof_images';
+type RealtimeTable = 'users' | 'bins' | 'waste_types' | 'predictions' | 'recycling_submissions' | 'point_history' | 'feedback' | 'missions' | 'user_missions' | 'rewards' | 'reward_redemptions' | 'qr_scan_logs' | 'proof_images' | 'avatar_presets';
 type RealtimePayload = { eventType: 'INSERT' | 'UPDATE' | 'DELETE'; new?: Row; old?: Row; table?: string };
 
 const mobileSchemaTables = [
@@ -286,6 +289,15 @@ async function selectRows(client: SupabaseLike, table: string, orderColumn?: str
   return ensureOk<Row[]>(result, `Khong doc duoc bang ${table}`) ?? [];
 }
 
+async function selectOptionalRows(client: SupabaseLike, table: string, orderColumn?: string) {
+  try {
+    return await selectRows(client, table, orderColumn);
+  } catch (error) {
+    if (isMissingOrBlockedTable(unknownMessage(error))) return [];
+    throw error;
+  }
+}
+
 async function maybeSingle(client: SupabaseLike, table: string, column: string, value: string) {
   const result = await client.from(table).select('*').eq(column, value).maybeSingle();
   return ensureOk<Row | null>(result, `Khong doc duoc ${table}`);
@@ -433,7 +445,7 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
     },
 
     async loadInitialData(profile) {
-      const [users, bins, wasteTypes, predictions, submissions, points, feedbacks, missions, userMissions, rewards, redemptions, qrScanLogs, proofImages] = await Promise.all([
+      const [users, bins, wasteTypes, predictions, submissions, points, feedbacks, missions, userMissions, rewards, redemptions, qrScanLogs, proofImages, avatarPresets] = await Promise.all([
         selectRows(client, 'users'),
         selectRows(client, 'bins'),
         selectRows(client, 'waste_types'),
@@ -446,7 +458,8 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
         selectRows(client, 'rewards'),
         selectRows(client, 'reward_redemptions', 'requested_at'),
         selectRows(client, 'qr_scan_logs', 'scanned_at'),
-        selectRows(client, 'proof_images', 'captured_at')
+        selectRows(client, 'proof_images', 'captured_at'),
+        selectOptionalRows(client, 'avatar_presets', 'sort_order')
       ]);
 
       const mappedProofImages = proofImages.map(mapProofImageRow);
@@ -470,7 +483,8 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
         rewards: rewards.map(mapRewardRow),
         rewardRedemptions: profile.role === 'student' ? mappedRedemptions.filter(item => item.userId === profile.id) : mappedRedemptions,
         qrScanLogs: profile.role === 'student' ? [] : profile.role === 'volunteer' ? mappedQrScanLogs.filter(item => item.scannedBy === profile.id) : mappedQrScanLogs,
-        proofImages: mappedProofImages
+        proofImages: mappedProofImages,
+        avatarOptions: avatarPresets.map(mapAvatarPresetRow).filter(option => option.status === 'active')
       };
     },
 
@@ -713,7 +727,7 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
     subscribeRealtime(handlers) {
       if (!client.channel) return () => undefined;
       const channel = client.channel('ecoloop-mobile-realtime');
-      const tables: RealtimeTable[] = ['users', 'bins', 'waste_types', 'predictions', 'recycling_submissions', 'point_history', 'feedback', 'missions', 'user_missions', 'rewards', 'reward_redemptions', 'qr_scan_logs', 'proof_images'];
+      const tables: RealtimeTable[] = ['users', 'bins', 'waste_types', 'predictions', 'recycling_submissions', 'point_history', 'feedback', 'missions', 'user_missions', 'rewards', 'reward_redemptions', 'qr_scan_logs', 'proof_images', 'avatar_presets'];
       tables.forEach(table => {
         channel.on('postgres_changes', { event: '*', schema: 'public', table }, (payload: RealtimePayload) => {
           handlers[table]?.({ ...payload, table });

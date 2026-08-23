@@ -1,4 +1,5 @@
 import {
+  AvatarPreset,
   BinStation,
   CreateSubmissionInput,
   EcoPointTransaction,
@@ -60,6 +61,10 @@ function userStatus(value: unknown): UserProfile['status'] {
   const normalized = text(value, 'active').trim().toLowerCase();
   if (normalized === 'locked' || normalized === 'pending' || normalized === 'rejected') return normalized;
   return 'active';
+}
+
+function activeStatus(value: unknown): AvatarPreset['status'] {
+  return text(value, 'active').trim().toLowerCase() === 'active' ? 'active' : 'inactive';
 }
 
 function binStatus(value: unknown): BinStation['status'] {
@@ -171,6 +176,20 @@ export function toUserRow(user: UserProfile): Row {
   };
 }
 
+export function mapAvatarPresetRow(row: Row): AvatarPreset {
+  return {
+    key: text(row.key ?? row.id).trim(),
+    label: text(row.label, 'Avatar Eco-loop').trim(),
+    imageUrl: text(row.imageUrl ?? row.image_url).trim() || undefined,
+    background: text(row.background, '#cbf9e4').trim() || '#cbf9e4',
+    tile: text(row.tile, '#a8f2ab').trim() || '#a8f2ab',
+    accent: text(row.accent, '#8bc34a').trim() || '#8bc34a',
+    face: text(row.face, '#2c6e6e').trim() || '#2c6e6e',
+    status: activeStatus(row.status),
+    sortOrder: number(row.sortOrder ?? row.sort_order)
+  };
+}
+
 export function mapBinRow(row: Row): BinStation {
   const station: BinStation = {
     id: text(row.id),
@@ -225,7 +244,7 @@ export function buildSubmissionDraft({
     wasteTypeId: input.wasteTypeId,
     quantity: input.quantity,
     unit: wasteType.unit,
-    qrToken: `ECO-${suffix}`,
+    qrToken: `ECL-SUB-${suffix}`,
     status: 'CREATED',
     createdAt: now,
     expiredAt: new Date(now.getTime() + 45 * 60 * 1000)

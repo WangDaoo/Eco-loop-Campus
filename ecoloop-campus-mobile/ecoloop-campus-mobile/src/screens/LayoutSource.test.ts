@@ -80,9 +80,10 @@ test('ProfileScreen keeps the avatar area clean without visible labels over it',
 test('ProfileScreen uses live rank and avatar editor instead of hard-coded profile UI', () => {
   const source = sourceOf('ProfileScreen.tsx');
   assert.match(source, /getUserLeaderboardRank/);
-  assert.match(source, /AVATAR_OPTIONS/);
+  assert.match(source, /avatarOptions/);
   assert.match(source, /updateAvatar/);
   assert.match(source, /Modal/);
+  assert.doesNotMatch(source, /Avatar là preset nhẹ, không upload ảnh nên không làm nặng dữ liệu\./);
   assert.doesNotMatch(source, /Thứ hạng hiện tại của bạn: 12|Thá»© háº¡ng hiá»‡n táº¡i cá»§a báº¡n: 12/);
   assert.doesNotMatch(source, /left:\s*'50%'/);
 });

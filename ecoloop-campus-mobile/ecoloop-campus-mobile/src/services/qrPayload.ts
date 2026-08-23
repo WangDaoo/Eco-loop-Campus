@@ -1,6 +1,7 @@
 import { RecyclingSubmission } from '../types';
 
-type SubmissionQrInput = Pick<RecyclingSubmission, 'qrToken' | 'id' | 'binId'>;
+type SubmissionQrInput = Pick<RecyclingSubmission, 'qrToken' | 'id' | 'binId'> & { expiredAt?: Date | string };
+type StationQrInput = { id: string; qrCode?: string };
 
 function normalizeToken(value: string) {
   return value.trim().toUpperCase();
@@ -11,8 +12,31 @@ function readStringField(value: Record<string, unknown>, keys: string[]) {
   return typeof result === 'string' ? result : '';
 }
 
+function slug(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'STATION';
+}
+
 function findEcoToken(value: string) {
-  return value.match(/ECO-[A-Z0-9-]+/i)?.[0];
+  return value.match(/ECL-SUB-[A-Z0-9-]+/i)?.[0] ?? value.match(/ECO-[A-Z0-9-]+/i)?.[0];
+}
+
+export function buildStationQrCode(stationId: string) {
+  return `ECL-ST-${slug(stationId)}`;
+}
+
+export function buildStationQrPayload(station: StationQrInput) {
+  return JSON.stringify({
+    type: 'eco-loop-station',
+    version: 1,
+    stationId: station.id,
+    qrCode: station.qrCode || buildStationQrCode(station.id)
+  });
 }
 
 export function extractSubmissionQrToken(payload: string) {
@@ -44,10 +68,11 @@ export function extractSubmissionQrToken(payload: string) {
 export function buildSubmissionQrPayload(submission: SubmissionQrInput) {
   return JSON.stringify({
     type: 'eco-loop-submission',
+    version: 1,
     qrToken: submission.qrToken,
     submissionId: submission.id,
     binId: submission.binId,
-    version: 1
+    expiredAt: submission.expiredAt instanceof Date ? submission.expiredAt.toISOString() : submission.expiredAt
   });
 }
 

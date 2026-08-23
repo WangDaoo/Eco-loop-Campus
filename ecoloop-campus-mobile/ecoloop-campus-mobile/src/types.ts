@@ -40,6 +40,18 @@ export type UserProfile = {
   avatarUrl?: string;
 };
 
+export type AvatarPreset = {
+  key: string;
+  label: string;
+  imageUrl?: string;
+  background: string;
+  tile: string;
+  accent: string;
+  face: string;
+  status: 'active' | 'inactive';
+  sortOrder: number;
+};
+
 export type BinStation = {
   id: string;
   name: string;

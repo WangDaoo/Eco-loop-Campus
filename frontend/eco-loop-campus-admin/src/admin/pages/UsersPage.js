@@ -3,7 +3,7 @@ import DataTable from "../components/DataTable";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
-import { listUsers, saveUser, sourceText, updateUserStatus } from "../services/supabaseStore";
+import { listUsers, saveUser, updateUserStatus } from "../services/supabaseStore";
 
 const ROLE_OPTIONS = [
   { value: "student", label: "Sinh viên", prefix: "SV", aliases: ["student", "sinh viên", "sinh vien"] },
@@ -64,7 +64,6 @@ export default function UsersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [form, setForm] = useState(emptyForm);
-  const [source, setSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState("");
@@ -82,7 +81,6 @@ export default function UsersPage() {
       const response = await listUsers();
       if (!active) return;
       setUsers(response.data);
-      setSource(response.source);
       setError(response.error);
       setLoading(false);
     }
@@ -132,7 +130,6 @@ export default function UsersPage() {
   const changeUserStatus = async (user, nextStatus, message = "Đã cập nhật trạng thái người dùng") => {
     const response = await updateUserStatus(user, nextStatus);
     setUsers(current => current.map(item => item.id === user.id ? response.data : item));
-    setSource(response.source);
     setError(response.error);
     showToast(message);
   };
@@ -188,7 +185,6 @@ export default function UsersPage() {
     setUsers(current => editingUser
       ? current.map(user => user.id === response.data.id ? response.data : user)
       : [response.data, ...current.filter(user => user.id !== response.data.id)]);
-    setSource(response.source);
     setError(response.error);
     closeModal();
     showToast(editingUser ? "Đã cập nhật người dùng" : "Đã thêm người dùng");
@@ -232,13 +228,12 @@ export default function UsersPage() {
           <h1>Người dùng / Lớp / Khoa</h1>
         </div>
         <div className="eg-button-row">
-          {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
           <button type="button" className="eg-primary-btn" onClick={openAddModal}>Thêm người dùng</button>
         </div>
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải người dùng...</section>}
-      {error && <section className="eg-alert">Supabase chưa sẵn sàng, đang dùng dữ liệu dự phòng localStorage.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card">
         <div className="eg-filter-row">

@@ -18,7 +18,7 @@ const stations: BinStation[] = [
     location: 'Sảnh E1',
     building: 'E1',
     floor: '1',
-    qrCode: 'STATION-E1',
+    qrCode: 'ECL-ST-STATION-E1',
     status: 'open',
     capacity: 62,
     latitude: 10.7627,
@@ -31,7 +31,7 @@ const stations: BinStation[] = [
     location: 'Khu canteen',
     building: 'CAF',
     floor: '1',
-    qrCode: 'STATION-CAF',
+    qrCode: 'ECL-ST-STATION-CAF',
     status: 'full',
     capacity: 91,
     latitude: 10.7615,
@@ -44,7 +44,7 @@ const stations: BinStation[] = [
     location: 'Kho tạm',
     building: 'STO',
     floor: 'B1',
-    qrCode: 'STATION-MISS',
+    qrCode: 'ECL-ST-STATION-MISS',
     status: 'maintenance',
     capacity: 20
   }

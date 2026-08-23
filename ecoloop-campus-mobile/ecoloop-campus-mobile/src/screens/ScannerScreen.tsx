@@ -274,7 +274,7 @@ export default function ScannerScreen() {
 
       <Card style={styles.manualCard}>
         <Text style={styles.tipTitle}>Nhập mã QR thủ công</Text>
-        <TextInput value={manualQrToken} onChangeText={setManualQrToken} autoCapitalize="characters" style={styles.input} placeholder="ECO-SUB-001" placeholderTextColor={colors.muted} />
+        <TextInput value={manualQrToken} onChangeText={setManualQrToken} autoCapitalize="characters" style={styles.input} placeholder="ECL-SUB-20260823120000-123456" placeholderTextColor={colors.muted} />
         <AppButton title="Tải giao dịch" variant="light" onPress={() => void loadQr(manualQrToken)} />
       </Card>
 

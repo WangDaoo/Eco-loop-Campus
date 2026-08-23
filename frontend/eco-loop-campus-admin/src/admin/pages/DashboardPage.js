@@ -8,7 +8,7 @@ import StatCard from "../components/StatCard";
 import StatusBadge from "../components/StatusBadge";
 import { isOpenFeedback } from "../data/feedbackConfig";
 import { BIN_GROUPS, getWasteLabel } from "../data/wasteConfig";
-import { loadDashboardData, saveBin, seedDefaults, sourceText } from "../services/supabaseStore";
+import { loadDashboardData, saveBin } from "../services/supabaseStore";
 
 const LOW_CONFIDENCE_THRESHOLD = 0.65;
 const BIN_CAPACITY_WARNING = 85;
@@ -150,7 +150,6 @@ function makePriorityItems(predictions, bins, feedback, confidenceThreshold = LO
 
 export default function DashboardPage() {
   const [dashboard, setDashboard] = useState({ predictions: [], bins: [], users: [], pointRules: [], feedback: [], pointHistory: [], settings: { threshold: LOW_CONFIDENCE_THRESHOLD } });
-  const [source, setSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -158,7 +157,6 @@ export default function DashboardPage() {
     setLoading(true);
     const response = await loadDashboardData();
     setDashboard(response.data);
-    setSource(response.source);
     setError(response.error);
     setLoading(false);
   };
@@ -167,19 +165,17 @@ export default function DashboardPage() {
     loadData();
   }, []);
 
-  const seedData = async () => {
-    await seedDefaults();
-    await loadData();
-  };
-
   const updateBinPosition = async (bin, position) => {
     const updatedBin = { ...bin, ...position };
     const response = await saveBin(updatedBin);
+    if (!response.data) {
+      setError(response.error);
+      return bin;
+    }
     setDashboard(current => ({
       ...current,
       bins: safeList(current.bins).map(item => item.id === bin.id ? response.data : item),
     }));
-    setSource(response.source);
     setError(response.error);
     return response.data;
   };
@@ -225,14 +221,10 @@ export default function DashboardPage() {
           <span>Eco-loop Campus</span>
           <h1>Tổng quan quản trị</h1>
         </div>
-        <div className="eg-button-row">
-          {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
-          <button type="button" className="eg-secondary-btn" onClick={seedData}>Khởi tạo dữ liệu mẫu</button>
-        </div>
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải dữ liệu quản trị...</section>}
-      {error && <section className="eg-alert">Supabase chưa sẵn sàng, đang dùng dữ liệu dự phòng localStorage.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-command-panel" aria-labelledby="ops-center-title">
         <div>
@@ -283,7 +275,7 @@ export default function DashboardPage() {
       </section>
 
       <div className="eg-stat-grid">
-        <StatCard title="Tổng lượt quét" value={predictions.length} hint={source ? sourceText(source) : "Đang tải"} tone="blue" icon={ChartLineUp} />
+        <StatCard title="Tổng lượt quét" value={predictions.length} hint="Dữ liệu Supabase" tone="blue" icon={ChartLineUp} />
         <StatCard title="Chờ duyệt" value={pendingCount} hint="Cần admin kiểm tra" tone="orange" icon={Clock} />
         <StatCard title="Thùng cần kiểm tra" value={binAttentionCount} hint={`${bins.length} điểm thu gom`} tone="red" icon={Trash} />
         <StatCard title="Ecopoint đã cấp" value={totalAwardedPoints} hint={`${pointHistory.length} lượt cộng điểm · ${totalUserPoints} điểm người dùng`} tone="green" icon={Coins} />

@@ -1,6 +1,4 @@
-import { USERS_KEY } from "../data/wasteConfig";
-import { getUsers } from "./storage";
-import { __testing, saveManualPointHistory } from "./supabaseStore";
+import { __testing } from "./supabaseStore";
 
 beforeEach(() => {
   localStorage.clear();
@@ -64,7 +62,7 @@ test("maps Supabase bins snake_case into clean admin bin fields", () => {
     location: "Nhà A1",
     building: "A1",
     floor: "1",
-    qr_code: "QR-A1",
+    qr_code: "ECL-ST-BIN-A1-RECYCLE",
     status: "active",
     capacity: 54,
     map_x: 30,
@@ -73,7 +71,7 @@ test("maps Supabase bins snake_case into clean admin bin fields", () => {
 
   expect(bin).toEqual(expect.objectContaining({
     binGroup: "Tái chế",
-    qrCode: "QR-A1",
+    qrCode: "ECL-ST-BIN-A1-RECYCLE",
     mapX: 30,
     mapY: 78,
   }));
@@ -91,7 +89,7 @@ test("maps admin bins camelCase into Supabase snake_case fields", () => {
     location: "Nhà A1",
     building: "A1",
     floor: "1",
-    qrCode: "QR-A1",
+    qrCode: "ECL-ST-BIN-A1-RECYCLE",
     status: "active",
     capacity: 54,
     mapX: 30,
@@ -100,7 +98,7 @@ test("maps admin bins camelCase into Supabase snake_case fields", () => {
 
   expect(payload).toEqual(expect.objectContaining({
     bin_group: "Tái chế",
-    qr_code: "QR-A1",
+    qr_code: "ECL-ST-BIN-A1-RECYCLE",
     map_x: 30,
     map_y: 78,
   }));
@@ -108,6 +106,18 @@ test("maps admin bins camelCase into Supabase snake_case fields", () => {
   expect(payload.qrCode).toBeUndefined();
   expect(payload.mapX).toBeUndefined();
   expect(payload.mapY).toBeUndefined();
+});
+
+test("builds Eco-loop station QR codes and payloads for admin bins", () => {
+  expect(__testing.buildStationQrCode("Trạm E1 xanh")).toBe("ECL-ST-TRAM-E1-XANH");
+  const payload = __testing.buildStationQrPayload({ id: "station-e1", qrCode: "ECL-ST-STATION-E1" });
+
+  expect(JSON.parse(payload)).toEqual({
+    type: "eco-loop-station",
+    version: 1,
+    stationId: "station-e1",
+    qrCode: "ECL-ST-STATION-E1",
+  });
 });
 
 test("applies realtime bin changes by id for admin map state", () => {
@@ -523,29 +533,6 @@ test("maps non-numeric model class count to the configured AI class count", () =
   expect(payload.class_count).toBe(10);
 });
 
-test("manual point fallback treats malformed local user points as zero", async () => {
-  localStorage.setItem(USERS_KEY, JSON.stringify([
-    {
-      id: "SV-BAD-LOCAL-POINTS",
-      name: "Người dùng lỗi điểm local",
-      email: "bad-local-points@school.edu.vn",
-      role: "student",
-      group: "CNTT K20",
-      points: "bad-points",
-      status: "active",
-    },
-  ]));
-
-  const response = await saveManualPointHistory({
-    userId: "SV-BAD-LOCAL-POINTS",
-    points: 12,
-    action: "Điều chỉnh dữ liệu lỗi",
-    adminNote: "Kiểm tra fallback",
-  });
-
-  expect(response.source).toBe("local");
-  expect(getUsers()[0].points).toBe(12);
-});
 test("maps avatar fields between Supabase and admin users", () => {
   const user = __testing.fromUser({
     id: "SV003",
@@ -561,4 +548,21 @@ test("maps avatar fields between Supabase and admin users", () => {
 
   expect(user).toEqual(expect.objectContaining({ avatarKey: "wave", avatarUrl: "https://cdn.example/avatar.png" }));
   expect(__testing.toUser(user)).toEqual(expect.objectContaining({ avatar_key: "wave", avatar_url: "https://cdn.example/avatar.png" }));
+});
+
+test("maps avatar presets between Supabase and admin forms", () => {
+  const preset = __testing.fromAvatarPreset({
+    key: "sprout",
+    label: "Mầm xanh",
+    image_url: "https://cdn.example/avatar/sprout.png",
+    background: "#cbf9e4",
+    tile: "#a8f2ab",
+    accent: "#8bc34a",
+    face: "#2c6e6e",
+    status: "active",
+    sort_order: "2",
+  });
+
+  expect(preset).toEqual(expect.objectContaining({ key: "sprout", imageUrl: "https://cdn.example/avatar/sprout.png", sortOrder: 2 }));
+  expect(__testing.toAvatarPreset(preset)).toEqual(expect.objectContaining({ key: "sprout", image_url: "https://cdn.example/avatar/sprout.png", sort_order: 2 }));
 });

@@ -10,6 +10,7 @@ import {
   mapPredictionRow,
   mapProofImageRow,
   mapQrScanLogRow,
+  mapAvatarPresetRow,
   mapRewardRow,
   mapUserMissionRow,
   mergeMissionProgress,
@@ -32,7 +33,7 @@ test('maps existing Supabase rows into mobile domain models', () => {
       location: 'Sanh E1',
       building: 'E1',
       floor: '1',
-      qr_code: 'STATION-E1',
+      qr_code: 'ECL-ST-STATION-E1',
       status: 'active',
       capacity: '86',
       map_x: 51.5,
@@ -45,7 +46,7 @@ test('maps existing Supabase rows into mobile domain models', () => {
       location: 'Sanh E1',
       building: 'E1',
       floor: '1',
-      qrCode: 'STATION-E1',
+      qrCode: 'ECL-ST-STATION-E1',
       status: 'open',
       capacity: 86,
       mapX: 51.5,
@@ -69,7 +70,7 @@ test('maps realtime bin rows into one backend coordinate system for mobile map',
     location: 'Sảnh E1',
     building: 'E1',
     floor: '1',
-    qr_code: 'QR-RT',
+    qr_code: 'ECL-ST-QR-RT',
     status: 'active',
     capacity: 130,
     map_x: 120,
@@ -93,7 +94,7 @@ test('builds a submission draft with one-time QR token and 45 minute expiry', ()
   });
 
   assert.equal(draft.id, 'sub-20260802000000-123456');
-  assert.equal(draft.qrToken, 'ECO-20260802000000-123456');
+  assert.equal(draft.qrToken, 'ECL-SUB-20260802000000-123456');
   assert.equal(draft.status, 'CREATED');
   assert.equal(draft.unit, 'kg');
   assert.equal(draft.expiredAt.toISOString(), '2026-08-02T00:45:00.000Z');
@@ -291,4 +292,32 @@ test('maps avatar keys between Supabase and mobile profile', () => {
   const profile = mapUserRow({ id: 'student-1', name: 'Mai', email: 'mai@school.edu.vn', role: 'student', group: 'CNTT', points: 42, status: 'active', avatar_key: 'sunny' });
   assert.equal(profile.avatarKey, 'sunny');
   assert.equal(toUserRow(profile).avatar_key, 'sunny');
+});
+
+test('maps admin-managed avatar presets for mobile selection', () => {
+  assert.deepEqual(
+    mapAvatarPresetRow({
+      key: 'leaf-admin',
+      label: 'Lá xanh',
+      image_url: 'https://cdn.example/avatar/leaf.png',
+      background: '#cbf9e4',
+      tile: '#a8f2ab',
+      accent: '#8bc34a',
+      face: '#2c6e6e',
+      status: 'active',
+      sort_order: '4'
+    }),
+    {
+      key: 'leaf-admin',
+      label: 'Lá xanh',
+      imageUrl: 'https://cdn.example/avatar/leaf.png',
+      background: '#cbf9e4',
+      tile: '#a8f2ab',
+      accent: '#8bc34a',
+      face: '#2c6e6e',
+      status: 'active',
+      sortOrder: 4
+    }
+  );
+  assert.equal(mapAvatarPresetRow({ key: 'hidden', label: 'Ẩn', status: 'disabled' }).status, 'inactive');
 });

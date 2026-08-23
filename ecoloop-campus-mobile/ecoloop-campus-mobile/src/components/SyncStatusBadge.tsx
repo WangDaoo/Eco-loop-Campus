@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { colors, radius } from '../theme/colors';
 import { getSyncStatusCopy } from './syncStatusCopy';
 
-type SyncSource = 'mock' | 'supabase';
+type SyncSource = 'supabase';
 export { getSyncStatusCopy } from './syncStatusCopy';
 
 export function SyncStatusBadge({ syncSource, syncError }: { syncSource: SyncSource; syncError: string }) {

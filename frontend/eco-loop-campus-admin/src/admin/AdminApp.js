@@ -5,6 +5,7 @@ import {
   Cpu,
   Gauge,
   House,
+  Palette,
   ListChecks,
   Trash,
   UsersThree,
@@ -14,6 +15,7 @@ import { useState } from "react";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 import AiTesterPage from "./pages/AiTesterPage";
+import AvatarPresetsPage from "./pages/AvatarPresetsPage";
 import BinsPage from "./pages/BinsPage";
 import DashboardPage from "./pages/DashboardPage";
 import EcoPointsPage from "./pages/EcoPointsPage";
@@ -29,6 +31,7 @@ const navItems = [
   { path: "/dashboard", label: "Tổng quan", icon: House, element: <DashboardPage /> },
   { path: "/scans", label: "Lượt quét", icon: ListChecks, element: <ScansPage /> },
   { path: "/users", label: "Người dùng", icon: UsersThree, element: <UsersPage /> },
+  { path: "/avatars", label: "Avatar", icon: Palette, element: <AvatarPresetsPage /> },
   { path: "/bins", label: "Thùng rác", icon: Trash, element: <BinsPage /> },
   { path: "/ecopoints", label: "Ecopoint", icon: Coins, element: <EcoPointsPage /> },
   { path: "/reports", label: "Báo cáo", icon: ChartBar, element: <ReportsPage /> },

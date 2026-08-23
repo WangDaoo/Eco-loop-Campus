@@ -15,7 +15,8 @@ const baseData: MobileInitialData = {
   rewards: [{ id: 'reward-real', title: 'Real reward' } as any],
   rewardRedemptions: [{ id: 'redeem-real', userId: 'user-real' } as any],
   qrScanLogs: [{ id: 'scan-real', scannedBy: 'vol-1' } as any],
-  proofImages: []
+  proofImages: [],
+  avatarOptions: []
 };
 
 test('remote hydration keeps Supabase only when station and waste type data are ready', () => {
@@ -36,12 +37,11 @@ test('remote hydration keeps Supabase only when station and waste type data are 
 test('remote hydration falls back to mock data when operating data is incomplete', () => {
   const state = resolveRemoteHydrationState({ ...baseData, stations: [] }, { ok: false, missing: ['bins'] });
 
-  assert.equal(state.syncSource, 'mock');
+  assert.equal(state.syncSource, 'supabase');
   assert.match(state.syncError, /bins/);
-  assert.notEqual(state.stations[0].id, 'station-real');
-  assert.ok(state.stations.length > 0);
-  assert.ok(state.wasteTypes.length > 0);
-  assert.ok(state.rewards.length > 0);
-  assert.ok(state.missions.length > 0);
+  assert.deepEqual(state.stations, []);
+  assert.deepEqual(state.wasteTypes, baseData.wasteTypes);
+  assert.deepEqual(state.rewards, baseData.rewards);
+  assert.deepEqual(state.missions, baseData.missions);
   assert.ok(Array.isArray((state as any).rewardRedemptions));
 });

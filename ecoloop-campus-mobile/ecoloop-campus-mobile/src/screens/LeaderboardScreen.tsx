@@ -12,7 +12,7 @@ import { colors } from '../theme/colors';
 type Props = NativeStackScreenProps<RootStackParamList, 'Leaderboard'>;
 
 export default function LeaderboardScreen({ navigation }: Props) {
-  const { users, currentUser } = useAppContext();
+  const { users, currentUser, avatarOptions } = useAppContext();
   const rows = selectLeaderboardUsers(users, 20);
 
   return (
@@ -32,7 +32,7 @@ export default function LeaderboardScreen({ navigation }: Props) {
           <Card key={row.id} style={[styles.row, isCurrentUser && styles.currentUserRow]}>
             <View style={[styles.rank, row.rank === 1 && styles.top]}><Text style={styles.rankText}>{row.rank}</Text></View>
             <View style={styles.avatarSlot}>
-              <UserAvatar avatarKey={sourceUser?.avatarKey} avatarUrl={sourceUser?.avatarUrl} size={50} />
+              <UserAvatar avatarKey={sourceUser?.avatarKey} avatarUrl={sourceUser?.avatarUrl} avatarOptions={avatarOptions} size={50} />
             </View>
             <View style={styles.rowBody}>
               <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{row.name}</Text>

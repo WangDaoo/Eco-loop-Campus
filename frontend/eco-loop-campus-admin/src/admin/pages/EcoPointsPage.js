@@ -16,7 +16,6 @@ import {
   savePointRules,
   saveRewardProduct,
   saveRewardRedemption,
-  sourceText,
   updateRewardRedemption,
   updateRecyclingSubmissionReview,
 } from "../services/supabaseStore";
@@ -78,7 +77,6 @@ export default function EcoPointsPage() {
   const [manualForm, setManualForm] = useState(initialManualForm);
   const [rewardForm, setRewardForm] = useState(initialRewardForm);
   const [rewardProductForm, setRewardProductForm] = useState(initialRewardProductForm);
-  const [source, setSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState("");
@@ -101,7 +99,6 @@ export default function EcoPointsPage() {
       setRewardRequests(rewardRequestsResponse.data);
       setRewardProducts(rewardProductsResponse.data);
       setSubmissions(submissionsResponse.data);
-      setSource([rulesResponse, historyResponse, usersResponse, rewardRequestsResponse, rewardProductsResponse, submissionsResponse].some(item => item.source === "local") ? "local" : rulesResponse.source);
       setError(rulesResponse.error || historyResponse.error || usersResponse.error || rewardRequestsResponse.error || rewardProductsResponse.error || submissionsResponse.error);
       setLoading(false);
     }
@@ -158,7 +155,6 @@ export default function EcoPointsPage() {
     }
     const response = await savePointRules(rules);
     setRules(response.data);
-    setSource(response.source);
     setError(response.error);
     showToast("Đã lưu quy tắc điểm");
   };
@@ -183,7 +179,6 @@ export default function EcoPointsPage() {
     const user = users.find(item => item.id === response.data.userId);
     setHistory(current => [{ ...response.data, userName: user?.name || response.data.userId, binName: "Điều chỉnh thủ công" }, ...current]);
     setUsers(current => current.map(item => item.id === response.data.userId ? { ...item, points: Number(item.points || 0) + Number(response.data.points || 0) } : item));
-    setSource(response.source);
     setError(response.error);
     showToast("Đã cộng điểm thủ công");
   };
@@ -208,7 +203,6 @@ export default function EcoPointsPage() {
     });
     const user = users.find(item => item.id === response.data.userId);
     setRewardRequests(current => [{ ...response.data, userName: user?.name || response.data.userId, userGroup: user?.group || "" }, ...current.filter(item => item.id !== response.data.id)]);
-    setSource(response.source);
     setError(response.error);
     showToast("Đã tạo yêu cầu đổi thưởng");
   };
@@ -226,14 +220,12 @@ export default function EcoPointsPage() {
     }
     const response = await saveRewardProduct({ ...rewardProductForm, costPoints });
     if (!response.data) {
-      setSource(response.source);
       setError(response.error);
       showToast("Chưa lưu được sản phẩm đổi thưởng", "danger");
       return;
     }
     setRewardProducts(current => [response.data, ...current.filter(item => item.id !== response.data.id)].sort((a, b) => Number(a.costPoints || 0) - Number(b.costPoints || 0)));
     setRewardProductForm(initialRewardProductForm);
-    setSource(response.source);
     setError(response.error);
     showToast("Đã lưu sản phẩm đổi thưởng");
   };
@@ -241,7 +233,6 @@ export default function EcoPointsPage() {
   const reviewReward = async (reward, status) => {
     const response = await updateRewardRedemption(reward, { status, reviewedAt: new Date().toISOString() });
     setRewardRequests(current => current.map(item => item.id === reward.id ? { ...item, ...response.data } : item));
-    setSource(response.source);
     setError(response.error);
     showToast(status === "approved" ? "Đã duyệt đổi thưởng" : "Đã từ chối đổi thưởng");
   };
@@ -252,9 +243,8 @@ export default function EcoPointsPage() {
       volunteerNote: row.volunteerNote || "Admin từ chối sau khi kiểm tra",
     });
     setSubmissions(current => current.map(item => item.id === row.id ? { ...item, ...response.data } : item));
-    setSource(response.source);
     setError(response.error);
-    showToast(response.source === "supabase" ? "Đã từ chối giao dịch gửi rác" : "Chưa đồng bộ được thao tác từ chối", response.source === "supabase" ? "success" : "danger");
+    showToast(response.error ? "Không từ chối được giao dịch gửi rác" : "Đã từ chối giao dịch gửi rác", response.error ? "danger" : "success");
   };
 
   const historyColumns = [
@@ -340,13 +330,12 @@ export default function EcoPointsPage() {
           <h1>Ecopoint</h1>
         </div>
         <div className="eg-button-row">
-          {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
           <button type="button" className="eg-primary-btn" onClick={saveRules}>Lưu quy tắc điểm</button>
         </div>
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải quy tắc điểm...</section>}
-      {error && <section className="eg-alert">Supabase chưa sẵn sàng, đang dùng dữ liệu dự phòng localStorage.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card eg-filter-panel" aria-label="Bộ lọc Ecopoint">
         <label>

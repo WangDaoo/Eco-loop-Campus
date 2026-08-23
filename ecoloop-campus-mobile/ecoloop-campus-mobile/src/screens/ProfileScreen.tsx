@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAppContext } from '../context/AppContext';
 import { Screen } from '../components/Screen';
-import { AVATAR_OPTIONS, UserAvatar, resolveAvatarOption } from '../components/UserAvatar';
+import { UserAvatar, resolveAvatarOption } from '../components/UserAvatar';
 import { getUserLeaderboardRank } from '../services/leaderboard';
 
 function messageOf(error: unknown) {
@@ -10,13 +10,13 @@ function messageOf(error: unknown) {
 }
 
 export default function ProfileScreen({ navigation }: any) {
-  const { currentUser: user, signOut, users, updateAvatar, updatePassword, isLoading } = useAppContext();
+  const { currentUser: user, signOut, users, avatarOptions, updateAvatar, updatePassword, isLoading } = useAppContext();
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const selectedAvatar = resolveAvatarOption(user.avatarKey);
+  const selectedAvatar = resolveAvatarOption(user.avatarKey, avatarOptions);
   const currentRank = useMemo(() => getUserLeaderboardRank(users, user.id), [users, user.id]);
   const rankLabel = currentRank
     ? `Thứ hạng hiện tại của bạn: #${currentRank.rank}`
@@ -76,7 +76,7 @@ export default function ProfileScreen({ navigation }: any) {
           accessibilityRole="button"
           accessibilityLabel="Mở chọn ảnh đại diện"
         >
-          <UserAvatar avatarKey={user.avatarKey} avatarUrl={user.avatarUrl} size={224} />
+          <UserAvatar avatarKey={user.avatarKey} avatarUrl={user.avatarUrl} avatarOptions={avatarOptions} size={224} />
         </Pressable>
 
         <View style={styles.profileSummary}>
@@ -137,9 +137,8 @@ export default function ProfileScreen({ navigation }: any) {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalPanel}>
             <Text style={styles.modalTitle}>Chọn avatar</Text>
-            <Text style={styles.modalText}>Avatar là preset nhẹ, không upload ảnh nên không làm nặng dữ liệu.</Text>
             <View style={styles.avatarGrid}>
-              {AVATAR_OPTIONS.map(option => {
+              {avatarOptions.map(option => {
                 const selected = option.key === (user.avatarKey || 'sprout');
                 return (
                   <Pressable
@@ -150,7 +149,7 @@ export default function ProfileScreen({ navigation }: any) {
                     accessibilityState={{ selected }}
                     accessibilityLabel={`Chọn avatar ${option.label}`}
                   >
-                    <UserAvatar avatarKey={option.key} size={82} />
+                    <UserAvatar avatarKey={option.key} avatarOptions={avatarOptions} size={82} />
                     <Text style={styles.avatarOptionText}>{option.label}</Text>
                   </Pressable>
                 );

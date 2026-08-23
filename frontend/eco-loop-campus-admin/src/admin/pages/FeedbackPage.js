@@ -11,7 +11,7 @@ import {
   getFeedbackPriorityLabel,
   isOpenFeedback,
 } from "../data/feedbackConfig";
-import { listBins, listFeedback, saveFeedbackItem, sourceText, updateFeedbackItem, updateFeedbackStatus } from "../services/supabaseStore";
+import { listBins, listFeedback, saveFeedbackItem, updateFeedbackItem, updateFeedbackStatus } from "../services/supabaseStore";
 
 const feedbackDateFormatter = new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" });
 
@@ -53,7 +53,6 @@ export default function FeedbackPage() {
   const [feedback, setFeedback] = useState([]);
   const [bins, setBins] = useState([]);
   const [filters, setFilters] = useState({ status: normalizeStatusFilter(searchParams.get("status")), priority: "all", binId: "all" });
-  const [source, setSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState("");
@@ -76,7 +75,6 @@ export default function FeedbackPage() {
       if (!active) return;
       setFeedback(feedbackResponse.data);
       setBins(binsResponse.data);
-      setSource(feedbackResponse.source === "local" || binsResponse.source === "local" ? "local" : feedbackResponse.source);
       setError(feedbackResponse.error || binsResponse.error);
       setLoading(false);
     }
@@ -113,7 +111,6 @@ export default function FeedbackPage() {
   const patchFeedback = async (item, updates, successMessage) => {
     const response = await updateFeedbackItem(item, updates);
     setFeedback(current => current.map(row => row.id === item.id ? response.data : row));
-    setSource(response.source);
     setError(response.error);
     showToast(successMessage);
     if (selected?.id === item.id) setSelected(response.data);
@@ -123,7 +120,6 @@ export default function FeedbackPage() {
   const changeStatus = async (item, status, message) => {
     const response = await updateFeedbackStatus(item, status);
     setFeedback(current => current.map(row => row.id === item.id ? response.data : row));
-    setSource(response.source);
     setError(response.error);
     showToast(message);
     if (selected?.id === item.id) setSelected(response.data);
@@ -163,7 +159,6 @@ export default function FeedbackPage() {
       adminNote: "",
     });
     setFeedback(current => [response.data, ...current.filter(row => row.id !== response.data.id)]);
-    setSource(response.source);
     setError(response.error);
     showToast("Đã tạo phản hồi mới");
     setCreateOpen(false);
@@ -230,13 +225,12 @@ export default function FeedbackPage() {
           <h1>Phản hồi</h1>
         </div>
         <div className="eg-button-row">
-          {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
           <button type="button" className="eg-primary-btn" onClick={openCreate}>Tạo phản hồi</button>
         </div>
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải phản hồi...</section>}
-      {error && <section className="eg-alert">Supabase chưa sẵn sàng, đang dùng dữ liệu dự phòng localStorage.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-feedback-kpis" aria-label="Tóm tắt phản hồi">
         <article>

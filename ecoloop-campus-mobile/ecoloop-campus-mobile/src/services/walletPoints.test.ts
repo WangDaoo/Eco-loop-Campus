@@ -12,7 +12,3 @@ const transactions: EcoPointTransaction[] = [
 test('Supabase wallet uses authoritative users.points without double-counting point history', () => {
   assert.equal(resolveWalletPoints({ profilePoints: 120, pointTransactions: transactions, syncSource: 'supabase' }), 120);
 });
-
-test('Mock wallet derives visible points from local point transactions', () => {
-  assert.equal(resolveWalletPoints({ profilePoints: 100, pointTransactions: transactions, syncSource: 'mock' }), 130);
-});

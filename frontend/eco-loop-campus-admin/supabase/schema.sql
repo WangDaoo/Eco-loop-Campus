@@ -14,6 +14,29 @@ create table if not exists public.users (
 alter table public.users add column if not exists avatar_key text;
 alter table public.users add column if not exists avatar_url text;
 
+create table if not exists public.avatar_presets (
+  key text primary key,
+  label text not null,
+  image_url text,
+  background text not null default '#cbf9e4',
+  tile text not null default '#a8f2ab',
+  accent text not null default '#8bc34a',
+  face text not null default '#2c6e6e',
+  status text not null default 'active',
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.avatar_presets add column if not exists image_url text;
+alter table public.avatar_presets add column if not exists background text not null default '#cbf9e4';
+alter table public.avatar_presets add column if not exists tile text not null default '#a8f2ab';
+alter table public.avatar_presets add column if not exists accent text not null default '#8bc34a';
+alter table public.avatar_presets add column if not exists face text not null default '#2c6e6e';
+alter table public.avatar_presets add column if not exists status text not null default 'active';
+alter table public.avatar_presets add column if not exists sort_order integer not null default 0;
+alter table public.avatar_presets add column if not exists updated_at timestamptz not null default now();
+
 update public.users
 set status = 'active'
 where status is null or lower(trim(status)) not in ('active', 'locked', 'pending', 'rejected');
@@ -171,6 +194,8 @@ as $$
 $$;
 
 alter table public.users enable row level security;
+alter table public.avatar_presets enable row level security;
+alter table public.avatar_presets replica identity full;
 alter table public.bins enable row level security;
 alter table public.bins replica identity full;
 alter table public.predictions enable row level security;
@@ -182,6 +207,7 @@ alter table public.rewards enable row level security;
 alter table public.reward_redemptions enable row level security;
 
 drop policy if exists "authenticated read users" on public.users;
+drop policy if exists "authenticated read avatar_presets" on public.avatar_presets;
 drop policy if exists "authenticated read bins" on public.bins;
 drop policy if exists "authenticated read predictions" on public.predictions;
 drop policy if exists "authenticated read point_rules" on public.point_rules;
@@ -192,6 +218,7 @@ drop policy if exists "authenticated read rewards" on public.rewards;
 drop policy if exists "authenticated read reward_redemptions" on public.reward_redemptions;
 
 create policy "authenticated read users" on public.users for select to authenticated using (true);
+create policy "authenticated read avatar_presets" on public.avatar_presets for select to authenticated using (true);
 create policy "authenticated read bins" on public.bins for select to authenticated using (true);
 create policy "authenticated read predictions" on public.predictions for select to authenticated using (true);
 create policy "authenticated read point_rules" on public.point_rules for select to authenticated using (true);
@@ -202,6 +229,7 @@ create policy "authenticated read rewards" on public.rewards for select to authe
 create policy "authenticated read reward_redemptions" on public.reward_redemptions for select to authenticated using (true);
 
 drop policy if exists "admin write users" on public.users;
+drop policy if exists "admin write avatar_presets" on public.avatar_presets;
 drop policy if exists "admin write bins" on public.bins;
 drop policy if exists "admin write predictions" on public.predictions;
 drop policy if exists "admin write point_rules" on public.point_rules;
@@ -212,6 +240,7 @@ drop policy if exists "admin write rewards" on public.rewards;
 drop policy if exists "admin write reward_redemptions" on public.reward_redemptions;
 
 create policy "admin write users" on public.users for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin write avatar_presets" on public.avatar_presets for all to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy "admin write bins" on public.bins for all to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy "admin write predictions" on public.predictions for all to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy "admin write point_rules" on public.point_rules for all to authenticated using (public.is_admin()) with check (public.is_admin());
@@ -224,6 +253,14 @@ create policy "admin write reward_redemptions" on public.reward_redemptions for 
 do $$
 begin
   alter publication supabase_realtime add table public.bins;
+exception
+  when duplicate_object then null;
+  when undefined_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.avatar_presets;
 exception
   when duplicate_object then null;
   when undefined_object then null;
@@ -269,10 +306,26 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'avatar-presets',
+  'avatar-presets',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']::text[]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
 drop policy if exists "admin upload prediction images" on storage.objects;
 drop policy if exists "student upload prediction images" on storage.objects;
 drop policy if exists "admin update prediction images" on storage.objects;
 drop policy if exists "admin delete prediction images" on storage.objects;
+drop policy if exists "admin upload avatar preset images" on storage.objects;
+drop policy if exists "admin update avatar preset images" on storage.objects;
+drop policy if exists "admin delete avatar preset images" on storage.objects;
 
 create policy "admin upload prediction images" on storage.objects
   for insert to authenticated
@@ -291,47 +344,18 @@ create policy "admin delete prediction images" on storage.objects
   for delete to authenticated
   using (bucket_id = 'prediction-images' and public.is_admin());
 
-insert into public.users (id, name, email, role, "group", points, status, avatar_key)
-values ('AD001', 'Quản trị Eco-loop Campus', 'admin@school.edu.vn', 'admin', 'Ban vận hành', 0, 'active', 'sprout')
-on conflict (id) do update set
-  name = excluded.name,
-  email = excluded.email,
-  role = excluded.role,
-  "group" = excluded."group",
-  status = excluded.status;
+create policy "admin upload avatar preset images" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'avatar-presets' and public.is_admin());
 
-insert into public.users (id, name, email, role, "group", points, status, avatar_key)
-values
-  ('student-smoke', 'Sinh viên Smoke Test', 'student@school.edu.vn', 'student', 'Khoa Công nghệ thông tin', 0, 'active', 'sprout'),
-  ('volunteer-smoke', 'Volunteer Smoke Test', 'volunteer@school.edu.vn', 'volunteer', 'CLB Môi trường', 0, 'active', 'wave')
-on conflict (email) do update set
-  name = excluded.name,
-  role = excluded.role,
-  "group" = excluded."group",
-  status = excluded.status;
+create policy "admin update avatar preset images" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'avatar-presets' and public.is_admin())
+  with check (bucket_id = 'avatar-presets' and public.is_admin());
 
-insert into public.settings (id, threshold, model_name, class_count)
-values ('model', 0.65, 'MobileNetV2', 10)
-on conflict (id) do nothing;
-
-insert into public.bins (id, name, bin_group, location, building, floor, qr_code, status, capacity, latitude, longitude, map_x, map_y)
-values
-  ('station-e1', 'Trạm thu gom E1', 'Plastic, Paper, Metal', 'Sảnh tòa E1', 'E1', '1', 'STATION-E1', 'active', 62, 10.7627, 106.6822, 42, 54),
-  ('station-lib', 'Thư viện trung tâm', 'Paper, Plastic', 'Tầng trệt thư viện', 'LIB', 'G', 'STATION-LIB', 'active', 48, 10.7640, 106.6840, 57, 38),
-  ('station-caf', 'Canteen xanh', 'Plastic, Metal', 'Khu canteen', 'CAF', '1', 'STATION-CAF', 'full', 91, 10.7615, 106.6851, 68, 70)
-on conflict (id) do update set
-  name = excluded.name,
-  bin_group = excluded.bin_group,
-  location = excluded.location,
-  building = excluded.building,
-  floor = excluded.floor,
-  qr_code = excluded.qr_code,
-  status = excluded.status,
-  capacity = excluded.capacity,
-  latitude = excluded.latitude,
-  longitude = excluded.longitude,
-  map_x = excluded.map_x,
-  map_y = excluded.map_y;
+create policy "admin delete avatar preset images" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'avatar-presets' and public.is_admin());
 
 -- Eco-loop Campus mobile workflow extension
 create table if not exists public.waste_types (
@@ -473,7 +497,7 @@ begin
     p_waste_type_id,
     p_quantity,
     v_waste.unit,
-    'ECO-' || v_suffix,
+    'ECL-SUB-' || v_suffix,
     md5(v_user_id || ':' || p_bin_id || ':' || p_waste_type_id || ':' || v_suffix),
     'CREATED',
     now(),
@@ -852,40 +876,3 @@ create policy "student insert own redemptions" on public.reward_redemptions
 create policy "volunteer insert point_history" on public.point_history
   for insert to authenticated
   with check (public.is_volunteer_or_admin());
-
-insert into public.waste_types (id, name, unit, point_per_unit, recycle_method, status)
-values
-  ('plastic-bottle', 'Chai nhua', 'item', 10, 'Lam sach, thao nap, ep det truoc khi nop.', 'active'),
-  ('paper', 'Giay sach', 'kg', 40, 'Giu kho, khong lan thuc an hoac chat long.', 'active'),
-  ('metal-can', 'Lon kim loai', 'item', 12, 'Rua sach va de rieng khoi rac huu co.', 'active'),
-  ('organic', 'Rac huu co', 'kg', 20, 'De rieng rac thuc pham, tranh lan nhua va kim loai.', 'active'),
-  ('hazardous', 'Pin/nguy hai nho', 'item', 5, 'Pin, bong den nho va vat thai nguy hai can de rieng, tinh nguyen vien kiem tra ky.', 'active')
-on conflict (id) do update set
-  name = excluded.name,
-  unit = excluded.unit,
-  point_per_unit = excluded.point_per_unit,
-  recycle_method = excluded.recycle_method,
-  status = excluded.status;
-insert into public.rewards (id, title, description, cost_points, status, color)
-values
-  ('coffee', 'Ca phe canteen', 'Giam 50% cho 1 ly bat ky', 300, 'active', '#F6B83F'),
-  ('book', 'Voucher nha sach', 'Giam 20% dung cu hoc tap', 500, 'active', '#78C96D'),
-  ('tree', 'Trong 1 cay xanh', 'Ghi ten ban vao vuon Eco-loop', 800, 'active', '#2F8F5B')
-on conflict (id) do update set
-  title = excluded.title,
-  description = excluded.description,
-  cost_points = excluded.cost_points,
-  status = excluded.status,
-  color = excluded.color;
-insert into public.missions (id, title, description, target, reward_points, action_label, status)
-values
-  ('submit-3', 'Gui rac tai che 3 lan', 'Tao va duoc xac nhan 3 giao dich trong tuan.', 3, 100, 'Xem tram', 'active'),
-  ('paper-week', 'Tuan giay sach', 'Nop it nhat 2 kg giay sach.', 2, 120, 'Tiep tuc', 'active'),
-  ('feedback-good', 'Bao cao tram xanh', 'Gui 1 phan hoi huu ich ve tram thu gom.', 1, 40, 'Gui phan hoi', 'active')
-on conflict (id) do update set
-  title = excluded.title,
-  description = excluded.description,
-  target = excluded.target,
-  reward_points = excluded.reward_points,
-  action_label = excluded.action_label,
-  status = excluded.status;

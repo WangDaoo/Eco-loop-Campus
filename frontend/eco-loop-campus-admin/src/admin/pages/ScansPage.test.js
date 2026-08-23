@@ -8,7 +8,6 @@ jest.mock("../services/supabaseStore", () => ({
   getModelSettings: jest.fn(),
   listPredictions: jest.fn(),
   setPredictionStatus: jest.fn(),
-  sourceText: jest.fn(source => source),
 }));
 
 const scanWithImage = {

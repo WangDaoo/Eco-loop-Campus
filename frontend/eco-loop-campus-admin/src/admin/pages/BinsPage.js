@@ -1,12 +1,13 @@
 import { DownloadSimple, PencilSimple, Plus, QrCode } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { useSearchParams } from "react-router-dom";
 import DataTable from "../components/DataTable";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { BIN_GROUPS } from "../data/wasteConfig";
-import { applyBinRealtimeChange, listBins, saveBin, sourceText, subscribeBins, updateBinStatus } from "../services/supabaseStore";
+import { applyBinRealtimeChange, buildStationQrCode, buildStationQrPayload, listBins, saveBin, subscribeBins, updateBinStatus } from "../services/supabaseStore";
 
 const emptyForm = {
   id: "",
@@ -79,7 +80,6 @@ export default function BinsPage() {
   const [selectedQr, setSelectedQr] = useState(null);
   const [editingBin, setEditingBin] = useState(null);
   const [form, setForm] = useState(emptyForm);
-  const [source, setSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -93,7 +93,6 @@ export default function BinsPage() {
       const response = await listBins();
       if (!active) return;
       setBins(response.data);
-      setSource(response.source);
       setError(response.error);
       setLoading(false);
     }
@@ -106,7 +105,6 @@ export default function BinsPage() {
   useEffect(() => {
     const unsubscribe = subscribeBins(payload => {
       setBins(current => applyBinRealtimeChange(current, payload));
-      setSource("supabase");
       setError(null);
     });
     return unsubscribe;
@@ -115,8 +113,13 @@ export default function BinsPage() {
   const toggleStatus = async bin => {
     const nextStatus = statusCode(bin.status) === "maintenance" ? "active" : "maintenance";
     const response = await updateBinStatus(bin, nextStatus);
+    if (!response.data) {
+      setError(response.error);
+      setToastTone("danger");
+      setToast("Không cập nhật được trạng thái thùng.");
+      return;
+    }
     setBins(current => current.map(item => item.id === bin.id ? response.data : item));
-    setSource(response.source);
     setError(response.error);
     setToastTone("success");
     setToast("Đã cập nhật trạng thái thùng");
@@ -151,7 +154,7 @@ export default function BinsPage() {
       location: form.location.trim(),
       building: form.building.trim(),
       floor: form.floor.trim(),
-      qrCode: form.qrCode.trim() || `QR-${id}`,
+      qrCode: buildStationQrCode(form.qrCode || id || form.name),
       status: statusCode(form.status) || "active",
       capacity: normalizePercent(form.capacity, 0),
       mapX: normalizePercent(form.mapX),
@@ -177,8 +180,14 @@ export default function BinsPage() {
 
     setSaving(true);
     const response = await saveBin(payload);
+    if (!response.data) {
+      setError(response.error);
+      setSaving(false);
+      setToastTone("danger");
+      setToast("Không lưu được trạm. Kiểm tra Supabase và thử lại.");
+      return;
+    }
     setBins(current => [response.data, ...current.filter(item => item.id !== response.data.id)]);
-    setSource(response.source);
     setError(response.error);
     setSaving(false);
     closeForm();
@@ -237,14 +246,11 @@ export default function BinsPage() {
           <span>Điểm thu gom trong khuôn viên</span>
           <h1>Thùng rác / Trạm QR</h1>
         </div>
-        <div className="eg-button-row">
-          {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
-          <button type="button" className="eg-primary-btn" onClick={openCreateForm}><Plus size={17} weight="bold" aria-hidden="true" /> Thêm trạm</button>
-        </div>
+        <button type="button" className="eg-primary-btn" onClick={openCreateForm}><Plus size={17} weight="bold" aria-hidden="true" /> Thêm trạm</button>
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải thùng rác...</section>}
-      {error && <section className="eg-alert">Supabase chưa sẵn sàng, đang dùng dữ liệu dự phòng localStorage.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card">
         <div className="eg-filter-row">
@@ -265,10 +271,11 @@ export default function BinsPage() {
       <Modal open={Boolean(selectedQr)} title="Mã QR trạm" onClose={() => setSelectedQr(null)}>
         {selectedQr && (
           <div className="eg-qr-box">
+            <QRCodeSVG value={buildStationQrPayload(selectedQr)} size={180} level="M" includeMargin />
             <div>{selectedQr.qrCode}</div>
             <p>{selectedQr.name}</p>
             <span>{selectedQr.location}</span>
-            <code>{buildScanLink(selectedQr.id)}</code>
+            <code>{buildStationQrPayload(selectedQr)}</code>
             <a className="eg-secondary-btn" href={buildScanLink(selectedQr.id)}>
               <DownloadSimple size={16} weight="bold" aria-hidden="true" /> Mở kiểm thử AI
             </a>
@@ -284,7 +291,8 @@ export default function BinsPage() {
           <label>Vị trí<input required value={form.location} onChange={event => updateForm("location", event.target.value)} placeholder="Nhà A1 - tầng 1" /></label>
           <label>Tòa nhà<input value={form.building} onChange={event => updateForm("building", event.target.value)} placeholder="A1" /></label>
           <label>Tầng<input value={form.floor} onChange={event => updateForm("floor", event.target.value)} placeholder="1" /></label>
-          <label>Mã QR<input value={form.qrCode} onChange={event => updateForm("qrCode", event.target.value)} placeholder="QR-A1-RECYCLE" /></label>
+          <label>Mã QR chuẩn<input value={buildStationQrCode(form.qrCode || form.id || form.name)} readOnly /></label>
+          <button type="button" className="eg-secondary-btn" onClick={() => updateForm("qrCode", buildStationQrCode(`${form.id || form.name}-${Date.now().toString().slice(-6)}`))}>Tạo lại mã QR</button>
           <label>Sức chứa<input type="number" min="0" max="100" value={form.capacity} onChange={event => updateForm("capacity", event.target.value)} /></label>
           <label>Trạng thái<select value={form.status} onChange={event => updateForm("status", event.target.value)}><option value="active">Hoạt động</option><option value="full">Đầy</option><option value="maintenance">Bảo trì</option></select></label>
           <label>Tọa độ X<input type="number" min="0" max="100" step="0.1" value={form.mapX} onChange={event => updateForm("mapX", event.target.value)} placeholder="30" /></label>

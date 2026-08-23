@@ -10,14 +10,8 @@ test('sync status copy highlights realtime Supabase when connected', () => {
   });
 });
 
-test('sync status copy explains local data and setup error', () => {
-  assert.deepEqual(getSyncStatusCopy('mock', ''), {
-    title: 'Dữ liệu trên thiết bị',
-    detail: 'Một số nội dung đang được lưu tạm trên máy.',
-    tone: 'neutral'
-  });
-
-  const errorCopy = getSyncStatusCopy('mock', 'Supabase thiếu dữ liệu vận hành: bins');
+test('sync status copy shows Supabase setup error without local fallback', () => {
+  const errorCopy = getSyncStatusCopy('supabase', 'Supabase thiếu dữ liệu vận hành: bins');
   assert.equal(errorCopy.title, 'Cần đồng bộ dữ liệu');
   assert.equal(errorCopy.tone, 'warning');
   assert.match(errorCopy.detail, /bins/);

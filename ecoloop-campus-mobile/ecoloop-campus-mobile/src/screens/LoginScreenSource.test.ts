@@ -5,16 +5,12 @@ import test from 'node:test';
 
 const source = readFileSync(join(__dirname, 'LoginScreen.tsx'), 'utf8');
 
-test('LoginScreen offers an explicit local preview path with clear copy', () => {
-  assert.match(source, /signInDemo/);
-  assert.match(source, /Xem trước bằng dữ liệu trên máy/);
-  assert.match(source, /dữ liệu lưu trên thiết bị/);
-  assert.match(source, /handleDemo/);
-});
-
-test('LoginScreen keeps real Supabase login separate from demo login', () => {
+test('LoginScreen does not expose local preview or demo data login', () => {
+  assert.doesNotMatch(source, /signInDemo/);
+  assert.doesNotMatch(source, /Xem trước bằng dữ liệu trên máy/);
+  assert.doesNotMatch(source, /dữ liệu lưu trên thiết bị/);
+  assert.doesNotMatch(source, /handleDemo/);
   assert.match(source, /await signIn\(role, email, password\)/);
-  assert.match(source, /await signInDemo\(role\)/);
 });
 
 test('LoginScreen uses refreshed Eco-loop framing without mojibake', () => {

@@ -1,5 +1,5 @@
-type SyncSource = 'mock' | 'supabase';
-type SyncTone = 'success' | 'neutral' | 'warning';
+type SyncSource = 'supabase';
+type SyncTone = 'success' | 'warning';
 
 export type SyncStatusCopy = {
   title: string;
@@ -16,17 +16,9 @@ export function getSyncStatusCopy(syncSource: SyncSource, syncError: string): Sy
     };
   }
 
-  if (syncSource === 'supabase') {
-    return {
-      title: 'Đang đồng bộ',
-      detail: 'Dữ liệu đang đồng bộ trực tiếp.',
-      tone: 'success'
-    };
-  }
-
   return {
-    title: 'Dữ liệu trên thiết bị',
-    detail: 'Một số nội dung đang được lưu tạm trên máy.',
-    tone: 'neutral'
+    title: 'Đang đồng bộ',
+    detail: 'Dữ liệu đang đồng bộ trực tiếp.',
+    tone: 'success'
   };
 }

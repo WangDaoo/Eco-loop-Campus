@@ -5,7 +5,7 @@ import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { getBinGroup, getWasteLabel } from "../data/wasteConfig";
-import { getModelSettings, listPredictions, setPredictionStatus, sourceText } from "../services/supabaseStore";
+import { getModelSettings, listPredictions, setPredictionStatus } from "../services/supabaseStore";
 
 const formatDate = value => {
   const date = new Date(value);
@@ -26,7 +26,6 @@ export default function ScansPage() {
   const [classFilter, setClassFilter] = useState("all");
   const [confidenceFilter, setConfidenceFilter] = useState(() => normalizeFilter(searchParams.get("confidence"), ["all", "low"]));
   const [threshold, setThreshold] = useState(0.65);
-  const [source, setSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState("");
@@ -40,7 +39,6 @@ export default function ScansPage() {
       if (!active) return;
       setPredictions(predictionResult.data);
       setThreshold(settingsResult.data.threshold || 0.65);
-      setSource(predictionResult.source);
       setError(predictionResult.error || settingsResult.error);
       setLoading(false);
     }
@@ -67,8 +65,12 @@ export default function ScansPage() {
 
   const updateStatus = async (record, status) => {
     const response = await setPredictionStatus(record, status);
+    if (!response.data) {
+      setError(response.error);
+      setToast("Không cập nhật được lượt quét. Kiểm tra Supabase và thử lại.");
+      return;
+    }
     setPredictions(current => current.map(item => item.id === record.id ? response.data : item));
-    setSource(response.source);
     setError(response.error);
     setToast(status === "approved" ? "Đã duyệt lượt quét" : "Đã từ chối lượt quét");
     if (previewRecord?.id === record.id) setPreviewRecord(null);
@@ -121,13 +123,12 @@ export default function ScansPage() {
           <h1>Duyệt kết quả AI</h1>
         </div>
         <div className="eg-button-row">
-          {source && <span className={`eg-source-pill ${source === "local" ? "is-local" : ""}`}>{sourceText(source)}</span>}
           <button type="button" className="eg-secondary-btn">Ngưỡng cảnh báo {formatPercent(threshold)}</button>
         </div>
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải lượt quét...</section>}
-      {error && <section className="eg-alert">Supabase chưa sẵn sàng, đang dùng dữ liệu dự phòng localStorage.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card">
         <div className="eg-filter-row">
