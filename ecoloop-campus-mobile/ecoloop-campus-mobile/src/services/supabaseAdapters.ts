@@ -35,6 +35,16 @@ function number(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function percent(value: unknown, fallback = 0) {
+  return Math.max(0, Math.min(100, number(value, fallback)));
+}
+
+function optionalPercent(value: unknown) {
+  if (value === null || value === undefined || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : undefined;
+}
+
 function date(value: unknown, fallback = new Date()) {
   const parsed = new Date(text(value));
   return Number.isNaN(parsed.getTime()) ? fallback : parsed;
@@ -171,12 +181,14 @@ export function mapBinRow(row: Row): BinStation {
     floor: text(row.floor),
     qrCode: text(row.qrCode ?? row.qr_code),
     status: binStatus(row.status),
-    capacity: Math.max(0, Math.min(100, number(row.capacity)))
+    capacity: percent(row.capacity)
   };
   if (row.latitude !== undefined) station.latitude = number(row.latitude);
   if (row.longitude !== undefined) station.longitude = number(row.longitude);
-  if (row.mapX !== undefined || row.map_x !== undefined) station.mapX = number(row.mapX ?? row.map_x);
-  if (row.mapY !== undefined || row.map_y !== undefined) station.mapY = number(row.mapY ?? row.map_y);
+  const mapX = optionalPercent(row.mapX ?? row.map_x);
+  const mapY = optionalPercent(row.mapY ?? row.map_y);
+  if (mapX !== undefined) station.mapX = mapX;
+  if (mapY !== undefined) station.mapY = mapY;
   return station;
 }
 

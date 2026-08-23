@@ -23,3 +23,21 @@ test('CustomTabBar uses safe area insets and stable press targets', () => {
   assert.doesNotMatch(source, /top:\s*-[0-9]/);
   assert.doesNotMatch(source, /TouchableOpacity/);
 });
+
+test('CustomTabBar does not draw a shadow seam above the rounded bar', () => {
+  assert.doesNotMatch(source, /shadowOffset:\s*\{\s*width:\s*0,\s*height:\s*-/);
+  assert.doesNotMatch(source, /elevation:\s*(?:[1-9]|[1-9][0-9])/);
+  assert.match(source, /overflow:\s*'hidden'/);
+});
+
+test('CustomTabBar keeps the outer wrapper transparent so rounded corners do not show a stray edge', () => {
+  assert.doesNotMatch(source, /container:\s*\{[^}]*backgroundColor:\s*colors\.ecoNav/s);
+  assert.match(source, /navBar:\s*\{[^}]*backgroundColor:\s*colors\.ecoNav/s);
+});
+
+test('CustomTabBar uses a straight top edge without rounded menu corners', () => {
+  assert.match(source, /borderTopLeftRadius:\s*0/);
+  assert.match(source, /borderTopRightRadius:\s*0/);
+  assert.doesNotMatch(source, /borderTopLeftRadius:\s*32/);
+  assert.doesNotMatch(source, /borderTopRightRadius:\s*32/);
+});

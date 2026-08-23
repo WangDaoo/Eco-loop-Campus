@@ -68,7 +68,7 @@ export default function ProfileScreen({ navigation }: any) {
   };
 
   return (
-    <Screen scroll style={styles.container} bottomClearance={24}>
+    <Screen scroll style={styles.container}>
       <View style={styles.content}>
         <Pressable
           style={({ pressed }) => [styles.avatarButton, pressed && styles.avatarButtonPressed]}
@@ -267,13 +267,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomWidth: 4,
-    borderBottomColor: '#a3e5c9',
     minHeight: 56,
   },
   actionButtonPressed: {
     transform: [{ translateY: 2 }],
-    borderBottomWidth: 2,
+    opacity: 0.86,
   },
   actionButtonText: {
     flex: 1,
@@ -295,14 +293,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    borderBottomWidth: 4,
-    borderBottomColor: '#cc6b5c',
     minHeight: 56,
     zIndex: 3,
   },
   logoutButtonPressed: {
     transform: [{ translateY: 2 }],
-    borderBottomWidth: 2,
+    opacity: 0.86,
   },
   logoutButtonText: {
     fontSize: 18,

@@ -199,6 +199,27 @@ function toBin(bin) {
   };
 }
 
+export function applyBinRealtimeChange(current, payload) {
+  if (payload?.eventType === "DELETE") {
+    const deletedId = payload.old?.id;
+    return deletedId ? current.filter(item => item.id !== deletedId) : current;
+  }
+  if (!payload?.new?.id) return current;
+  const nextBin = fromBin(payload.new);
+  return [nextBin, ...current.filter(item => item.id !== nextBin.id)];
+}
+
+export function subscribeBins(onChange) {
+  if (!isSupabaseConfigured || !supabase) return () => {};
+  const channel = supabase
+    .channel("ecoloop-admin-bins")
+    .on("postgres_changes", { event: "*", schema: "public", table: "bins" }, payload => onChange(payload))
+    .subscribe();
+  return () => {
+    if (typeof supabase.removeChannel === "function") supabase.removeChannel(channel);
+  };
+}
+
 function fromUser(row) {
   const { created_at: createdAtSnake, avatar_key: avatarKeySnake, avatar_url: avatarUrlSnake, ...rest } = row;
   const points = Number(row.points ?? 0);
@@ -777,21 +798,25 @@ export async function saveBin(bin) {
     mapX: normalizePercent(bin.mapX),
     mapY: normalizePercent(bin.mapY),
   };
-  return upsert("bins", toBin(payload), payload, item => {
+  try {
+    const response = await client().from("bins").upsert(toBin(payload)).select("*").single();
+    if (response.error) throw response.error;
+    return result(fromBin(response.data), SUPABASE);
+  } catch (error) {
     const bins = localStore.getBins();
-    const next = [item, ...bins.filter(bin => bin.id !== item.id)];
+    const next = [payload, ...bins.filter(bin => bin.id !== payload.id)];
     localStore.saveBins(next);
-    return item;
-  });
+    return result(payload, LOCAL, error);
+  }
 }
 
 export async function updateBinStatus(bin, status) {
   const nextStatus = normalizedBinStatusAction(status);
   if (!nextStatus) return result(bin, LOCAL, new Error("Invalid bin status"));
   try {
-    const response = await client().from("bins").update({ status: nextStatus }).eq("id", bin.id);
+    const response = await client().from("bins").update({ status: nextStatus }).eq("id", bin.id).select("*").single();
     if (response.error) throw response.error;
-    return result({ ...bin, status: nextStatus }, SUPABASE);
+    return result(fromBin(response.data), SUPABASE);
   } catch (error) {
     const nextBin = { ...bin, status: nextStatus };
     const localBins = localStore.getBins();
@@ -1126,6 +1151,7 @@ export function sourceText(source) {
 export const __testing = {
   fromBin,
   toBin,
+  applyBinRealtimeChange,
   fromPrediction,
   toPrediction,
   buildPredictionImagePath,

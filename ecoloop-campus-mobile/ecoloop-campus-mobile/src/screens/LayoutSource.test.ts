@@ -7,12 +7,26 @@ function sourceOf(fileName: string) {
   return readFileSync(join(__dirname, fileName), 'utf8');
 }
 
+function styleBlock(source: string, styleName: string) {
+  const match = source.match(new RegExp(`${styleName}:\\s*\\{[\\s\\S]*?\\n  \\},`));
+  assert.ok(match, `Missing style block: ${styleName}`);
+  return match[0];
+}
+
 test('RewardsScreen keeps the pastel mobile template and vector icons', () => {
   const source = sourceOf('RewardsScreen.tsx');
   assert.match(source, /Ionicons/);
   assert.match(source, /colors\.bgPink/);
   assert.doesNotMatch(source, /#f4f7f9/);
   assert.doesNotMatch(source, /🎁|🎉|💸|🎮|🥤|💊|🔍|ℹ️/);
+});
+
+test('RewardsScreen wallet card avoids offset bottom borders on rounded corners', () => {
+  const source = sourceOf('RewardsScreen.tsx');
+  const headerCard = styleBlock(source, 'headerCard');
+  assert.doesNotMatch(headerCard, /borderBottomWidth|borderBottomColor/);
+  assert.match(headerCard, /shadowColor/);
+  assert.match(headerCard, /elevation/);
 });
 
 test('VolunteerDutyScreen uses scroll layout and localized station status labels', () => {
@@ -52,7 +66,8 @@ test('ProfileScreen ends after the logout action without extra decoration', () =
   assert.doesNotMatch(source, /profileBottomSpacer/);
   assert.doesNotMatch(source, /cloudContainer/);
   assert.doesNotMatch(source, /<Svg/);
-  assert.match(source, /<Screen scroll style=\{styles\.container\} bottomClearance=\{24\}>/);
+  assert.match(source, /<Screen scroll style=\{styles\.container\}>/);
+  assert.doesNotMatch(source, /bottomClearance=\{24\}/);
   assert.match(source, /logoutButton:/);
 });
 test('ProfileScreen keeps the avatar area clean without visible labels over it', () => {
@@ -82,4 +97,12 @@ test('ProfileScreen offers password change without leaving the profile template'
   assert.match(source, /Mật khẩu mới/);
   assert.match(source, /Xác nhận mật khẩu/);
   assert.match(source, /updatePassword\(user\.email, currentPassword\.trim\(\), cleaned\)/);
+});
+
+test('ProfileScreen pill actions avoid offset bottom borders that look misaligned', () => {
+  const source = sourceOf('ProfileScreen.tsx');
+  assert.doesNotMatch(source, /borderBottomWidth/);
+  assert.doesNotMatch(source, /borderBottomColor/);
+  assert.match(source, /actionButtonPressed:\s*\{[\s\S]*opacity:\s*0\.86/);
+  assert.match(source, /logoutButtonPressed:\s*\{[\s\S]*opacity:\s*0\.86/);
 });

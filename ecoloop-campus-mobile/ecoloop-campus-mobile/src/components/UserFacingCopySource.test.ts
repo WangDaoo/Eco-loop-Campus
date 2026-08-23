@@ -26,4 +26,6 @@ test('mobile user-facing copy avoids developer and demo wording', () => {
   assert.doesNotMatch(source, /LDPlayer/i);
   assert.doesNotMatch(source, /schema\.sql/i);
   assert.doesNotMatch(source, /flow app/i);
+  assert.doesNotMatch(source, /Dịch vụ AI dự phòng/i);
+  assert.doesNotMatch(source, /Class AI/i);
 });

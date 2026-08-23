@@ -21,7 +21,7 @@ test('AI suggestion still returns when saving prediction to Supabase fails', asy
     messageOf: error => error instanceof Error ? error.message : String(error)
   });
 
-  assert.equal(result.predictedClass, 'plastic');
+  assert.equal(result.predictedClass, 'Nhựa');
   assert.equal(result.predictionId, undefined);
   assert.equal(result.wasteType?.id, 'plastic-bottle');
   assert.match(result.saveWarning ?? '', /AI đã nhận diện thành công/);
@@ -42,4 +42,22 @@ test('AI suggestion keeps runtime metadata so the UI can prove on-device inferen
   });
 
   assert.equal(result.runtime, 'local');
+});
+
+test('AI suggestion displays Vietnamese class names even when no waste type matches', async () => {
+  const result = await buildSubmitAiSuggestion({
+    asset: { uri: 'file:///tmp/battery.jpg', fileName: 'battery.jpg', mimeType: 'image/jpeg' },
+    source: 'upload',
+    stationId: 'bin-1',
+    wasteTypes: [],
+    predictImage: async () => ({ className: 'battery', confidence: 0.75, confidencePercent: 75, runtime: 'remote' }),
+    saveAiPrediction: async () => undefined,
+    suggestWasteTypeFromClass: () => undefined,
+    messageOf: error => error instanceof Error ? error.message : String(error)
+  });
+
+  assert.equal(result.className, 'battery');
+  assert.equal(result.predictedClass, 'Pin / rác nguy hại');
+  assert.match(result.note ?? '', /Pin \/ rác nguy hại/);
+  assert.doesNotMatch(result.note ?? '', /map|Class AI/i);
 });

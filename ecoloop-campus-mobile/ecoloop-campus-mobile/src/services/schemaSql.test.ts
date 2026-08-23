@@ -45,3 +45,11 @@ test('Supabase schema defines atomic mobile QR and Ecopoint RPC functions', () =
   assert.match(schema, /grant execute on function public\.create_recycling_submission/i);
   assert.match(schema, /grant execute on function public\.confirm_recycling_submission/i);
 });
+
+test('Supabase schema enables realtime bin map synchronization', () => {
+  const schemaPath = resolve('../../frontend/eco-loop-campus-admin/supabase/schema.sql');
+  const schema = readFileSync(schemaPath, 'utf8');
+
+  assert.match(schema, /alter table public\.bins replica identity full/i);
+  assert.match(schema, /alter publication supabase_realtime add table public\.bins/i);
+});

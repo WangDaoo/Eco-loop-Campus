@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Screen, DEFAULT_BOTTOM_CLEARANCE } from '../components/Screen';
-import { CampusMapSVG } from '../components/CampusMapSVG';
+import { CampusLeafletMap } from '../components/CampusLeafletMap';
 import { useAppContext } from '../context/AppContext';
 import {
   getStationCapacityLevel,
@@ -11,14 +11,32 @@ import {
 import { colors, radius } from '../theme/colors';
 import { BinStation } from '../types';
 
+const MAP_CARD_HEIGHT = 280;
+
 function needsAttention(s: BinStation) {
   const lv = getStationCapacityLevel(s);
   return lv !== 'normal' || s.status === 'maintenance' || s.status === 'closed';
 }
 
+function hasMapPosition(station: BinStation) {
+  return typeof station.mapX === 'number' && typeof station.mapY === 'number';
+}
+
 export default function MapScreen() {
   const { stations } = useAppContext();
   const [selected, setSelected] = useState<BinStation | null>(null);
+  const [focusRequestId, setFocusRequestId] = useState(0);
+
+  function selectStation(station: BinStation, focusMap = false) {
+    setSelected(station);
+    if (focusMap && hasMapPosition(station)) setFocusRequestId(value => value + 1);
+  }
+
+  useEffect(() => {
+    if (!selected) return;
+    const latest = stations.find(station => station.id === selected.id);
+    setSelected(latest ?? null);
+  }, [selected, stations]);
 
   const attentionStations = useMemo(() => stations.filter(needsAttention), [stations]);
 
@@ -28,24 +46,30 @@ export default function MapScreen() {
     selectedLevel === 'warning' ? colors.gold      : colors.green;
 
   return (
-    <Screen noPadding style={styles.safe}>
+    <Screen
+      scroll
+      noPadding
+      style={styles.safe}
+      contentContainerStyle={styles.pageContent}
+      bottomClearance={DEFAULT_BOTTOM_CLEARANCE + 28}
+    >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Bản đồ GIS campus</Text>
-        <Text style={styles.subtitle}>Kéo để di chuyển · Pinch để zoom · Nhấn marker xem chi tiết</Text>
+        <Text style={styles.title}>Bản đồ</Text>
       </View>
 
-      {/* Bản đồ SVG – fixed height, interactable */}
+      {/* Bản đồ Leaflet offline, cùng cơ chế pan/zoom/focus như web admin. */}
       <View style={styles.mapCard}>
-        <CampusMapSVG stations={stations} onSelect={setSelected} style={styles.map} />
+        <CampusLeafletMap
+          stations={stations}
+          selectedStationId={selected?.id}
+          focusRequestId={focusRequestId}
+          onSelect={station => selectStation(station)}
+          style={styles.map}
+        />
       </View>
 
-      {/* Phần dưới map – có scroll */}
-      <ScrollView
-        style={styles.scrollArea}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.stationContent}>
         {/* Chi tiết trạm đang chọn */}
         {selected && (
           <View style={styles.detailCard}>
@@ -59,6 +83,9 @@ export default function MapScreen() {
               </View>
             </View>
             <Text style={styles.detailSub}>{getStationSubtitle(selected)}</Text>
+            {!hasMapPosition(selected) && (
+              <Text style={styles.locationNotice}>Chưa đặt vị trí trên bản đồ</Text>
+            )}
             <View style={styles.capRow}>
               <View style={styles.capBar}>
                 <View style={[styles.capFill, { width: `${selected.capacity}%` as any, backgroundColor: capacityColor }]} />
@@ -102,30 +129,32 @@ export default function MapScreen() {
               lv === 'full'    ? colors.coralDark :
               lv === 'warning' ? colors.gold      : colors.green;
             return (
-              <View key={s.id} style={[styles.rowCard, selected?.id === s.id && styles.rowCardSelected]}>
+              <Pressable key={s.id} onPress={() => selectStation(s, true)} style={[styles.rowCard, selected?.id === s.id && styles.rowCardSelected]}>
                 <View style={[styles.rowDot, { backgroundColor: dc }]} />
                 <View style={styles.rowInfo}>
                   <Text style={styles.rowName}>{s.name}</Text>
                   <Text style={styles.rowMeta}>
                     {s.building ? `Tòa ${s.building} · ` : ''}Tầng {s.floor} · {s.capacity}%
                   </Text>
+                  {!hasMapPosition(s) && <Text style={styles.locationNotice}>Chưa đặt vị trí trên bản đồ</Text>}
                 </View>
                 <View style={[styles.statusPill, { borderColor: dc }]}>
                   <Text style={[styles.statusPillText, { color: dc }]}>
                     {getStationStatusLabel(s.status)}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             );
           })}
         </View>
-      </ScrollView>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bgPink },
+  pageContent: { paddingBottom: DEFAULT_BOTTOM_CLEARANCE + 44 },
 
   header: {
     paddingHorizontal: 20,
@@ -133,10 +162,9 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   title: { color: colors.ink, fontSize: 24, fontWeight: '900' },
-  subtitle: { color: colors.muted, fontWeight: '700', fontSize: 12, marginTop: 3 },
 
   mapCard: {
-    height: 340,
+    height: MAP_CARD_HEIGHT,
     marginHorizontal: 12,
     borderRadius: radius.xl,
     overflow: 'hidden',
@@ -148,8 +176,7 @@ const styles = StyleSheet.create({
   },
   map: { flex: 1 },
 
-  scrollArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: DEFAULT_BOTTOM_CLEARANCE + 16, gap: 10 },
+  stationContent: { paddingHorizontal: 12, paddingTop: 10, gap: 10 },
 
   detailCard: {
     backgroundColor: colors.white,
@@ -166,6 +193,7 @@ const styles = StyleSheet.create({
   detailDot: { width: 12, height: 12, borderRadius: 6 },
   detailName: { flex: 1, fontWeight: '900', color: colors.ink, fontSize: 15 },
   detailSub: { color: colors.muted, fontWeight: '700', fontSize: 12 },
+  locationNotice: { color: colors.coralDark, fontWeight: '800', fontSize: 11, marginTop: 2 },
   capRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   capBar: { flex: 1, height: 6, backgroundColor: colors.cream, borderRadius: 3, overflow: 'hidden' },
   capFill: { height: '100%', borderRadius: 3 },

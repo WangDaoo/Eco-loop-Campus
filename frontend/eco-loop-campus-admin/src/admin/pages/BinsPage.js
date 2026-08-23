@@ -6,7 +6,7 @@ import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { BIN_GROUPS } from "../data/wasteConfig";
-import { listBins, saveBin, sourceText, updateBinStatus } from "../services/supabaseStore";
+import { applyBinRealtimeChange, listBins, saveBin, sourceText, subscribeBins, updateBinStatus } from "../services/supabaseStore";
 
 const emptyForm = {
   id: "",
@@ -101,6 +101,15 @@ export default function BinsPage() {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeBins(payload => {
+      setBins(current => applyBinRealtimeChange(current, payload));
+      setSource("supabase");
+      setError(null);
+    });
+    return unsubscribe;
   }, []);
 
   const toggleStatus = async bin => {

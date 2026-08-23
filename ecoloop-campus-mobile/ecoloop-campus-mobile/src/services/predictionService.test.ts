@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { binGroupForAiClass, createPredictionService, suggestWasteTypeFromClass } from './predictionService';
+import { aiClassDisplayName, binGroupForAiClass, createPredictionService, suggestWasteTypeFromClass } from './predictionService';
 import { WasteType } from '../types';
 
 class FakeFormData {
@@ -15,7 +15,8 @@ const wasteTypes: WasteType[] = [
   { id: 'plastic-bottle', name: 'Chai nhua', unit: 'item', pointPerUnit: 10, recycleMethod: 'Lam sach', status: 'active' },
   { id: 'paper', name: 'Giay sach', unit: 'kg', pointPerUnit: 40, recycleMethod: 'Giu kho', status: 'active' },
   { id: 'metal-can', name: 'Lon kim loai', unit: 'item', pointPerUnit: 12, recycleMethod: 'Rua sach', status: 'active' },
-  { id: 'organic', name: 'Rac huu co', unit: 'kg', pointPerUnit: 20, recycleMethod: 'De rieng', status: 'active' }
+  { id: 'organic', name: 'Rac huu co', unit: 'kg', pointPerUnit: 20, recycleMethod: 'De rieng', status: 'active' },
+  { id: 'hazardous', name: 'Pin/nguy hai nho', unit: 'item', pointPerUnit: 5, recycleMethod: 'Can duyet rieng', status: 'active' }
 ];
 
 test('prediction service submits image to FastAPI queue, polls result, and normalizes confidence', async () => {
@@ -140,6 +141,7 @@ test('suggestWasteTypeFromClass maps 10 AI classes to current mobile waste types
   assert.equal(suggestWasteTypeFromClass('cardboard', wasteTypes)?.id, 'paper');
   assert.equal(suggestWasteTypeFromClass('metal', wasteTypes)?.id, 'metal-can');
   assert.equal(suggestWasteTypeFromClass('biological', wasteTypes)?.id, 'organic');
+  assert.equal(suggestWasteTypeFromClass('battery', wasteTypes)?.id, 'hazardous');
   assert.equal(suggestWasteTypeFromClass('glass', wasteTypes), undefined);
 });
 
@@ -154,6 +156,20 @@ test('binGroupForAiClass maps AI classes into school bin groups', () => {
   assert.equal(binGroupForAiClass('clothes'), 'Còn lại');
   assert.equal(binGroupForAiClass('shoes'), 'Còn lại');
   assert.equal(binGroupForAiClass('trash'), 'Còn lại');
+});
+
+test('aiClassDisplayName presents model classes in Vietnamese for users', () => {
+  assert.equal(aiClassDisplayName('battery'), 'Pin / rác nguy hại');
+  assert.equal(aiClassDisplayName('biological'), 'Rác hữu cơ');
+  assert.equal(aiClassDisplayName('cardboard'), 'Bìa carton');
+  assert.equal(aiClassDisplayName('clothes'), 'Quần áo / vải');
+  assert.equal(aiClassDisplayName('glass'), 'Thủy tinh');
+  assert.equal(aiClassDisplayName('metal'), 'Kim loại');
+  assert.equal(aiClassDisplayName('paper'), 'Giấy');
+  assert.equal(aiClassDisplayName('plastic'), 'Nhựa');
+  assert.equal(aiClassDisplayName('shoes'), 'Giày dép');
+  assert.equal(aiClassDisplayName('trash'), 'Rác còn lại');
+  assert.equal(aiClassDisplayName('unknown-class'), 'unknown-class');
 });
 
 test('prediction service can prefer on-device AI and avoid FastAPI when local engine is available', async () => {

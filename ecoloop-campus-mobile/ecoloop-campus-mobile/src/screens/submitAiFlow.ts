@@ -1,4 +1,4 @@
-import { PredictionResult } from '../services/predictionService';
+import { aiClassDisplayName, PredictionResult } from '../services/predictionService';
 import { PredictionRecord, PredictionSource, SavePredictionInput, WasteType } from '../types';
 
 export type SubmitAiAsset = {
@@ -41,6 +41,7 @@ export async function buildSubmitAiSuggestion({
   const mimeType = asset.mimeType ?? 'image/jpeg';
   const prediction = await predictImage({ uri: asset.uri, name: imageName, mimeType });
   const wasteType = suggestWasteTypeFromClass(prediction.className, wasteTypes);
+  const displayClass = aiClassDisplayName(prediction.className);
   let savedPrediction: PredictionRecord | undefined;
   let saveWarning: string | undefined;
 
@@ -59,14 +60,14 @@ export async function buildSubmitAiSuggestion({
   }
 
   const note = !wasteType
-    ? 'AI đã nhận diện nhưng chưa map được sang loại rác trong app. Hãy chọn thủ công.'
+    ? `AI nhận diện là ${displayClass}, nhưng danh mục hiện chưa có loại rác tương ứng. Hãy chọn thủ công.`
     : prediction.confidence < 0.65
       ? 'Độ tin cậy thấp. Nên để tình nguyện viên kiểm tra kỹ trước khi xác nhận Ecopoint.'
       : 'AI chỉ hỗ trợ gợi ý. Ecopoint vẫn cần tình nguyện viên xác nhận.';
 
   return {
     ...prediction,
-    predictedClass: prediction.className,
+    predictedClass: displayClass,
     predictionId: savedPrediction?.id,
     sourceUri: asset.uri,
     wasteType,

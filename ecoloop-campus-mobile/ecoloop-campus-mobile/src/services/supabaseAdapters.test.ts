@@ -61,6 +61,27 @@ test('preserves account approval statuses for mobile authentication', () => {
   assert.equal(mapUserRow({ id: 'student-unknown', role: 'student', status: 'archived' }).status, 'active');
 });
 
+test('maps realtime bin rows into one backend coordinate system for mobile map', () => {
+  const station = mapBinRow({
+    id: 'BIN-RT',
+    name: 'Trạm realtime',
+    bin_group: 'Tái chế',
+    location: 'Sảnh E1',
+    building: 'E1',
+    floor: '1',
+    qr_code: 'QR-RT',
+    status: 'active',
+    capacity: 130,
+    map_x: 120,
+    map_y: -10
+  });
+
+  assert.equal(station.status, 'open');
+  assert.equal(station.capacity, 100);
+  assert.equal(station.mapX, 100);
+  assert.equal(station.mapY, 0);
+});
+
 test('builds a submission draft with one-time QR token and 45 minute expiry', () => {
   const now = new Date('2026-08-02T00:00:00.000Z');
   const draft = buildSubmissionDraft({

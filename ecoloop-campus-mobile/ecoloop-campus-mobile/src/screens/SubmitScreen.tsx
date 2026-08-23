@@ -35,7 +35,7 @@ function isMissingCameraActivity(error: unknown) {
 
 function aiRuntimeLabel(suggestion: AiSuggestion) {
   if (suggestion.runtime === 'local') return 'Chạy trên thiết bị';
-  if (suggestion.runtime === 'remote') return suggestion.fallbackReason ? 'Dịch vụ AI dự phòng' : 'Dịch vụ AI';
+  if (suggestion.runtime === 'remote') return 'AI qua máy chủ';
   return 'AI';
 }
 
@@ -205,7 +205,7 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
 
   const handleUseSuggestion = () => {
     if (!aiSuggestion?.wasteType) {
-      Alert.alert('Chưa dùng được gợi ý', 'Class AI này chưa có loại rác tương ứng trong app. Hãy chọn thủ công.');
+      Alert.alert('Chưa dùng được gợi ý', `AI nhận diện là ${aiSuggestion?.predictedClass ?? 'loại rác này'}, nhưng danh mục hiện chưa có loại rác tương ứng. Hãy chọn thủ công.`);
       return;
     }
     setWasteTypeId(aiSuggestion.wasteType.id);

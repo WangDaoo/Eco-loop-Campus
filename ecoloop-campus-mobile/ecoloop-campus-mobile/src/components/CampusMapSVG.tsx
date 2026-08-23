@@ -5,11 +5,10 @@
  * Hệ toạ độ: UTM EPSG:32648 → toạ độ màn hình (linear projection)
  * Tương tác: kéo để pan, pinch để zoom (dùng PanResponder)
  */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  GestureResponderEvent,
+  LayoutChangeEvent,
   PanResponder,
-  PanResponderGestureState,
   Pressable,
   StyleSheet,
   Text,
@@ -19,7 +18,6 @@ import Svg, {
   Circle,
   G,
   Path,
-  Polygon,
   Rect,
 } from 'react-native-svg';
 
@@ -80,23 +78,12 @@ function featuresToPaths(geojson: any): string[] {
   return paths;
 }
 
-// ── Toạ độ pin trạm (từ mapX/mapY %) ─────────────────────────────────────────
-const FIXED: Record<string, { x: number; y: number }> = {
-  E1:  { x: 35, y: 42 },
-  LIB: { x: 62, y: 28 },
-  CAF: { x: 50, y: 68 },
-};
-const FALLBACKS = [{ x: 43, y: 73 }, { x: 50, y: 82 }, { x: 65, y: 64 }, { x: 33, y: 92 }];
-
-function stationSvgPos(s: BinStation, i: number): [number, number] {
-  const base = FIXED[s.building] || FALLBACKS[i % FALLBACKS.length];
-  const pct = {
-    x: typeof s.mapX === 'number' ? s.mapX : base.x,
-    y: typeof s.mapY === 'number' ? s.mapY : base.y,
-  };
+// ── Toạ độ pin trạm (từ mapX/mapY % do Supabase quản lý) ────────────────────
+function stationSvgPos(s: BinStation): [number, number] | null {
+  if (typeof s.mapX !== 'number' || typeof s.mapY !== 'number') return null;
   // % → UTM → SVG
-  const utmX = CAMPUS.minX + (CAMPUS_W * pct.x) / 100;
-  const utmY = CAMPUS.maxY - (CAMPUS_H * pct.y) / 100;
+  const utmX = CAMPUS.minX + (CAMPUS_W * s.mapX) / 100;
+  const utmY = CAMPUS.maxY - (CAMPUS_H * s.mapY) / 100;
   return utmToSvg(utmX, utmY);
 }
 
@@ -118,17 +105,21 @@ const framePaths    = featuresToPaths(FRAME_GEOJSON);
 interface Props {
   stations: BinStation[];
   onSelect?: (station: BinStation) => void;
+  selectedStationId?: string;
+  focusRequestId?: number;
   style?: object;
 }
 
-const MIN_SCALE = 0.8;
-const MAX_SCALE = 4.0;
-const INIT_SCALE = 1.0;
+const MIN_SCALE = 1;
+const MAX_SCALE = 8;
+const INIT_SCALE = 1.45;
+const ZOOM_STEP = 1.35;
 
-export function CampusMapSVG({ stations, onSelect, style }: Props) {
+export function CampusMapSVG({ stations, onSelect, selectedStationId, focusRequestId = 0, style }: Props) {
   const [scale, setScale]   = useState(INIT_SCALE);
   const [tx, setTx]         = useState(0);
   const [ty, setTy]         = useState(0);
+  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
 
   const lastScale   = useRef(INIT_SCALE);
   const lastTx      = useRef(0);
@@ -137,6 +128,25 @@ export function CampusMapSVG({ stations, onSelect, style }: Props) {
   const lastMidX    = useRef(0);
   const lastMidY    = useRef(0);
   const isPinch     = useRef(false);
+  const initialCentered = useRef(false);
+
+  const mapTransform = `matrix(${scale} 0 0 ${scale} ${tx} ${ty})`;
+
+  function viewportGeometry(size = mapSize) {
+    const width = size.width || VB_W;
+    const height = size.height || VB_H;
+    const fitScale = Math.min(width / VB_W, height / VB_H) || 1;
+    return {
+      width: width / fitScale,
+      height: height / fitScale,
+      fitScale,
+    };
+  }
+
+  function screenDeltaToSvg(dx: number, dy: number): [number, number] {
+    const { fitScale } = viewportGeometry();
+    return [dx / fitScale, dy / fitScale];
+  }
 
   function dist(t: React.Touch[]): number {
     const dx = t[0].pageX - t[1].pageX;
@@ -148,15 +158,80 @@ export function CampusMapSVG({ stations, onSelect, style }: Props) {
     return [(t[0].pageX + t[1].pageX) / 2, (t[0].pageY + t[1].pageY) / 2];
   }
 
+  function clampScale(value: number) {
+    return Math.max(MIN_SCALE, Math.min(MAX_SCALE, value));
+  }
+
+  function applyViewport(nextScale: number, nextTx: number, nextTy: number) {
+    const safeScale = clampScale(nextScale);
+    setScale(safeScale);
+    setTx(nextTx);
+    setTy(nextTy);
+    lastScale.current = safeScale;
+    lastTx.current = nextTx;
+    lastTy.current = nextTy;
+  }
+
+  function centerCampus(targetScale = INIT_SCALE) {
+    const safeScale = clampScale(targetScale);
+    const { width, height } = viewportGeometry();
+    applyViewport(safeScale, (width - VB_W * safeScale) / 2, (height - VB_H * safeScale) / 2);
+  }
+
+  function centerOnStation(station: BinStation, targetScale = Math.max(lastScale.current, 3)) {
+    const position = stationSvgPos(station);
+    if (!position) return;
+    const safeScale = clampScale(targetScale);
+    const { width, height } = viewportGeometry();
+    applyViewport(safeScale, width / 2 - position[0] * safeScale, height / 2 - position[1] * safeScale);
+  }
+
+  function zoomAroundCenter(multiplier: number) {
+    const nextScale = clampScale(lastScale.current * multiplier);
+    const { width, height } = viewportGeometry();
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const contentX = (centerX - lastTx.current) / lastScale.current;
+    const contentY = (centerY - lastTy.current) / lastScale.current;
+    applyViewport(nextScale, centerX - contentX * nextScale, centerY - contentY * nextScale);
+  }
+
+  function selectStationMarker(station: BinStation) {
+    centerOnStation(station);
+    onSelect?.(station);
+  }
+
+  function zoomIn() {
+    zoomAroundCenter(ZOOM_STEP);
+  }
+
+  function zoomOut() {
+    zoomAroundCenter(1 / ZOOM_STEP);
+  }
+
+  function handleMapLayout(event: LayoutChangeEvent) {
+    const { width, height } = event.nativeEvent.layout;
+    setMapSize({ width, height });
+  }
+
+  useEffect(() => {
+    if (!mapSize.width || !mapSize.height || initialCentered.current) return;
+    centerCampus(INIT_SCALE);
+    initialCentered.current = true;
+  }, [mapSize]);
+
+  useEffect(() => {
+    if (!focusRequestId || !selectedStationId) return;
+    const station = stations.find(item => item.id === selectedStationId);
+    if (station) centerOnStation(station);
+  }, [focusRequestId, selectedStationId, stations]);
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder:  () => true,
 
       onPanResponderGrant: (e) => {
-        lastScale.current = scale;
-        lastTx.current    = tx;
-        lastTy.current    = ty;
         lastDist.current  = null;
         isPinch.current   = false;
 
@@ -180,30 +255,24 @@ export function CampusMapSVG({ stations, onSelect, style }: Props) {
 
           if (lastDist.current !== null) {
             const ratio = d / lastDist.current;
-            const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, lastScale.current * ratio));
-            setScale(newScale);
-            // pan follow midpoint
-            const dmx = mx - lastMidX.current;
-            const dmy = my - lastMidY.current;
-            setTx(lastTx.current + dmx);
-            setTy(lastTy.current + dmy);
+            const newScale = clampScale(lastScale.current * ratio);
+            const [dmx, dmy] = screenDeltaToSvg(mx - lastMidX.current, my - lastMidY.current);
+            applyViewport(newScale, lastTx.current + dmx, lastTy.current + dmy);
           }
           lastDist.current = d;
           lastMidX.current = mx;
           lastMidY.current = my;
-          lastScale.current = scale;
-          lastTx.current    = tx;
-          lastTy.current    = ty;
         } else if (!isPinch.current) {
-          setTx(lastTx.current + gs.dx);
-          setTy(lastTy.current + gs.dy);
+          const [dx, dy] = screenDeltaToSvg(gs.dx, gs.dy);
+          setTx(lastTx.current + dx);
+          setTy(lastTy.current + dy);
         }
       },
 
       onPanResponderRelease: (_, gs) => {
         if (!isPinch.current) {
-          lastTx.current = lastTx.current + gs.dx;
-          lastTy.current = lastTy.current + gs.dy;
+          const [dx, dy] = screenDeltaToSvg(gs.dx, gs.dy);
+          applyViewport(lastScale.current, lastTx.current + dx, lastTy.current + dy);
         }
         isPinch.current = false;
       },
@@ -211,77 +280,94 @@ export function CampusMapSVG({ stations, onSelect, style }: Props) {
   ).current;
 
   function recenter() {
-    setScale(INIT_SCALE);
-    setTx(0);
-    setTy(0);
-    lastScale.current = INIT_SCALE;
-    lastTx.current = 0;
-    lastTy.current = 0;
+    centerCampus(INIT_SCALE);
   }
 
   return (
     <View style={[styles.wrapper, style]}>
       {/* Bản đồ SVG */}
-      <View style={styles.mapArea} {...panResponder.panHandlers}>
+      <View style={styles.mapArea} onLayout={handleMapLayout} {...panResponder.panHandlers}>
         <Svg
           width="100%"
           height="100%"
           viewBox={`0 0 ${VB_W} ${VB_H}`}
-          style={{
-            transform: [
-              { translateX: tx },
-              { translateY: ty },
-              { scale },
-            ],
-          }}
         >
           {/* Nền campus */}
           <Rect x={0} y={0} width={VB_W} height={VB_H} fill="#f0f9f4" />
 
-          {/* Lớp địa hình (contours) */}
-          <G>
-            {contourPaths.map((d, i) => (
-              <Path key={`c${i}`} d={d} stroke="#94a3b8" strokeWidth={0.5} fill="none" strokeDasharray="3,3" />
-            ))}
-          </G>
+          <G transform={mapTransform}>
+            <Rect x={0} y={0} width={VB_W} height={VB_H} fill="#f0f9f4" />
 
-          {/* Lớp tòa nhà */}
-          <G>
-            {buildingPaths.map((d, i) => (
-              <Path key={`b${i}`} d={d} stroke="#64748b" strokeWidth={0.8} fill="#cbd5e1" fillOpacity={0.76} />
-            ))}
-          </G>
+            {/* Lớp địa hình (contours) */}
+            <G>
+              {contourPaths.map((d, i) => (
+                <Path key={`c${i}`} d={d} stroke="#7892ad" strokeWidth={0.75} fill="none" strokeDasharray="3,3" />
+              ))}
+            </G>
 
-          {/* Lớp đường */}
-          <G>
-            {roadPaths.map((d, i) => (
-              <Path key={`r${i}`} d={d} stroke="#3b82f6" strokeWidth={2} fill="none" strokeOpacity={0.9} />
-            ))}
-          </G>
+            {/* Lớp tòa nhà */}
+            <G>
+              {buildingPaths.map((d, i) => (
+                <Path key={`b${i}`} d={d} stroke="#52677f" strokeWidth={1.05} fill="#d5dee8" fillOpacity={0.9} />
+              ))}
+            </G>
 
-          {/* Ranh giới campus */}
-          <G>
-            {framePaths.map((d, i) => (
-              <Path key={`f${i}`} d={d} stroke="#0f172a" strokeWidth={2} fill="none" />
-            ))}
-          </G>
+            {/* Lớp đường */}
+            <G>
+              {roadPaths.map((d, i) => (
+                <Path key={`r${i}`} d={d} stroke="#2386ee" strokeWidth={2.4} fill="none" strokeOpacity={0.95} />
+              ))}
+            </G>
 
-          {/* Station markers */}
-          {stations.map((s, i) => {
-            const [sx, sy] = stationSvgPos(s, i);
-            const pc = pinColor(s);
-            return (
-              <G key={s.id} onPress={() => onSelect?.(s)}>
-                {/* Halo */}
-                <Circle cx={sx} cy={sy} r={14} fill={pc} opacity={0.22} />
-                {/* Pin body */}
-                <Circle cx={sx} cy={sy} r={9} fill={pc} stroke="white" strokeWidth={2} />
-                {/* Inner dot */}
-                <Circle cx={sx} cy={sy} r={3.5} fill="rgba(255,255,255,0.85)" />
-              </G>
-            );
-          })}
+            {/* Ranh giới campus */}
+            <G>
+              {framePaths.map((d, i) => (
+                <Path key={`f${i}`} d={d} stroke="#0f172a" strokeWidth={2.6} fill="none" />
+              ))}
+            </G>
+
+            {/* Station markers */}
+            {stations.map((s) => {
+              const position = stationSvgPos(s);
+              if (!position) return null;
+              const [sx, sy] = position;
+              const pc = pinColor(s);
+              const isSelected = s.id === selectedStationId;
+              return (
+                <G key={s.id} onPress={() => selectStationMarker(s)}>
+                  {/* Halo */}
+                  <Circle cx={sx} cy={sy} r={isSelected ? 20 : 14} fill={pc} opacity={isSelected ? 0.34 : 0.22} />
+                  {/* Pin body */}
+                  <Circle cx={sx} cy={sy} r={isSelected ? 11 : 9} fill={pc} stroke="white" strokeWidth={isSelected ? 3 : 2} />
+                  {/* Inner dot */}
+                  <Circle cx={sx} cy={sy} r={isSelected ? 4.5 : 3.5} fill="rgba(255,255,255,0.88)" />
+                </G>
+              );
+            })}
+          </G>
         </Svg>
+      </View>
+
+      <View style={styles.zoomControls}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Phóng to bản đồ"
+          hitSlop={8}
+          style={styles.zoomButton}
+          onPress={zoomIn}
+        >
+          <Text style={styles.zoomButtonText}>+</Text>
+        </Pressable>
+        <View style={styles.zoomDivider} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Thu nhỏ bản đồ"
+          hitSlop={8}
+          style={styles.zoomButton}
+          onPress={zoomOut}
+        >
+          <Text style={styles.zoomButtonText}>-</Text>
+        </Pressable>
       </View>
 
       {/* Nút căn giữa */}
@@ -312,6 +398,28 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 const styles = StyleSheet.create({
   wrapper: { flex: 1, position: 'relative', overflow: 'hidden' },
   mapArea: { flex: 1, backgroundColor: '#f0f9f4' },
+  zoomControls: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    width: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  zoomButton: {
+    width: 44,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButtonText: { color: colors.ink, fontSize: 24, fontWeight: '900' },
+  zoomDivider: { height: 1, backgroundColor: 'rgba(15,23,42,0.1)' },
   recenterBtn: {
     position: 'absolute',
     bottom: 40,

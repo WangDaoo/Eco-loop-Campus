@@ -110,6 +110,17 @@ test("maps admin bins camelCase into Supabase snake_case fields", () => {
   expect(payload.mapY).toBeUndefined();
 });
 
+test("applies realtime bin changes by id for admin map state", () => {
+  const current = [{ id: "BIN-1", name: "Cũ", capacity: 20 }];
+  const updated = __testing.applyBinRealtimeChange(current, {
+    eventType: "UPDATE",
+    new: { id: "BIN-1", name: "Mới", capacity: 90, map_x: 40, map_y: 60, status: "maintenance" },
+  });
+
+  expect(updated).toEqual([expect.objectContaining({ id: "BIN-1", name: "Mới", capacity: 90, mapX: 40, mapY: 60, status: "maintenance" })]);
+  expect(__testing.applyBinRealtimeChange(updated, { eventType: "DELETE", old: { id: "BIN-1" } })).toEqual([]);
+});
+
 test("maps Supabase predictions snake_case into clean normalized admin predictions", () => {
   const prediction = __testing.fromPrediction({
     id: "scan-1",

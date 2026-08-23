@@ -2,7 +2,7 @@ import { ArrowsOutCardinal, CheckCircle, Crosshair, Minus, Plus, SlidersHorizont
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import proj4 from "proj4";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isOpenFeedback } from "../data/feedbackConfig";
 import { BIN_GROUPS, STATUS_LABELS, getGroupColor } from "../data/wasteConfig";
 import StatusBadge from "./StatusBadge";
@@ -13,6 +13,8 @@ const CAMPUS_FRAME = {
   maxX: 610853.1673639194,
   maxY: 2316582.0362756485,
 };
+
+const STATION_FOCUS_ZOOM = 19;
 
 proj4.defs("EPSG:32648", "+proj=utm +zone=48 +datum=WGS84 +units=m +no_defs");
 
@@ -161,8 +163,8 @@ function addStationMarkers(layerGroup, stations, options = {}) {
       sticky: true,
     });
 
-    marker.on("click", () => onSelect?.(station.id));
-    marker.on("dragstart", () => onSelect?.(station.id));
+    marker.on("click", () => onSelect?.(station));
+    marker.on("dragstart", () => onSelect?.(station));
     marker.on("dragend", event => onDraftPosition?.(station.id, latLngToStationPosition(event.target.getLatLng())));
     marker.addTo(layerGroup);
   });
@@ -180,6 +182,7 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
   const leafletMapRef = useRef(null);
   const leafletLayerGroupRef = useRef(null);
   const latestBoundsRef = useRef(null);
+  const hasFitInitialBoundsRef = useRef(false);
   const openFeedbackByBin = useMemo(() => countOpenFeedbackByBin(feedback), [feedback]);
   const stations = useMemo(() => bins.map((bin, index) => ({
     ...bin,
@@ -199,6 +202,20 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
   const activeCount = stations.filter(station => station.status === "active").length;
   const maintenanceCount = stations.filter(station => station.status === "maintenance").length;
   const openFeedbackCount = stations.reduce((sum, station) => sum + station.openFeedbackCount, 0);
+
+  const focusStationOnMap = useCallback((station) => {
+    const map = leafletMapRef.current;
+    if (!map || !station) return;
+    map.flyTo(stationToLatLng(station), Math.max(map.getZoom(), STATION_FOCUS_ZOOM), { animate: true, duration: 0.45 });
+  }, []);
+
+  const selectStation = useCallback((station, focusMap = false) => {
+    setSelectedStationId(station.id);
+    setDraftPosition({ x: station.x, y: station.y });
+    setEditingPosition(false);
+    setPositionError("");
+    if (focusMap) focusStationOnMap(station);
+  }, [focusStationOnMap]);
 
   useEffect(() => {
     if (!stations.length) {
@@ -248,6 +265,7 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
       leafletMapRef.current = null;
       leafletLayerGroupRef.current = null;
       latestBoundsRef.current = null;
+      hasFitInitialBoundsRef.current = false;
     };
   }, []);
 
@@ -263,7 +281,10 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
       const bounds = layerGroup.getBounds();
       if (bounds.isValid()) {
         latestBoundsRef.current = bounds;
-        map.fitBounds(bounds, { padding: [28, 28], maxZoom: 18, animate: true });
+        if (!hasFitInitialBoundsRef.current) {
+          map.fitBounds(bounds, { padding: [28, 28], maxZoom: 18, animate: true });
+          hasFitInitialBoundsRef.current = true;
+        }
       }
     };
 
@@ -274,7 +295,7 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
           setSelectedStationId(stationId);
           setDraftPosition(position);
         },
-        onSelect: setSelectedStationId,
+        onSelect: station => selectStation(station, true),
         selectedStationId: effectiveSelectedStationId,
       });
       fitVisibleLayers();
@@ -324,7 +345,7 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
           setSelectedStationId(stationId);
           setDraftPosition(position);
         },
-        onSelect: setSelectedStationId,
+        onSelect: station => selectStation(station, true),
         selectedStationId: effectiveSelectedStationId,
       });
       fitVisibleLayers();
@@ -336,7 +357,7 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
     return () => {
       cancelled = true;
     };
-  }, [editingPosition, effectiveSelectedStationId, enabledLayers, visibleStations]);
+  }, [editingPosition, effectiveSelectedStationId, enabledLayers, selectStation, visibleStations]);
 
   const zoomIn = () => {
     leafletMapRef.current?.zoomIn(1, { animate: true });
@@ -359,13 +380,6 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
       else next.add(layerId);
       return next;
     });
-  };
-
-  const selectStation = station => {
-    setSelectedStationId(station.id);
-    setDraftPosition({ x: station.x, y: station.y });
-    setEditingPosition(false);
-    setPositionError("");
   };
 
   const startPositionEdit = () => {
@@ -488,7 +502,7 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
                 className={station.id === effectiveSelectedStationId ? "is-selected" : ""}
                 aria-label={`Chọn thùng ${station.id}`}
                 aria-pressed={station.id === effectiveSelectedStationId}
-                onClick={() => selectStation(station)}
+                onClick={() => selectStation(station, true)}
               >
                 <span style={{ "--group-color": getGroupColor(station.binGroup) }} />
                 <strong>{station.name}</strong>

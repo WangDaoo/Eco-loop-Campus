@@ -172,6 +172,33 @@ export function createPredictionService({
 
 export const predictionService = createPredictionService();
 
+const aiClassDisplayNames: Record<string, string> = {
+  battery: 'Pin / rác nguy hại',
+  biological: 'Rác hữu cơ',
+  cardboard: 'Bìa carton',
+  clothes: 'Quần áo / vải',
+  glass: 'Thủy tinh',
+  metal: 'Kim loại',
+  paper: 'Giấy',
+  plastic: 'Nhựa',
+  shoes: 'Giày dép',
+  trash: 'Rác còn lại'
+};
+
+function searchable(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
+}
+
+export function aiClassDisplayName(className: string) {
+  const normalized = className.trim().toLowerCase();
+  return aiClassDisplayNames[normalized] ?? className;
+}
+
 export function binGroupForAiClass(className: string) {
   const normalized = className.trim().toLowerCase();
   if (normalized === 'biological') return 'Hữu cơ';
@@ -182,7 +209,7 @@ export function binGroupForAiClass(className: string) {
 
 export function suggestWasteTypeFromClass(className: string, wasteTypes: WasteType[]) {
   const normalized = className.trim().toLowerCase();
-  const exact = wasteTypes.find(item => item.id.toLowerCase() === normalized || item.name.toLowerCase() === normalized);
+  const exact = wasteTypes.find(item => item.id.toLowerCase() === normalized || searchable(item.name) === normalized);
   if (exact) return exact;
 
   const candidates: Record<string, string[]> = {
@@ -190,11 +217,12 @@ export function suggestWasteTypeFromClass(className: string, wasteTypes: WasteTy
     paper: ['paper', 'cardboard', 'giay', 'carton'],
     cardboard: ['paper', 'cardboard', 'giay', 'carton'],
     metal: ['metal', 'lon', 'kim loai'],
-    biological: ['organic', 'huu co', 'sinh hoc']
+    biological: ['organic', 'huu co', 'sinh hoc'],
+    battery: ['battery', 'pin', 'nguy hai', 'hazardous']
   };
   const keywords = candidates[normalized] ?? [];
   return wasteTypes.find(item => {
-    const haystack = `${item.id} ${item.name}`.toLowerCase();
+    const haystack = searchable(`${item.id} ${item.name}`);
     return keywords.some(keyword => haystack.includes(keyword));
   });
 }

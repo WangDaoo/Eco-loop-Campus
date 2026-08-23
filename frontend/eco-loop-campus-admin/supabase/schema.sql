@@ -172,6 +172,7 @@ $$;
 
 alter table public.users enable row level security;
 alter table public.bins enable row level security;
+alter table public.bins replica identity full;
 alter table public.predictions enable row level security;
 alter table public.point_rules enable row level security;
 alter table public.feedback enable row level security;
@@ -219,6 +220,14 @@ create policy "admin write settings" on public.settings for all to authenticated
 create policy "admin write point_history" on public.point_history for all to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy "admin write rewards" on public.rewards for all to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy "admin write reward_redemptions" on public.reward_redemptions for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+do $$
+begin
+  alter publication supabase_realtime add table public.bins;
+exception
+  when duplicate_object then null;
+  when undefined_object then null;
+end $$;
 
 create or replace function public.current_profile_id()
 returns text
@@ -849,7 +858,8 @@ values
   ('plastic-bottle', 'Chai nhua', 'item', 10, 'Lam sach, thao nap, ep det truoc khi nop.', 'active'),
   ('paper', 'Giay sach', 'kg', 40, 'Giu kho, khong lan thuc an hoac chat long.', 'active'),
   ('metal-can', 'Lon kim loai', 'item', 12, 'Rua sach va de rieng khoi rac huu co.', 'active'),
-  ('organic', 'Rac huu co', 'kg', 20, 'De rieng rac thuc pham, tranh lan nhua va kim loai.', 'active')
+  ('organic', 'Rac huu co', 'kg', 20, 'De rieng rac thuc pham, tranh lan nhua va kim loai.', 'active'),
+  ('hazardous', 'Pin/nguy hai nho', 'item', 5, 'Pin, bong den nho va vat thai nguy hai can de rieng, tinh nguyen vien kiem tra ky.', 'active')
 on conflict (id) do update set
   name = excluded.name,
   unit = excluded.unit,

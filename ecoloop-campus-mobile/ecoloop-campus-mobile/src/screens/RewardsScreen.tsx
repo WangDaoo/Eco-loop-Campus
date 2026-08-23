@@ -201,13 +201,16 @@ const styles = StyleSheet.create({
   headerCard: {
     backgroundColor: colors.ecoBlue,
     borderRadius: 24,
-    borderBottomWidth: 5,
-    borderBottomColor: colors.ecoCardShadow,
     padding: 18,
     marginBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    shadowColor: colors.ecoCardShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 3,
   },
   headerLabel: {
     color: '#5194a8',

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
+import { aiClassDisplayName } from '../services/predictionService';
 import { getPredictionStatusText, getPredictionStatusTone, getPredictionSubtitle } from '../services/predictionPresentation';
 import { getSubmissionStatusLabel, getSubmissionStatusTone, getWasteTypeDisplayName } from '../services/submissionPresentation';
 import { RewardRedemption } from '../types';
@@ -84,7 +85,7 @@ export default function HistoryScreen() {
           return (
             <Card key={item.id} style={styles.item}>
               <View style={styles.row}>
-                <Text style={styles.action}>Class AI: {item.className}</Text>
+                <Text style={styles.action}>Nhận diện: {aiClassDisplayName(item.className)}</Text>
                 <Text style={[styles.statusBadge, styles[tone]]}>{getPredictionStatusText(item.status)}</Text>
               </View>
               <Text style={styles.time}>{getPredictionSubtitle(item, station?.name)}</Text>
