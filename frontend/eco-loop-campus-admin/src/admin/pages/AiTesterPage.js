@@ -7,13 +7,24 @@ import { getBinGroup, getWasteLabel } from "../data/wasteConfig";
 import { listBins, savePredictionRecord, sourceText, uploadPredictionImage } from "../services/supabaseStore";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
+const AI_QUEUE_POLL_MS = 1000;
+const AI_QUEUE_TIMEOUT_MS = 45000;
 const formatPercent = value => `${Math.round(Number(value || 0) * 100)}%`;
 const IMAGE_FILE_EXTENSIONS = /\.(avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i;
+const predictionHeaders = { headers: { "Content-Type": "multipart/form-data" } };
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const isImageUpload = selected => {
   if (!selected) return false;
   if (typeof selected.type === "string" && selected.type.startsWith("image/")) return true;
   return IMAGE_FILE_EXTENSIONS.test(selected.name || "");
 };
+
+const queueUnsupported = error => {
+  const status = error?.response?.status;
+  return status === 404 || status === 405 || !error?.response;
+};
+
+const queueFull = error => error?.response?.status === 429;
 
 export default function AiTesterPage() {
   const location = useLocation();
@@ -50,10 +61,41 @@ export default function AiTesterPage() {
     formData.append("file", blob);
     setLoading(true);
     try {
-      const response = await axios.post(`${API_URL}/predict`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      const prediction = response.data || {};
+      const postDirectPrediction = async () => {
+        const response = await axios.post(`${API_URL}/predict`, formData, predictionHeaders);
+        if (!response) throw new Error("Không gọi được backend /predict");
+        return response.data || {};
+      };
+      const pollQueuedPrediction = async jobId => {
+        const deadline = Date.now() + AI_QUEUE_TIMEOUT_MS;
+        while (Date.now() <= deadline) {
+          const response = await axios.get(`${API_URL}/predict/jobs/${jobId}`);
+          const payload = response.data || {};
+          if (payload.status === "done") return payload;
+          if (payload.status === "failed") throw new Error(payload.error || "AI xử lý ảnh không thành công");
+          setToastTone("success");
+          setToast("AI đang xử lý ảnh...");
+          await sleep(AI_QUEUE_POLL_MS);
+        }
+        throw new Error("AI xử lý lâu hơn dự kiến. Vui lòng thử lại sau.");
+      };
+      const predictWithQueue = async () => {
+        try {
+          const response = await axios.post(`${API_URL}/predict/jobs`, formData, predictionHeaders);
+          const payload = response.data || {};
+          if (payload.class || payload.error || Object.prototype.hasOwnProperty.call(payload, "confidence")) return payload;
+          if (!payload.job_id) return postDirectPrediction();
+          setToastTone("success");
+          setToast("Đã đưa ảnh vào hàng chờ AI");
+          return pollQueuedPrediction(payload.job_id);
+        } catch (error) {
+          if (queueFull(error)) throw new Error("Hệ thống AI đang bận, vui lòng thử lại sau");
+          if (queueUnsupported(error)) return postDirectPrediction();
+          throw error;
+        }
+      };
+
+      const prediction = await predictWithQueue();
       const className = typeof prediction.class === "string" ? prediction.class.trim() : "";
       if (prediction.error) {
         setResult(null);
@@ -91,10 +133,12 @@ export default function AiTesterPage() {
       setSource(record.source);
       setToastTone("success");
       setToast(imageUpload.error ? `Đã lưu lượt kiểm thử AI (${sourceText(record.source)}), nhưng chưa lưu được ảnh xem trước` : `Đã lưu lượt kiểm thử AI (${sourceText(record.source)})`);
-    } catch {
+    } catch (error) {
       setResult(null);
       setToastTone("danger");
-      setToast("Không gọi được backend /predict");
+      const message = error?.message || "";
+      const naturalMessages = ["Hệ thống AI", "AI xử lý", "Model", "Prediction failed", "Image processing failed", "Không gọi được backend /predict"];
+      setToast(naturalMessages.some(item => message.includes(item)) ? message : "Không gọi được backend /predict");
     } finally {
       setLoading(false);
     }

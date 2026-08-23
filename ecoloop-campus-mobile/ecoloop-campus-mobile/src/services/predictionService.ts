@@ -28,7 +28,7 @@ type FetchResponseLike = {
   json(): Promise<Record<string, unknown>>;
 };
 
-type FetchLike = (url: string, init: { method: string; body: FormDataLike }) => Promise<FetchResponseLike>;
+type FetchLike = (url: string, init: { method: string; body?: FormDataLike; signal?: AbortSignal }) => Promise<FetchResponseLike>;
 
 type PredictionServiceOptions = {
   baseUrl?: string;
@@ -36,6 +36,10 @@ type PredictionServiceOptions = {
   FormDataCtor?: FormDataConstructor;
   aiMode?: AiRuntimeMode;
   localEngine?: LocalAiEngine;
+  queueTimeoutMs?: number;
+  pollIntervalMs?: number;
+  wait?: (ms: number) => Promise<void>;
+  now?: () => number;
 };
 
 function normalizedBaseUrl(baseUrl: string) {
@@ -57,13 +61,39 @@ function aiModeFromEnv(): AiRuntimeMode {
   return process.env.EXPO_PUBLIC_AI_MODE === 'local-first' ? 'local-first' : 'remote';
 }
 
+function waitFor(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+function normalizePredictionPayload(payload: Record<string, unknown>): PredictionResult {
+  if (payload.error) throw new Error(String(payload.error));
+
+  const className = String(payload.class ?? '').trim().toLowerCase();
+  if (!className) throw new Error('AI chưa trả về kết quả phân loại');
+
+  const confidence = Math.max(0, Math.min(1, number(payload.confidence)));
+  return {
+    className,
+    confidence,
+    confidencePercent: Math.round(confidence * 100)
+  };
+}
+
+function isPredictionPayload(payload: Record<string, unknown>) {
+  return Boolean(payload.class || payload.error || Object.prototype.hasOwnProperty.call(payload, 'confidence'));
+}
+
 
 export function createPredictionService({
   baseUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8000',
   fetcher = fetch as unknown as FetchLike,
   FormDataCtor = FormData as unknown as FormDataConstructor,
   aiMode = aiModeFromEnv(),
-  localEngine
+  localEngine,
+  queueTimeoutMs = 45000,
+  pollIntervalMs = 1000,
+  wait = waitFor,
+  now = Date.now
 }: PredictionServiceOptions = {}) {
   const remoteEngine = {
     async predictImage(image: PickedImage): Promise<PredictionResult> {
@@ -76,37 +106,61 @@ export function createPredictionService({
         type: image.mimeType ?? image.type ?? 'image/jpeg'
       });
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const endpointBaseUrl = normalizedBaseUrl(baseUrl);
 
-      try {
-        const response = await fetcher(`${normalizedBaseUrl(baseUrl)}/predict`, {
+      const postDirectPrediction = async () => {
+        const response = await fetcher(`${endpointBaseUrl}/predict`, {
           method: 'POST',
-          body: formData,
-          signal: controller.signal
-        } as any);
-        clearTimeout(timeoutId);
+          body: formData
+        });
 
         if (!response.ok) {
           throw new Error(`Dịch vụ AI tạm thời chưa sẵn sàng${response.status ? ` (${response.status})` : ''}`);
         }
 
+        return normalizePredictionPayload(await response.json());
+      };
+
+      const pollPredictionJob = async (jobId: string) => {
+        const deadline = now() + queueTimeoutMs;
+        while (now() <= deadline) {
+          const response = await fetcher(`${endpointBaseUrl}/predict/jobs/${jobId}`, { method: 'GET' });
+          if (!response.ok) {
+            throw new Error(`Dịch vụ AI tạm thời chưa sẵn sàng${response.status ? ` (${response.status})` : ''}`);
+          }
+          const payload = await response.json();
+          if (payload.status === 'done') return normalizePredictionPayload(payload);
+          if (payload.status === 'failed') throw new Error(String(payload.error || 'AI xử lý ảnh không thành công'));
+          await wait(pollIntervalMs);
+        }
+        throw new Error('AI xử lý lâu hơn dự kiến. Bạn có thể chọn loại rác thủ công.');
+      };
+
+      const submitQueuedPrediction = async () => {
+        const response = await fetcher(`${endpointBaseUrl}/predict/jobs`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          if (response.status === 429) throw new Error('Hệ thống AI đang bận, vui lòng thử lại sau.');
+          if (response.status === 404 || response.status === 405) return postDirectPrediction();
+          throw new Error(`Dịch vụ AI tạm thời chưa sẵn sàng${response.status ? ` (${response.status})` : ''}`);
+        }
+
         const payload = await response.json();
-        if (payload.error) throw new Error(String(payload.error));
+        if (isPredictionPayload(payload)) return normalizePredictionPayload(payload);
 
-        const className = String(payload.class ?? '').trim().toLowerCase();
-        if (!className) throw new Error('AI chưa trả về kết quả phân loại');
+        const jobId = String(payload.job_id ?? '').trim();
+        if (!jobId) return postDirectPrediction();
+        return pollPredictionJob(jobId);
+      };
 
-        const confidence = Math.max(0, Math.min(1, number(payload.confidence)));
-        return {
-          className,
-          confidence,
-          confidencePercent: Math.round(confidence * 100)
-        };
+      try {
+        return await submitQueuedPrediction();
       } catch (err: any) {
-        clearTimeout(timeoutId);
         if (err.name === 'AbortError') {
-          throw new Error('AI xử lý quá lâu. Vui lòng thử lại hoặc chọn loại rác thủ công.');
+          throw new Error('AI xử lý lâu hơn dự kiến. Bạn có thể chọn loại rác thủ công.');
         }
         throw err;
       }

@@ -146,6 +146,7 @@ jest.mock("@supabase/supabase-js", () => ({
 
 jest.mock("axios", () => ({
   post: jest.fn(),
+  get: jest.fn(),
 }));
 
 jest.mock("firebase/app", () => ({
@@ -1482,6 +1483,31 @@ test("redesigned admin shell shows grouped navigation and command bar", async ()
   expect(screen.getByText(/tình trạng campus/i)).toBeInTheDocument();
 });
 
+test("admin menu button toggles the sidebar instead of covering the visible desktop sidebar", async () => {
+  const { container } = render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /tổng quan quản trị/i })).toBeInTheDocument();
+  const shell = container.querySelector(".eg-shell");
+  const sidebar = container.querySelector(".eg-sidebar");
+  const menuButton = screen.getByRole("button", { name: /mở menu/i });
+
+  expect(shell).not.toHaveClass("is-sidebar-toggled");
+  expect(sidebar).not.toHaveClass("is-open");
+  expect(screen.queryByRole("button", { name: /đóng menu/i })).not.toBeInTheDocument();
+
+  fireEvent.click(menuButton);
+
+  expect(shell).toHaveClass("is-sidebar-toggled");
+  expect(sidebar).toHaveClass("is-open");
+  expect(screen.getByRole("button", { name: /đóng menu/i })).toBeInTheDocument();
+
+  fireEvent.click(menuButton);
+
+  expect(shell).not.toHaveClass("is-sidebar-toggled");
+  expect(sidebar).not.toHaveClass("is-open");
+  expect(screen.queryByRole("button", { name: /đóng menu/i })).not.toBeInTheDocument();
+});
+
 test("dashboard highlights the operations summary panel", async () => {
   render(<App />);
 
@@ -2386,7 +2412,8 @@ test("falls back to localStorage when Supabase is unavailable", async () => {
 
 test("AI tester writes predictions to Supabase after backend returns a result", async () => {
   const axios = require("axios");
-  axios.post.mockResolvedValueOnce({ data: { class: "paper", confidence: 0.88 } });
+  axios.post.mockResolvedValueOnce({ data: { job_id: "job-paper", status: "queued", position: 1, poll_url: "/predict/jobs/job-paper" } });
+  axios.get.mockResolvedValueOnce({ data: { job_id: "job-paper", status: "done", class: "paper", confidence: 0.88 } });
   window.location.hash = "#/ai-test";
 
   render(<App />);
@@ -2395,6 +2422,12 @@ test("AI tester writes predictions to Supabase after backend returns a result", 
   fireEvent.change(await screen.findByLabelText(/chọn ảnh kiểm thử/i), { target: { files: [file] } });
   fireEvent.click(screen.getByRole("button", { name: /nhận diện thử/i }));
 
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+    "http://127.0.0.1:8000/predict/jobs",
+    expect.any(FormData),
+    { headers: { "Content-Type": "multipart/form-data" } }
+  ));
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith("http://127.0.0.1:8000/predict/jobs/job-paper"));
   await waitFor(() => expect(screen.getByText(/giấy/i)).toBeInTheDocument());
   expect(mockStorageFrom).toHaveBeenCalledWith("prediction-images");
   expect(mockStorageUpload).toHaveBeenCalledWith(expect.stringMatching(/^ai-reviews\/\d{4}-\d{2}-\d{2}\//), file, expect.objectContaining({ contentType: "image/jpeg", upsert: false }));
@@ -2403,6 +2436,49 @@ test("AI tester writes predictions to Supabase after backend returns a result", 
     image_url: "https://school.supabase.co/storage/v1/object/public/prediction-images/ai-reviews/2026-08-02/paper.jpg",
   }));
   expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({ class: "paper", bin_group: "Tái chế", status: "pending" }));
+});
+
+test("AI tester falls back to direct /predict when queue API is not available", async () => {
+  const axios = require("axios");
+  axios.post
+    .mockRejectedValueOnce({ response: { status: 404 } })
+    .mockResolvedValueOnce({ data: { class: "plastic", confidence: 0.83 } });
+  window.location.hash = "#/ai-test";
+
+  render(<App />);
+
+  const file = new File(["plastic"], "plastic.jpg", { type: "image/jpeg" });
+  fireEvent.change(await screen.findByLabelText(/chọn ảnh kiểm thử/i), { target: { files: [file] } });
+  fireEvent.click(screen.getByRole("button", { name: /nhận diện thử/i }));
+
+  await waitFor(() => expect(axios.post).toHaveBeenNthCalledWith(
+    1,
+    "http://127.0.0.1:8000/predict/jobs",
+    expect.any(FormData),
+    { headers: { "Content-Type": "multipart/form-data" } }
+  ));
+  await waitFor(() => expect(axios.post).toHaveBeenNthCalledWith(
+    2,
+    "http://127.0.0.1:8000/predict",
+    expect.any(FormData),
+    { headers: { "Content-Type": "multipart/form-data" } }
+  ));
+  expect(await screen.findByText("Nhựa")).toBeInTheDocument();
+});
+
+test("AI tester shows a natural busy message when the AI queue is full", async () => {
+  const axios = require("axios");
+  axios.post.mockRejectedValueOnce({ response: { status: 429, data: { error: "AI queue is full" } } });
+  window.location.hash = "#/ai-test";
+
+  render(<App />);
+
+  const file = new File(["paper"], "paper.jpg", { type: "image/jpeg" });
+  fireEvent.change(await screen.findByLabelText(/chọn ảnh kiểm thử/i), { target: { files: [file] } });
+  fireEvent.click(screen.getByRole("button", { name: /nhận diện thử/i }));
+
+  expect(await screen.findByText(/hệ thống ai đang bận, vui lòng thử lại sau/i)).toBeInTheDocument();
+  expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ status: "pending" }));
 });
 
 test("AI tester handles camera permission errors without enabling capture", async () => {
@@ -2489,7 +2565,7 @@ test("AI tester captures camera frames and saves camera predictions", async () =
     fireEvent.click(screen.getByRole("button", { name: /chụp kiểm thử/i }));
 
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/predict",
+      "http://127.0.0.1:8000/predict/jobs",
       expect.any(FormData),
       { headers: { "Content-Type": "multipart/form-data" } }
     ));
@@ -3290,4 +3366,39 @@ test("admin source files do not contain mojibake markers", () => {
   walk(root);
   const offenders = files.filter(file => /TÃ|ThÃ|RÃ|NhÃ|MÃ|Ä|Æ|áº|á»|Ã¡|Ã |Ã³|Ã´|Ãª|Ã¨|Ã©|Ã­|Ã¬|Ãº|Ã¹|Ã½|Ã¢/.test(fs.readFileSync(file, "utf8")));
   expect(offenders).toEqual([]);
+});
+
+test("mobile admin sidebar stays above its backdrop so menu links remain clickable", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const css = fs.readFileSync(path.join(process.cwd(), "src", "admin", "admin.css"), "utf8");
+  const sidebarRule = css.match(/\.eg-sidebar\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body || "";
+  const backdropRule = css.match(/\.eg-modal-backdrop,\s*\.eg-sidebar-backdrop\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body || "";
+  const mobileRule = css.match(/@media\s*\(max-width:\s*980px\)\s*\{(?<body>[\s\S]*?)@media\s*\(max-width:\s*720px\)/)?.groups?.body || "";
+  const mobileSidebarRule = mobileRule.match(/\.eg-sidebar\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body || "";
+  const zIndex = rule => Number(rule.match(/z-index:\s*(\d+)/)?.[1] || 0);
+
+  const sidebarZIndex = zIndex(mobileSidebarRule) || zIndex(sidebarRule);
+  const backdropZIndex = zIndex(backdropRule);
+
+  expect(sidebarZIndex).toBeGreaterThan(backdropZIndex);
+});
+
+test("desktop admin shell keeps the hamburger button visible for sidebar toggling", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const css = fs.readFileSync(path.join(process.cwd(), "src", "admin", "admin.css"), "utf8");
+  const desktopCss = css.split(/@media\s*\(max-width:\s*980px\)/)[0];
+  const displayRules = [...desktopCss.matchAll(/([^{}]+)\{(?<body>[^{}]*display:\s*(?<display>[^;]+);[^{}]*)\}/g)];
+  const finalDisplayFor = elementClasses => displayRules.reduce((display, match) => {
+    const selectors = match[1].split(",").map(selector => selector.trim());
+    const matchesElement = selectors.some(selector => {
+      const classNames = [...selector.matchAll(/\.([_a-zA-Z0-9-]+)/g)].map(item => item[1]);
+      return classNames.length > 0 && classNames.every(className => elementClasses.has(className));
+    });
+    return matchesElement ? match.groups.display.trim() : display;
+  }, null);
+
+  expect(finalDisplayFor(new Set(["eg-icon-btn", "eg-menu-btn"]))).toBe("inline-flex");
+  expect(finalDisplayFor(new Set(["eg-sidebar-backdrop"]))).toBe("none");
 });

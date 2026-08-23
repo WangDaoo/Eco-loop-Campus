@@ -38,14 +38,14 @@ const navItems = [
 ];
 
 function AdminLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarToggled, setSidebarToggled] = useState(false);
 
   return (
-    <div className="eg-shell">
-      <Sidebar items={navItems} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      {sidebarOpen && <button type="button" className="eg-sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-label="Đóng menu" />}
+    <div className={`eg-shell ${sidebarToggled ? "is-sidebar-toggled" : ""}`}>
+      <Sidebar items={navItems} open={sidebarToggled} onClose={() => setSidebarToggled(false)} />
+      {sidebarToggled && <button type="button" className="eg-sidebar-backdrop" onClick={() => setSidebarToggled(false)} aria-label="Đóng menu" />}
       <main className="eg-main">
-        <Topbar onToggleSidebar={() => setSidebarOpen(true)} />
+        <Topbar onToggleSidebar={() => setSidebarToggled(open => !open)} sidebarOpen={sidebarToggled} />
         <div className="eg-content">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />

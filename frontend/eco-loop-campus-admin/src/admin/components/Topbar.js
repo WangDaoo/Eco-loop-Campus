@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAdminAuth } from "../services/authContext";
 import { signOutAdmin } from "../services/supabaseStore";
 
-export default function Topbar({ onToggleSidebar }) {
+export default function Topbar({ onToggleSidebar, sidebarOpen }) {
   const navigate = useNavigate();
   const { profile } = useAdminAuth();
   const today = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
@@ -19,7 +19,7 @@ export default function Topbar({ onToggleSidebar }) {
 
   return (
     <header className="eg-topbar">
-      <button type="button" className="eg-icon-btn eg-menu-btn" onClick={onToggleSidebar} aria-label="Mở menu">
+      <button type="button" className="eg-icon-btn eg-menu-btn" onClick={onToggleSidebar} aria-label="Mở menu" aria-expanded={sidebarOpen}>
         <List size={24} />
       </button>
       <label className="eg-search">

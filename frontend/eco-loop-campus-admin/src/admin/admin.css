@@ -65,10 +65,12 @@ button:disabled {
 }
 
 .eg-shell {
+  --eg-sidebar-width: 280px;
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: var(--eg-sidebar-width) minmax(0, 1fr);
   background: transparent;
+  transition: grid-template-columns 180ms ease;
 }
 
 .eg-sidebar {
@@ -79,8 +81,21 @@ button:disabled {
   border-right: 1px solid var(--eg-border);
   display: flex;
   flex-direction: column;
+  width: 280px;
   z-index: 30;
   box-shadow: 16px 0 42px rgba(15, 23, 42, 0.04);
+  transition: transform 180ms ease;
+}
+
+@media (min-width: 981px) {
+  .eg-shell.is-sidebar-toggled {
+    --eg-sidebar-width: 0px;
+  }
+
+  .eg-shell.is-sidebar-toggled .eg-sidebar {
+    pointer-events: none;
+    transform: translateX(-100%);
+  }
 }
 
 .eg-brand {
@@ -245,7 +260,7 @@ button:disabled {
 }
 
 .eg-menu-btn {
-  display: none;
+  flex-shrink: 0;
 }
 
 .eg-search {
@@ -2262,6 +2277,11 @@ a.eg-priority-item:focus-visible {
   z-index: 40;
 }
 
+.eg-sidebar-backdrop {
+  border: 0;
+  display: none;
+}
+
 .eg-modal {
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 48px);
@@ -2401,6 +2421,7 @@ a.eg-priority-item:focus-visible {
 
 @media (max-width: 980px) {
   .eg-shell {
+    --eg-sidebar-width: 0px;
     grid-template-columns: 1fr;
   }
 
@@ -2410,9 +2431,12 @@ a.eg-priority-item:focus-visible {
     transform: translateX(-100%);
     transition: transform 180ms ease;
     width: min(320px, calc(100vw - 56px));
+    z-index: 50;
+    pointer-events: none;
   }
 
   .eg-sidebar.is-open {
+    pointer-events: auto;
     transform: translateX(0);
   }
 
@@ -2421,7 +2445,7 @@ a.eg-priority-item:focus-visible {
   }
 
   .eg-sidebar-backdrop {
-    border: 0;
+    display: block;
   }
 }
 

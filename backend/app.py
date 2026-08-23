@@ -1,5 +1,11 @@
+import asyncio
+import io
+import time
+import uuid
+
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import tensorflow as tf
 import numpy as np
@@ -9,6 +15,17 @@ import requests
 import h5py
 
 app = FastAPI()
+
+AI_QUEUE_WORKERS = int(os.getenv("AI_QUEUE_WORKERS", "1"))
+AI_QUEUE_MAX_SIZE = int(os.getenv("AI_QUEUE_MAX_SIZE", "50"))
+AI_JOB_TTL_SECONDS = int(os.getenv("AI_JOB_TTL_SECONDS", "900"))
+
+def create_ai_queue(max_size=AI_QUEUE_MAX_SIZE):
+    return asyncio.Queue(maxsize=max_size)
+
+ai_jobs = {}
+ai_queue = create_ai_queue()
+ai_worker_tasks = []
 
 
 def parse_cors_origins(raw_origins):
@@ -134,22 +151,18 @@ classes = [
     "glass", "metal", "paper", "plastic", "shoes", "trash"
 ]
 
+def cleanup_ai_jobs():
+    cutoff = time.time() - AI_JOB_TTL_SECONDS
+    expired = [job_id for job_id, job in ai_jobs.items() if job.get("updated_at", job.get("created_at", 0)) < cutoff]
+    for job_id in expired:
+        ai_jobs.pop(job_id, None)
 
-# ---------------- DEFAULT ROUTE ----------------
-@app.get("/")
-def home():
-    return {"message": "Eco-loop Campus Backend Running"}
-
-
-# ---------------- PREDICTION ROUTE ----------------
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-
+def predict_image_bytes(image_bytes):
     if model is None:
         return {"error": "Model not loaded"}
 
     try:
-        img = Image.open(file.file).convert("RGB")
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         img = img.resize((224, 224))
         img = np.array(img) / 255.0
         img = np.expand_dims(img, axis=0)
@@ -173,6 +186,102 @@ async def predict(file: UploadFile = File(...)):
 
     except Exception as e:
         return {"error": f"Image processing failed: {str(e)}"}
+
+async def ai_queue_worker():
+    while True:
+        job_id = await ai_queue.get()
+        job = ai_jobs.get(job_id)
+        if not job:
+            ai_queue.task_done()
+            continue
+        job["status"] = "processing"
+        job["updated_at"] = time.time()
+        try:
+            result = await asyncio.to_thread(predict_image_bytes, job["image_bytes"])
+            if result.get("error"):
+                job.update({"status": "failed", "error": result["error"]})
+            else:
+                job.update({"status": "done", "class": result["class"], "confidence": result["confidence"]})
+        except Exception as e:
+            job.update({"status": "failed", "error": f"Image processing failed: {str(e)}"})
+        finally:
+            job.pop("image_bytes", None)
+            job["updated_at"] = time.time()
+            ai_queue.task_done()
+
+def ensure_ai_workers():
+    global ai_worker_tasks
+    running = [task for task in ai_worker_tasks if not task.done()]
+    ai_worker_tasks = running
+    missing = max(0, AI_QUEUE_WORKERS - len(running))
+    for _ in range(missing):
+        ai_worker_tasks.append(asyncio.create_task(ai_queue_worker()))
+
+@app.on_event("startup")
+async def start_ai_workers():
+    ensure_ai_workers()
+
+
+# ---------------- DEFAULT ROUTE ----------------
+@app.get("/")
+def home():
+    return {"message": "Eco-loop Campus Backend Running"}
+
+
+# ---------------- PREDICTION ROUTE ----------------
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    return predict_image_bytes(image_bytes)
+
+@app.post("/predict/jobs")
+async def create_prediction_job(file: UploadFile = File(...)):
+    cleanup_ai_jobs()
+    ensure_ai_workers()
+    if ai_queue.full():
+        return JSONResponse(status_code=429, content={"error": "AI queue is full"})
+
+    job_id = str(uuid.uuid4())
+    now = time.time()
+    ai_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "image_bytes": await file.read(),
+        "created_at": now,
+        "updated_at": now,
+    }
+    position = ai_queue.qsize() + 1
+    await ai_queue.put(job_id)
+    return JSONResponse(status_code=202, content={
+        "job_id": job_id,
+        "status": "queued",
+        "position": position,
+        "poll_url": f"/predict/jobs/{job_id}",
+    })
+
+@app.get("/predict/jobs/{job_id}")
+async def get_prediction_job(job_id: str):
+    cleanup_ai_jobs()
+    job = ai_jobs.get(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "AI job not found"})
+
+    payload = {"job_id": job_id, "status": job["status"]}
+    if job["status"] == "done":
+        payload.update({"class": job["class"], "confidence": job["confidence"]})
+    elif job["status"] == "failed":
+        payload.update({"error": job.get("error", "AI processing failed")})
+    return payload
+
+@app.get("/predict/queue")
+async def get_prediction_queue():
+    cleanup_ai_jobs()
+    counts = {"queued": 0, "processing": 0, "done": 0, "failed": 0}
+    for job in ai_jobs.values():
+        status = job.get("status")
+        if status in counts:
+            counts[status] += 1
+    return {**counts, "max_size": AI_QUEUE_MAX_SIZE, "workers": AI_QUEUE_WORKERS}
 
 
 # ---------------- AI CHATBOT ROUTE ----------------

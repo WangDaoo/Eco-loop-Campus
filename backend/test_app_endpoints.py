@@ -1,4 +1,5 @@
 import io
+import time
 import unittest
 
 import numpy as np
@@ -38,16 +39,39 @@ def make_image_bytes():
     buffer.seek(0)
     return buffer
 
+def post_prediction_job(client, content=None):
+    return client.post(
+        "/predict/jobs",
+        files={"file": ("waste.jpg", content or make_image_bytes(), "image/jpeg")},
+    )
+
+def wait_for_job(client, job_id, expected_statuses=("done", "failed")):
+    deadline = time.time() + 2
+    payload = None
+    while time.time() < deadline:
+        response = client.get(f"/predict/jobs/{job_id}")
+        payload = response.json()
+        if payload.get("status") in expected_statuses:
+            return response
+        time.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish, last payload: {payload}")
+
 
 class AppEndpointTests(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(app.app)
+        self.client_context = TestClient(app.app)
+        self.client = self.client_context.__enter__()
         self.original_model = app.model
         self.original_ask_local_ai = app.ask_local_ai
 
     def tearDown(self):
         app.model = self.original_model
         app.ask_local_ai = self.original_ask_local_ai
+        if hasattr(app, "ai_jobs"):
+            app.ai_jobs.clear()
+        if hasattr(app, "create_ai_queue"):
+            app.ai_queue = app.create_ai_queue()
+        self.client_context.__exit__(None, None, None)
 
     def test_health_endpoint(self):
         response = self.client.get("/")
@@ -86,6 +110,69 @@ class AppEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"class": "plastic", "confidence": 0.91})
+
+    def test_predict_jobs_accepts_image_and_completes(self):
+        app.model = FakeWasteModel()
+
+        response = post_prediction_job(self.client)
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.json()
+        self.assertEqual(payload["status"], "queued")
+        self.assertEqual(payload["position"], 1)
+        self.assertEqual(payload["poll_url"], f"/predict/jobs/{payload['job_id']}")
+
+        result = wait_for_job(self.client, payload["job_id"])
+
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json(), {
+            "job_id": payload["job_id"],
+            "status": "done",
+            "class": "plastic",
+            "confidence": 0.91,
+        })
+
+    def test_predict_job_not_found_returns_404(self):
+        response = self.client.get("/predict/jobs/missing-job")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"error": "AI job not found"})
+
+    def test_predict_jobs_reports_failed_model_result(self):
+        app.model = NaNWasteModel()
+
+        response = post_prediction_job(self.client)
+        payload = response.json()
+        result = wait_for_job(self.client, payload["job_id"], expected_statuses=("failed",))
+
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()["status"], "failed")
+        self.assertIn("Prediction failed", result.json()["error"])
+
+    def test_predict_queue_health_reports_counts(self):
+        app.ai_jobs["queued-job"] = {"status": "queued", "created_at": time.time(), "updated_at": time.time()}
+        app.ai_jobs["processing-job"] = {"status": "processing", "created_at": time.time(), "updated_at": time.time()}
+        app.ai_jobs["done-job"] = {"status": "done", "created_at": time.time(), "updated_at": time.time()}
+        app.ai_jobs["failed-job"] = {"status": "failed", "created_at": time.time(), "updated_at": time.time()}
+
+        response = self.client.get("/predict/queue")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["queued"], 1)
+        self.assertEqual(response.json()["processing"], 1)
+        self.assertEqual(response.json()["done"], 1)
+        self.assertEqual(response.json()["failed"], 1)
+        self.assertEqual(response.json()["max_size"], app.AI_QUEUE_MAX_SIZE)
+        self.assertEqual(response.json()["workers"], app.AI_QUEUE_WORKERS)
+
+    def test_predict_jobs_returns_429_when_queue_full(self):
+        app.ai_queue = app.create_ai_queue(max_size=1)
+        app.ai_queue.put_nowait("existing-job")
+
+        response = post_prediction_job(self.client)
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json(), {"error": "AI queue is full"})
 
     def test_predict_returns_error_for_non_image_file(self):
         app.model = FakeWasteModel()
