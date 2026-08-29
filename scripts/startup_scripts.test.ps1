@@ -18,6 +18,8 @@ $laptopBat = Read-RepoFile 'scripts\start_laptop_server.bat'
 $gitignore = Read-RepoFile '.gitignore'
 
 Assert-Contains $backendBat 'ensure_windows_runtime.ps1' 'start_backend.bat must verify/install runtime dependencies.'
+Assert-Contains $backendBat 'init_local_postgres.ps1' 'start_backend.bat must initialize/check local PostgreSQL before serving.'
+Assert-Contains $backendBat '/api/health/db' 'start_backend.bat must expose the PostgreSQL health check URL.'
 Assert-Contains $backendBat 'run_cloudflared_tunnel.ps1' 'start_backend.bat must open a public Cloudflare tunnel.'
 Assert-Contains $backendBat 'api_public_url.txt' 'start_backend.bat must publish the API tunnel URL for frontend builds.'
 
@@ -39,6 +41,7 @@ Assert-Contains $ensureScript 'cloudflared-windows-amd64.exe' 'ensure script mus
 $tunnelScript = Read-RepoFile 'scripts\run_cloudflared_tunnel.ps1'
 Assert-Contains $tunnelScript 'trycloudflare' 'tunnel script must parse quick tunnel public URLs.'
 Assert-Contains $tunnelScript 'OutFile' 'tunnel script must write the public URL to a file.'
+Assert-Contains $tunnelScript "`$ErrorActionPreference = 'Continue'" 'tunnel script must not fail on cloudflared informational stderr output.'
 
 Assert-Contains $gitignore '.runtime/' '.gitignore must ignore generated public URL runtime files.'
 

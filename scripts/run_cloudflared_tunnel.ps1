@@ -11,7 +11,7 @@ param(
     [string] $CloudflaredPath = (Join-Path $PSScriptRoot 'tools\cloudflared.exe')
 )
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
 if (-not (Test-Path -LiteralPath $CloudflaredPath)) {
     $command = Get-Command 'cloudflared.exe' -ErrorAction SilentlyContinue

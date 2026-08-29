@@ -53,11 +53,21 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo [INFO] Dang kiem tra PostgreSQL local va apply schema neu can...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%BACKEND_DIR%\local_db\init_local_postgres.ps1"
+if errorlevel 1 (
+    echo [ERROR] PostgreSQL local chua san sang.
+    echo [TIP] Kiem tra PostgreSQL service, .runtime\postgres_password.txt, hoac chay backend\local_db\init_local_postgres.ps1 thu cong.
+    pause
+    exit /b 1
+)
+
 echo [INFO] Dang mo API public tunnel...
 start "Eco-loop Campus API Public" powershell -NoExit -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\run_cloudflared_tunnel.ps1" -Name "Eco-loop Campus API" -Url "http://%BACKEND_HOST%:%BACKEND_PORT%" -OutFile "%RUNTIME_DIR%\api_public_url.txt"
 
 echo [INFO] Backend local: http://%BACKEND_HOST%:%BACKEND_PORT%
 echo [INFO] API docs local: http://%BACKEND_HOST%:%BACKEND_PORT%/docs
+echo [INFO] PostgreSQL health: http://%BACKEND_HOST%:%BACKEND_PORT%/api/health/db
 echo [INFO] API public URL se hien trong cua so "Eco-loop Campus API Public".
 echo [INFO] Nhan Ctrl+C de dung server.
 "%VENV_PY%" -m uvicorn app:app --host %BACKEND_HOST% --port %BACKEND_PORT% --workers 1
