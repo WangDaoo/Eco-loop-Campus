@@ -1,32 +1,17 @@
 import { useEffect, useState } from "react";
 import DataTable from "../components/DataTable";
 import Toast from "../components/Toast";
-import { listAvatarPresets, saveAvatarPreset, uploadAvatarPresetImage } from "../services/supabaseStore";
+import { listAvatarPresets, saveAvatarPreset } from "../services/backendAvatarStore";
 
 const initialForm = {
   key: "",
   label: "",
   imageUrl: "",
-  background: "#cbf9e4",
-  tile: "#a8f2ab",
-  accent: "#8bc34a",
-  face: "#2c6e6e",
-  status: "active",
-  sortOrder: 1,
 };
-
-function previewStyle(row) {
-  return {
-    "--avatar-bg": row.background || "#cbf9e4",
-    "--avatar-tile": row.tile || "#a8f2ab",
-    "--avatar-accent": row.accent || "#8bc34a",
-    "--avatar-face": row.face || "#2c6e6e",
-  };
-}
 
 function AvatarPreview({ row, size = "md" }) {
   return (
-    <span className={`eg-avatar-preset-preview is-${size}`} style={previewStyle(row)}>
+    <span className={`eg-avatar-preset-preview is-${size}`}>
       {row.imageUrl ? <img src={row.imageUrl} alt="" /> : <span className="eg-avatar-face" />}
     </span>
   );
@@ -40,6 +25,7 @@ export default function AvatarPresetsPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [toastTone, setToastTone] = useState("success");
+  const [selectedFile, setSelectedFile] = useState(null);
 
   const showToast = (message, tone = "success") => {
     setToastTone(tone);
@@ -55,8 +41,6 @@ export default function AvatarPresetsPage() {
       setItems(response.data);
       setError(response.error);
       setLoading(false);
-      const maxSort = response.data.reduce((max, item) => Math.max(max, Number(item.sortOrder || 0)), 0);
-      setForm(current => ({ ...current, sortOrder: maxSort + 1 }));
     }
     loadData();
     return () => {
@@ -67,23 +51,15 @@ export default function AvatarPresetsPage() {
   const updateForm = updates => setForm(current => ({ ...current, ...updates }));
 
   const resetForm = () => {
-    const maxSort = items.reduce((max, item) => Math.max(max, Number(item.sortOrder || 0)), 0);
-    setForm({ ...initialForm, sortOrder: maxSort + 1 });
+    setForm(initialForm);
+    setSelectedFile(null);
   };
 
-  const handleFile = async event => {
+  const handleFile = event => {
     const file = event.target.files?.[0];
     if (!file) return;
-    setSaving(true);
-    const response = await uploadAvatarPresetImage(file, form.key || form.label || "avatar-presets");
-    setSaving(false);
-    setError(response.error);
-    if (!response.data?.imageUrl) {
-      showToast(response.error?.message || "Chưa upload được ảnh avatar lên máy chủ", "danger");
-      return;
-    }
-    updateForm({ imageUrl: response.data.imageUrl });
-    showToast("Đã upload ảnh avatar");
+    setSelectedFile(file);
+    updateForm({ imageUrl: URL.createObjectURL(file) });
   };
 
   const submitForm = async event => {
@@ -96,20 +72,21 @@ export default function AvatarPresetsPage() {
       showToast("Nhập mã avatar trước khi lưu", "danger");
       return;
     }
-    if (!form.imageUrl) {
+    if (!selectedFile) {
       showToast("Chọn ảnh trước khi lưu", "danger");
       return;
     }
     setSaving(true);
-    const response = await saveAvatarPreset({ ...form, sortOrder: Number(form.sortOrder || 0) });
+    const response = await saveAvatarPreset({ key: form.key, label: form.label, file: selectedFile });
     setSaving(false);
     setError(response.error);
     if (!response.data) {
-      showToast("Chưa lưu được avatar", "danger");
+      showToast(response.error?.message || "Chưa lưu được avatar lên backend", "danger");
       return;
     }
-    setItems(current => [response.data, ...current.filter(item => item.key !== response.data.key)].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)));
-    setForm(current => ({ ...initialForm, sortOrder: Number(current.sortOrder || 0) + 1 }));
+    setItems(current => [response.data, ...current.filter(item => item.key !== response.data.key)].sort((a, b) => a.label.localeCompare(b.label, "vi")));
+    setForm(initialForm);
+    setSelectedFile(null);
     showToast("Đã lưu avatar");
   };
 
@@ -133,7 +110,7 @@ export default function AvatarPresetsPage() {
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải avatar...</section>}
-      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu avatar từ backend PostgreSQL. Kiểm tra backend và DATABASE_URL.</section>}
 
       <section className="eg-command-panel eg-avatar-command">
         <div>

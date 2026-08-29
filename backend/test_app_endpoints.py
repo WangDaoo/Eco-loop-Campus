@@ -101,6 +101,55 @@ class AppEndpointTests(unittest.TestCase):
             "user": "ecoloop_app",
         })
 
+    def test_avatar_presets_endpoint_lists_postgres_rows(self):
+        original_list_avatar_presets = app.list_avatar_presets
+        app.list_avatar_presets = lambda: [
+            {"key": "leaf", "label": "Lá xanh", "imageUrl": "/uploads/avatars/leaf.png"}
+        ]
+
+        try:
+            response = self.client.get("/api/avatar-presets")
+        finally:
+            app.list_avatar_presets = original_list_avatar_presets
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [
+            {"key": "leaf", "label": "Lá xanh", "imageUrl": "/uploads/avatars/leaf.png"}
+        ])
+
+    def test_avatar_presets_endpoint_uploads_image_and_saves_row(self):
+        original_save_avatar_preset = app.save_avatar_preset
+        captured = {}
+
+        def fake_save_avatar_preset(key, label, file_name, content_type, content):
+            captured.update({
+                "key": key,
+                "label": label,
+                "file_name": file_name,
+                "content_type": content_type,
+                "content": content,
+            })
+            return {"key": key, "label": label, "imageUrl": "/uploads/avatars/eco.png"}
+
+        app.save_avatar_preset = fake_save_avatar_preset
+
+        try:
+            response = self.client.post(
+                "/api/avatar-presets",
+                data={"key": "eco", "label": "Eco"},
+                files={"file": ("eco.png", b"png-bytes", "image/png")},
+            )
+        finally:
+            app.save_avatar_preset = original_save_avatar_preset
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"key": "eco", "label": "Eco", "imageUrl": "/uploads/avatars/eco.png"})
+        self.assertEqual(captured["key"], "eco")
+        self.assertEqual(captured["label"], "Eco")
+        self.assertEqual(captured["file_name"], "eco.png")
+        self.assertEqual(captured["content_type"], "image/png")
+        self.assertEqual(captured["content"], b"png-bytes")
+
     def test_parse_cors_origins_defaults_to_wildcard(self):
         self.assertEqual(app.parse_cors_origins(""), ["*"])
         self.assertEqual(app.parse_cors_origins(None), ["*"])

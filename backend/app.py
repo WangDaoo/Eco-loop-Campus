@@ -2,10 +2,13 @@ import asyncio
 import io
 import time
 import uuid
+import re
+import unicodedata
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import tensorflow as tf
 import numpy as np
@@ -102,6 +105,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "model", "mobilenetv2_model.h5")
 PROJECT_DIR = Path(BASE_DIR).parent
 RUNTIME_DATABASE_URL_PATH = PROJECT_DIR / ".runtime" / "DATABASE_URL.txt"
+UPLOADS_DIR = Path(BASE_DIR) / "uploads"
+AVATAR_UPLOADS_DIR = UPLOADS_DIR / "avatars"
+
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 
 def get_windows_short_path(path):
@@ -274,6 +282,130 @@ def check_database_health():
 @app.get("/db/health")
 def db_health():
     return check_database_health()
+
+
+def require_database_url():
+    database_url = get_database_url()
+    if not database_url:
+        raise HTTPException(status_code=503, detail="DATABASE_URL chưa cấu hình")
+    if psycopg is None:
+        raise HTTPException(status_code=503, detail="PostgreSQL driver chưa được cài")
+    return database_url
+
+
+def slugify(value, fallback="avatar"):
+    text = unicodedata.normalize("NFD", str(value or fallback))
+    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
+    text = text.replace("đ", "d").replace("Đ", "D").lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return text[:64] or fallback
+
+
+def safe_upload_file_name(file_name):
+    raw_name = str(file_name or "avatar.png").strip() or "avatar.png"
+    suffix = Path(raw_name).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}:
+        suffix = ".png"
+    stem = slugify(Path(raw_name).stem, "avatar")
+    return f"{stem}{suffix}"
+
+
+def to_avatar_preset(row):
+    key, label, image_url, created_at, updated_at = row
+    return {
+        "key": key,
+        "label": label,
+        "imageUrl": image_url,
+        "createdAt": created_at.isoformat() if created_at else None,
+        "updatedAt": updated_at.isoformat() if updated_at else None,
+    }
+
+
+def list_avatar_presets():
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select key, label, image_url, created_at, updated_at
+                from avatar_presets
+                order by label asc, key asc
+                """
+            )
+            return [to_avatar_preset(row) for row in cursor.fetchall()]
+
+
+def save_avatar_preset(key, label, file_name, content_type, content):
+    preset_key = slugify(key or label, "avatar")
+    preset_label = str(label or "").strip()
+    if not preset_key or not preset_label:
+        raise HTTPException(status_code=400, detail="Thiếu mã avatar hoặc tên avatar")
+    if not str(content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="File avatar phải là ảnh")
+    if not content:
+        raise HTTPException(status_code=400, detail="File avatar trống")
+
+    AVATAR_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    preset_dir = AVATAR_UPLOADS_DIR / preset_key
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    storage_name = f"{int(time.time() * 1000)}-{safe_upload_file_name(file_name)}"
+    storage_path = preset_dir / storage_name
+    storage_path.write_bytes(content)
+    image_url = f"/uploads/avatars/{preset_key}/{storage_name}"
+
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                insert into avatar_presets (key, label, image_url, updated_at)
+                values (%s, %s, %s, now())
+                on conflict (key) do update
+                set label = excluded.label,
+                    image_url = excluded.image_url,
+                    updated_at = now()
+                returning key, label, image_url, created_at, updated_at
+                """,
+                (preset_key, preset_label, image_url),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    return to_avatar_preset(row)
+
+
+def delete_avatar_preset(key):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "delete from avatar_presets where key = %s returning key",
+                (key,),
+            )
+            deleted = cursor.fetchone()
+        connection.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Không tìm thấy avatar")
+    return {"ok": True}
+
+
+@app.get("/api/avatar-presets")
+def avatar_presets_index():
+    return list_avatar_presets()
+
+
+@app.post("/api/avatar-presets")
+async def avatar_presets_create(
+    key: str = Form(...),
+    label: str = Form(...),
+    file: UploadFile = File(...),
+):
+    content = await file.read()
+    return save_avatar_preset(key, label, file.filename, file.content_type, content)
+
+
+@app.delete("/api/avatar-presets/{key}")
+def avatar_presets_delete(key: str):
+    return delete_avatar_preset(key)
 
 
 # ---------------- PREDICTION ROUTE ----------------
