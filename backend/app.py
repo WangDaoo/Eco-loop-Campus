@@ -594,6 +594,237 @@ def users_update_status(user_id: str, request: UserStatusRequest, authorization:
         raise HTTPException(status_code=error.status_code, detail=error.detail)
 
 
+CAMEL_ALIASES = {
+    "avatar_key": "avatarKey",
+    "avatar_url": "avatarUrl",
+    "bin_group": "binGroup",
+    "qr_code": "qrCode",
+    "map_x": "mapX",
+    "map_y": "mapY",
+    "point_per_unit": "pointPerUnit",
+    "recycle_method": "recycleMethod",
+    "cost_points": "costPoints",
+    "reward_points": "rewardPoints",
+    "action_label": "actionLabel",
+    "class_keys": "classKeys",
+    "model_name": "modelName",
+    "class_count": "classCount",
+    "user_id": "userId",
+    "bin_id": "binId",
+    "reward_id": "rewardId",
+    "reward_label": "rewardLabel",
+    "waste_type_id": "wasteTypeId",
+    "qr_token": "qrToken",
+    "qr_signature": "qrSignature",
+    "expired_at": "expiredAt",
+    "verified_by": "verifiedBy",
+    "verified_at": "verifiedAt",
+    "actual_quantity": "actualQuantity",
+    "volunteer_note": "volunteerNote",
+    "prediction_id": "predictionId",
+    "admin_note": "adminNote",
+    "image_name": "imageName",
+    "image_url": "imageUrl",
+    "thumbnail_url": "thumbnailUrl",
+    "created_at": "createdAt",
+    "updated_at": "updatedAt",
+    "requested_at": "requestedAt",
+    "reviewed_at": "reviewedAt",
+    "resolved_at": "resolvedAt",
+    "scanned_by": "scannedBy",
+    "station_id": "stationId",
+    "scanned_at": "scannedAt",
+    "image_hash": "imageHash",
+    "captured_at": "capturedAt",
+    "verification_code": "verificationCode",
+}
+
+ADMIN_RESOURCES = {
+    "users": {
+        "table": "users",
+        "columns": ["id", "name", "email", "role", "group", "points", "status", "avatar_key", "avatar_url", "created_at", "updated_at"],
+        "writable": ["name", "email", "role", "group", "points", "status", "avatar_key", "avatar_url"],
+        "order": "created_at desc",
+    },
+    "bins": {
+        "table": "bins",
+        "columns": ["id", "name", "bin_group", "location", "building", "floor", "qr_code", "status", "capacity", "latitude", "longitude", "map_x", "map_y", "created_at", "updated_at"],
+        "writable": ["id", "name", "bin_group", "location", "building", "floor", "qr_code", "status", "capacity", "latitude", "longitude", "map_x", "map_y"],
+        "order": "name asc",
+    },
+    "waste-types": {
+        "table": "waste_types",
+        "columns": ["id", "name", "unit", "point_per_unit", "recycle_method", "status", "created_at", "updated_at"],
+        "writable": ["id", "name", "unit", "point_per_unit", "recycle_method", "status"],
+        "order": "name asc",
+    },
+    "rewards": {
+        "table": "rewards",
+        "columns": ["id", "title", "description", "cost_points", "status", "color", "created_at", "updated_at"],
+        "writable": ["id", "title", "description", "cost_points", "status", "color"],
+        "order": "cost_points asc",
+    },
+    "missions": {
+        "table": "missions",
+        "columns": ["id", "title", "description", "target", "reward_points", "action_label", "status", "created_at", "updated_at"],
+        "writable": ["id", "title", "description", "target", "reward_points", "action_label", "status"],
+        "order": "created_at desc",
+    },
+    "point-rules": {
+        "table": "point_rules",
+        "columns": ["id", "label", "class_keys", "bin_group", "points", "enabled"],
+        "writable": ["id", "label", "class_keys", "bin_group", "points", "enabled"],
+        "order": "label asc",
+    },
+    "settings": {
+        "table": "settings",
+        "columns": ["id", "threshold", "model_name", "class_count", "updated_at"],
+        "writable": ["id", "threshold", "model_name", "class_count"],
+        "order": "id asc",
+    },
+    "feedback": {
+        "table": "feedback",
+        "columns": ["id", "user_id", "user_name", "category", "message", "status", "priority", "bin_id", "admin_note", "resolved_at", "timestamp", "created_at"],
+        "writable": ["id", "user_id", "user_name", "category", "message", "status", "priority", "bin_id", "admin_note", "resolved_at"],
+        "order": "timestamp desc",
+    },
+    "predictions": {
+        "table": "predictions",
+        "columns": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url"],
+        "writable": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url"],
+        "order": "timestamp desc",
+    },
+    "reward-redemptions": {
+        "table": "reward_redemptions",
+        "columns": ["id", "user_id", "reward_id", "reward_label", "cost_points", "status", "requested_at", "reviewed_at", "admin_note"],
+        "writable": ["id", "user_id", "reward_id", "reward_label", "cost_points", "status", "reviewed_at", "admin_note"],
+        "order": "requested_at desc",
+    },
+    "recycling-submissions": {
+        "table": "recycling_submissions",
+        "columns": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "created_at", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
+        "writable": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
+        "order": "created_at desc",
+    },
+    "qr-scan-logs": {
+        "table": "qr_scan_logs",
+        "columns": ["id", "qr_token", "scanned_by", "station_id", "scanned_at", "result", "note"],
+        "writable": ["id", "qr_token", "scanned_by", "station_id", "result", "note"],
+        "order": "scanned_at desc",
+    },
+    "proof-images": {
+        "table": "proof_images",
+        "columns": ["id", "submission_id", "image_url", "image_hash", "captured_at", "verification_code", "status", "note"],
+        "writable": ["id", "submission_id", "image_url", "image_hash", "verification_code", "status", "note"],
+        "order": "captured_at desc",
+    },
+}
+
+def admin_resource_config(resource):
+    config = ADMIN_RESOURCES.get(resource)
+    if not config:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm dữ liệu")
+    return config
+
+def quote_identifier(identifier):
+    return '"' + str(identifier).replace('"', '""') + '"'
+
+def json_value(value):
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+def to_camel_field(column):
+    return CAMEL_ALIASES.get(column, column)
+
+def payload_value(payload, column):
+    alias = to_camel_field(column)
+    if alias in payload:
+        return payload[alias]
+    return payload.get(column)
+
+def admin_row_to_json(columns, row):
+    return {to_camel_field(column): json_value(value) for column, value in zip(columns, row)}
+
+def select_admin_columns(config):
+    return ", ".join(quote_identifier(column) for column in config["columns"])
+
+def list_admin_resource(resource):
+    config = admin_resource_config(resource)
+    database_url = require_database_url()
+    query = f"select {select_admin_columns(config)} from {quote_identifier(config['table'])} order by {config['order']}"
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            return [admin_row_to_json(config["columns"], row) for row in cursor.fetchall()]
+
+def generated_admin_id(payload):
+    base = payload.get("id") or payload.get("key") or payload.get("name") or payload.get("title") or payload.get("label") or "item"
+    return slugify(base, "item") or f"item-{uuid.uuid4().hex[:8]}"
+
+def save_admin_resource(resource, payload):
+    config = admin_resource_config(resource)
+    writable = config.get("writable", [])
+    if "id" in writable and not payload_value(payload, "id"):
+        payload = {**payload, "id": generated_admin_id(payload)}
+    columns = [column for column in writable if payload_value(payload, column) is not None]
+    if not columns:
+        raise HTTPException(status_code=400, detail="Không có dữ liệu để lưu")
+
+    placeholders = ", ".join(["%s"] * len(columns))
+    column_sql = ", ".join(quote_identifier(column) for column in columns)
+    values = [payload_value(payload, column) for column in columns]
+    update_columns = [column for column in columns if column != "id"]
+    update_sql = ", ".join(f"{quote_identifier(column)} = excluded.{quote_identifier(column)}" for column in update_columns)
+    if "updated_at" in config["columns"]:
+        update_sql = f"{update_sql}, updated_at = now()" if update_sql else "updated_at = now()"
+    conflict_sql = f"do update set {update_sql}" if update_sql else "do nothing"
+    query = f"""
+        insert into {quote_identifier(config['table'])} ({column_sql})
+        values ({placeholders})
+        on conflict (id) {conflict_sql}
+        returning {select_admin_columns(config)}
+    """
+
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, values)
+            row = cursor.fetchone()
+        connection.commit()
+    return admin_row_to_json(config["columns"], row)
+
+def delete_admin_resource(resource, item_id):
+    config = admin_resource_config(resource)
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"delete from {quote_identifier(config['table'])} where id = %s returning id",
+                (item_id,),
+            )
+            deleted = cursor.fetchone()
+        connection.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu")
+    return {"ok": True}
+
+@app.get("/api/admin/{resource}")
+def admin_list_resource(resource: str, authorization: str | None = Header(default=None)):
+    require_admin_user(authorization)
+    return {"data": list_admin_resource(resource)}
+
+@app.post("/api/admin/{resource}")
+def admin_save_resource(resource: str, payload: dict, authorization: str | None = Header(default=None)):
+    require_admin_user(authorization)
+    return {"data": save_admin_resource(resource, payload)}
+
+@app.delete("/api/admin/{resource}/{item_id}")
+def admin_delete_resource(resource: str, item_id: str, authorization: str | None = Header(default=None)):
+    require_admin_user(authorization)
+    return delete_admin_resource(resource, item_id)
+
+
 def slugify(value, fallback="avatar"):
     text = unicodedata.normalize("NFD", str(value or fallback))
     text = "".join(char for char in text if unicodedata.category(char) != "Mn")
