@@ -79,6 +79,28 @@ class AppEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"message": "Eco-loop Campus Backend Running"})
 
+    def test_db_health_endpoint_reports_configured_database(self):
+        original_check_database_health = app.check_database_health
+        app.check_database_health = lambda: {
+            "configured": True,
+            "status": "ok",
+            "database": "ecoloop_campus",
+            "user": "ecoloop_app",
+        }
+
+        try:
+            response = self.client.get("/db/health")
+        finally:
+            app.check_database_health = original_check_database_health
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "configured": True,
+            "status": "ok",
+            "database": "ecoloop_campus",
+            "user": "ecoloop_app",
+        })
+
     def test_parse_cors_origins_defaults_to_wildcard(self):
         self.assertEqual(app.parse_cors_origins(""), ["*"])
         self.assertEqual(app.parse_cors_origins(None), ["*"])

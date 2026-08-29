@@ -13,6 +13,12 @@ from PIL import Image
 import os
 import requests
 import h5py
+from pathlib import Path
+
+try:
+    import psycopg
+except Exception:
+    psycopg = None
 
 app = FastAPI()
 
@@ -94,6 +100,8 @@ User question: {message}
 # ---------------- MODEL LOADING ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "model", "mobilenetv2_model.h5")
+PROJECT_DIR = Path(BASE_DIR).parent
+RUNTIME_DATABASE_URL_PATH = PROJECT_DIR / ".runtime" / "DATABASE_URL.txt"
 
 
 def get_windows_short_path(path):
@@ -226,6 +234,46 @@ async def start_ai_workers():
 @app.get("/")
 def home():
     return {"message": "Eco-loop Campus Backend Running"}
+
+
+def get_database_url():
+    configured = os.getenv("DATABASE_URL", "").strip()
+    if configured:
+        return configured
+    if RUNTIME_DATABASE_URL_PATH.exists():
+        return RUNTIME_DATABASE_URL_PATH.read_text(encoding="utf-8").strip()
+    return ""
+
+
+def check_database_health():
+    database_url = get_database_url()
+    if not database_url:
+        return {"configured": False, "status": "missing"}
+    if psycopg is None:
+        return {"configured": True, "status": "missing_driver"}
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=3) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select current_database(), current_user")
+                database, user = cursor.fetchone()
+        return {
+            "configured": True,
+            "status": "ok",
+            "database": database,
+            "user": user,
+        }
+    except Exception as error:
+        return {
+            "configured": True,
+            "status": "error",
+            "error": str(error),
+        }
+
+
+@app.get("/db/health")
+def db_health():
+    return check_database_health()
 
 
 # ---------------- PREDICTION ROUTE ----------------
