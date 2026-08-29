@@ -101,6 +101,23 @@ class AppEndpointTests(unittest.TestCase):
             "user": "ecoloop_app",
         })
 
+    def test_api_db_health_alias_reports_configured_database(self):
+        original_check_database_health = app.check_database_health
+        app.check_database_health = lambda: {
+            "configured": True,
+            "status": "ok",
+            "database": "ecoloop_campus",
+            "user": "ecoloop_app",
+        }
+
+        try:
+            response = self.client.get("/api/health/db")
+        finally:
+            app.check_database_health = original_check_database_health
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
     def test_avatar_presets_endpoint_lists_postgres_rows(self):
         original_list_avatar_presets = app.list_avatar_presets
         app.list_avatar_presets = lambda: [

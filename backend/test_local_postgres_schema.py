@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 SCHEMA_PATH = Path(__file__).parent / "local_db" / "schema.sql"
+BOOTSTRAP_ADMIN_PATH = Path(__file__).parent / "local_db" / "bootstrap_admin.sql"
 
 
 def test_local_postgres_schema_is_standalone():
@@ -61,3 +62,14 @@ def test_local_postgres_schema_uses_backend_supplied_actor_ids():
     assert "p_user_id text" in sql
     assert "p_volunteer_id text" in sql
     assert "p_scanned_by text" in sql
+
+def test_local_postgres_has_bootstrap_admin_script_without_demo_rows():
+    sql = BOOTSTRAP_ADMIN_PATH.read_text(encoding="utf-8").lower()
+
+    assert "insert into users" in sql
+    assert "role" in sql
+    assert "admin" in sql
+    assert "bins" not in sql
+    assert "waste_types" not in sql
+    assert "rewards" not in sql
+    assert "missions" not in sql

@@ -1,11 +1,16 @@
 import asyncio
+import base64
+import hashlib
+import hmac
 import io
+import json
+import secrets
 import time
 import uuid
 import re
 import unicodedata
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -56,6 +61,24 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     message: str
 
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: str = "student"
+    group: str | None = None
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class ChangePasswordRequest(BaseModel):
+    currentPassword: str
+    newPassword: str
+
+class UserStatusRequest(BaseModel):
+    status: str
+
 
 # ---------------- ENV CHECK ----------------
 IS_RENDER = os.getenv("RENDER") is not None
@@ -105,6 +128,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "model", "mobilenetv2_model.h5")
 PROJECT_DIR = Path(BASE_DIR).parent
 RUNTIME_DATABASE_URL_PATH = PROJECT_DIR / ".runtime" / "DATABASE_URL.txt"
+RUNTIME_AUTH_SECRET_PATH = PROJECT_DIR / ".runtime" / "AUTH_SECRET.txt"
 UPLOADS_DIR = Path(BASE_DIR) / "uploads"
 AVATAR_UPLOADS_DIR = UPLOADS_DIR / "avatars"
 
@@ -284,6 +308,11 @@ def db_health():
     return check_database_health()
 
 
+@app.get("/api/health/db")
+def api_db_health():
+    return check_database_health()
+
+
 def require_database_url():
     database_url = get_database_url()
     if not database_url:
@@ -291,6 +320,278 @@ def require_database_url():
     if psycopg is None:
         raise HTTPException(status_code=503, detail="PostgreSQL driver chưa được cài")
     return database_url
+
+class AuthError(Exception):
+    def __init__(self, status_code, detail):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
+
+def get_auth_secret():
+    configured = os.getenv("AUTH_SECRET", "").strip()
+    if configured:
+        return configured.encode("utf-8")
+    if RUNTIME_AUTH_SECRET_PATH.exists():
+        return RUNTIME_AUTH_SECRET_PATH.read_text(encoding="utf-8").strip().encode("utf-8")
+    RUNTIME_AUTH_SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    secret = secrets.token_urlsafe(48)
+    RUNTIME_AUTH_SECRET_PATH.write_text(secret, encoding="utf-8")
+    return secret.encode("utf-8")
+
+def b64url_encode(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+def b64url_decode(value):
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+def hash_password(password):
+    cleaned = str(password or "")
+    salt = secrets.token_hex(16)
+    iterations = 120000
+    digest = hashlib.pbkdf2_hmac("sha256", cleaned.encode("utf-8"), salt.encode("ascii"), iterations)
+    return f"pbkdf2_sha256${iterations}${salt}${b64url_encode(digest)}"
+
+def verify_password(password, password_hash):
+    try:
+        algorithm, iterations, salt, digest = str(password_hash or "").split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        expected = hashlib.pbkdf2_hmac(
+            "sha256",
+            str(password or "").encode("utf-8"),
+            salt.encode("ascii"),
+            int(iterations),
+        )
+        return hmac.compare_digest(b64url_encode(expected), digest)
+    except Exception:
+        return False
+
+def create_auth_token(payload, ttl_seconds=7 * 24 * 60 * 60):
+    now = int(time.time())
+    token_payload = {**payload, "iat": now, "exp": now + ttl_seconds}
+    header = {"alg": "HS256", "typ": "JWT"}
+    head = b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
+    body = b64url_encode(json.dumps(token_payload, separators=(",", ":")).encode("utf-8"))
+    signature = hmac.new(get_auth_secret(), f"{head}.{body}".encode("ascii"), hashlib.sha256).digest()
+    return f"{head}.{body}.{b64url_encode(signature)}"
+
+def verify_auth_token(token):
+    try:
+        head, body, signature = str(token or "").split(".", 2)
+        expected = hmac.new(get_auth_secret(), f"{head}.{body}".encode("ascii"), hashlib.sha256).digest()
+        if not hmac.compare_digest(b64url_encode(expected), signature):
+            return None
+        payload = json.loads(b64url_decode(body).decode("utf-8"))
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None
+
+def clean_email(email):
+    return str(email or "").strip().lower()
+
+def validate_password(password):
+    if len(str(password or "")) < 6:
+        raise AuthError(400, "Mật khẩu phải có ít nhất 6 ký tự")
+
+def to_user_profile(row):
+    (
+        user_id,
+        name,
+        email,
+        role,
+        group_name,
+        points,
+        status,
+        avatar_key,
+        avatar_url,
+        created_at,
+        updated_at,
+    ) = row
+    return {
+        "id": user_id,
+        "name": name,
+        "email": email,
+        "role": role,
+        "group": group_name,
+        "points": points or 0,
+        "status": status,
+        "avatarKey": avatar_key,
+        "avatarUrl": avatar_url,
+        "createdAt": created_at.isoformat() if created_at else None,
+        "updatedAt": updated_at.isoformat() if updated_at else None,
+    }
+
+USER_SELECT = """
+select id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+from users
+"""
+
+def get_user_account(user_id):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(USER_SELECT + " where id = %s", (user_id,))
+            row = cursor.fetchone()
+    if not row:
+        raise AuthError(404, "Không tìm thấy tài khoản")
+    return to_user_profile(row)
+
+def register_user_account(payload):
+    name = str(payload.get("name") or "").strip()
+    email = clean_email(payload.get("email"))
+    password = payload.get("password")
+    role = str(payload.get("role") or "student").strip().lower()
+    group_name = str(payload.get("group") or "").strip() or None
+    if not name or not email:
+        raise AuthError(400, "Thiếu tên hoặc email")
+    if role not in {"student", "volunteer"}:
+        raise AuthError(400, "Vai trò đăng ký không hợp lệ")
+    validate_password(password)
+
+    status = "pending" if role == "volunteer" else "active"
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select 1 from users where lower(email) = lower(%s)", (email,))
+            if cursor.fetchone():
+                raise AuthError(409, "Email đã tồn tại")
+            cursor.execute(
+                """
+                insert into users (id, name, email, password_hash, role, "group", status, points, updated_at)
+                values (%s, %s, %s, %s, %s, %s, %s, 0, now())
+                returning id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                """,
+                (str(uuid.uuid4()), name, email, hash_password(password), role, group_name, status),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    return to_user_profile(row)
+
+def login_user_account(email, password):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select id, name, email, password_hash, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                from users
+                where lower(email) = lower(%s)
+                """,
+                (clean_email(email),),
+            )
+            row = cursor.fetchone()
+    if not row or not verify_password(password, row[3]):
+        raise AuthError(401, "Email hoặc mật khẩu không đúng")
+    status = row[7]
+    if status == "pending":
+        raise AuthError(403, "Tài khoản tình nguyện viên đang chờ duyệt")
+    if status != "active":
+        raise AuthError(403, "Tài khoản không được phép đăng nhập")
+    return to_user_profile((row[0], row[1], row[2], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11]))
+
+def change_user_password(user_id, current_password, new_password):
+    validate_password(new_password)
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select password_hash from users where id = %s", (user_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise AuthError(404, "Không tìm thấy tài khoản")
+            if not verify_password(current_password, row[0]):
+                raise AuthError(400, "Mật khẩu hiện tại không đúng")
+            cursor.execute(
+                "update users set password_hash = %s, updated_at = now() where id = %s",
+                (hash_password(new_password), user_id),
+            )
+        connection.commit()
+    return {"ok": True}
+
+def update_user_account_status(user_id, status):
+    cleaned = str(status or "").strip().lower()
+    if cleaned not in {"active", "locked", "pending", "rejected"}:
+        raise AuthError(400, "Trạng thái tài khoản không hợp lệ")
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                update users set status = %s, updated_at = now()
+                where id = %s
+                returning id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                """,
+                (cleaned, user_id),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    if not row:
+        raise AuthError(404, "Không tìm thấy tài khoản")
+    return to_user_profile(row)
+
+def raise_auth_error(error):
+    if isinstance(error, AuthError):
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
+    raise error
+
+def current_user_from_authorization(authorization):
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Thiếu token đăng nhập")
+    payload = verify_auth_token(authorization.split(" ", 1)[1])
+    if not payload or not payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Token đăng nhập không hợp lệ")
+    try:
+        return get_user_account(payload["sub"])
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
+
+def require_admin_user(authorization):
+    user = current_user_from_authorization(authorization)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Chỉ admin được thực hiện thao tác này")
+    return user
+
+@app.post("/api/auth/register", status_code=201)
+def auth_register(request: RegisterRequest):
+    try:
+        return {"user": register_user_account(request.dict())}
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
+
+@app.post("/api/auth/login")
+def auth_login(request: LoginRequest):
+    try:
+        user = login_user_account(request.email, request.password)
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
+    token = create_auth_token({"sub": user["id"], "role": user["role"]})
+    return {"user": user, "token": token, "tokenType": "Bearer"}
+
+@app.get("/api/auth/me")
+def auth_me(authorization: str | None = Header(default=None)):
+    return {"user": current_user_from_authorization(authorization)}
+
+@app.post("/api/auth/change-password")
+def auth_change_password(request: ChangePasswordRequest, authorization: str | None = Header(default=None)):
+    user = current_user_from_authorization(authorization)
+    try:
+        return change_user_password(user["id"], request.currentPassword, request.newPassword)
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
+
+@app.post("/api/auth/logout")
+def auth_logout():
+    return {"ok": True}
+
+@app.patch("/api/users/{user_id}/status")
+def users_update_status(user_id: str, request: UserStatusRequest, authorization: str | None = Header(default=None)):
+    require_admin_user(authorization)
+    try:
+        return {"user": update_user_account_status(user_id, request.status)}
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
 
 
 def slugify(value, fallback="avatar"):
