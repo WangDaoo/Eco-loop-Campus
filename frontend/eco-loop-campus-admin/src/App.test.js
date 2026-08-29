@@ -4,11 +4,15 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 process.env.REACT_APP_SUPABASE_URL = "https://school.supabase.co";
 delete process.env.REACT_APP_SUPABASE_ANON_KEY;
 process.env.REACT_APP_SUPABASE_PUBLISHABLE_KEY = "publishable-key";
+process.env.REACT_APP_API_URL = "http://127.0.0.1:8000";
 
 let App;
 let mockAuthUser = null;
 let mockSupabaseFailure = false;
 let mockSupabaseUpdateFailure = false;
+let mockBackendLoginError = null;
+let mockBackendLogoutError = null;
+let mockBackendSessionError = null;
 let mockTables = {};
 
 const mockSupabaseFrom = jest.fn();
@@ -19,6 +23,118 @@ const mockStorageFrom = jest.fn();
 const mockStorageUpload = jest.fn();
 const mockStorageGetPublicUrl = jest.fn();
 let createdSupabaseClientArgs = [];
+
+const resourceTables = {
+  users: "users",
+  bins: "bins",
+  predictions: "predictions",
+  "point-rules": "point_rules",
+  "point-history": "point_history",
+  feedback: "feedback",
+  rewards: "rewards",
+  "reward-redemptions": "reward_redemptions",
+  "recycling-submissions": "recycling_submissions",
+  "proof-images": "proof_images",
+  "waste-types": "waste_types",
+  settings: "settings",
+};
+
+function jsonResponse(payload, status = 200) {
+  return Promise.resolve({
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.resolve(payload),
+  });
+}
+
+function readRequestBody(init = {}) {
+  if (!init.body || init.body instanceof FormData) return {};
+  try {
+    return JSON.parse(init.body);
+  } catch {
+    return {};
+  }
+}
+
+function backendUserFromAuth() {
+  if (!mockAuthUser) return null;
+  const authEmail = String(mockAuthUser.email || "").trim().toLowerCase();
+  return (mockTables.users || []).find(user => (
+    user.id === mockAuthUser.id ||
+    String(user.email || "").trim().toLowerCase() === authEmail
+  )) || mockAuthUser;
+}
+
+function upsertBackendRow(tableName, row) {
+  const rows = mockTables[tableName] || [];
+  const key = tableName === "avatar_presets" ? "key" : "id";
+  mockTables[tableName] = [row, ...rows.filter(item => item[key] !== row[key])];
+  return row;
+}
+
+function recordBackendWrite(tableName, payload) {
+  const rows = Array.isArray(payload) ? payload : [payload];
+  if (tableName === "point_history") {
+    const inserted = rows.map((row, index) => ({ id: row.id || `POINT-${Date.now()}-${index}`, ...row }));
+    mockSupabaseInsert(tableName, inserted);
+    mockTables[tableName] = [...(mockTables[tableName] || []), ...inserted];
+    return Array.isArray(payload) ? inserted : inserted[0];
+  }
+  rows.forEach(row => {
+    const key = tableName === "avatar_presets" ? "key" : "id";
+    const exists = (mockTables[tableName] || []).some(item => item[key] === row[key]);
+    if (exists) mockSupabaseUpdate(tableName, row);
+    mockSupabaseUpsert(row);
+    upsertBackendRow(tableName, row);
+  });
+  return Array.isArray(payload) ? rows : rows[0];
+}
+
+function mockBackendFetch(rawUrl, init = {}) {
+  const url = new URL(String(rawUrl), "http://127.0.0.1:8000");
+  const path = url.pathname;
+  const method = String(init.method || "GET").toUpperCase();
+  if (path === "/api/auth/me") {
+    if (mockBackendSessionError) return jsonResponse({ detail: mockBackendSessionError.message }, 401);
+    const user = backendUserFromAuth();
+    return user ? jsonResponse({ user }) : jsonResponse({ detail: "Thiếu token đăng nhập" }, 401);
+  }
+  if (path === "/api/auth/login" && method === "POST") {
+    if (mockBackendLoginError) return jsonResponse({ detail: mockBackendLoginError.message }, 401);
+    const body = readRequestBody(init);
+    const loginEmail = String(body.email || "").trim().toLowerCase();
+    const user = (mockTables.users || []).find(item => String(item.email || "").trim().toLowerCase() === loginEmail);
+    if (!user) return jsonResponse({ detail: "Invalid login credentials" }, 401);
+    mockAuthUser = { id: user.id, email: user.email };
+    return jsonResponse({ user, token: "test-admin-token", tokenType: "Bearer" });
+  }
+  if (path === "/api/auth/logout") {
+    if (mockBackendLogoutError) return jsonResponse({ detail: mockBackendLogoutError.message }, 500);
+    return jsonResponse({ ok: true });
+  }
+  if (path.startsWith("/api/users/") && path.endsWith("/status") && method === "PATCH") {
+    const id = decodeURIComponent(path.split("/")[3]);
+    const body = readRequestBody(init);
+    mockSupabaseUpdate("users", { status: body.status });
+    if (mockSupabaseFailure || mockSupabaseUpdateFailure) return jsonResponse({ detail: "permission-denied" }, 403);
+    mockTables.users = (mockTables.users || []).map(user => user.id === id ? { ...user, status: body.status } : user);
+    return jsonResponse({ user: (mockTables.users || []).find(user => user.id === id) });
+  }
+  if (path.startsWith("/api/admin/")) {
+    const resource = decodeURIComponent(path.replace("/api/admin/", ""));
+    const tableName = resourceTables[resource];
+    if (!tableName) return jsonResponse({ detail: "Không tìm thấy nhóm dữ liệu" }, 404);
+    if (mockSupabaseFailure || mockSupabaseUpdateFailure) return jsonResponse({ detail: "permission-denied" }, 403);
+    if (method === "GET") return jsonResponse({ data: mockTables[tableName] || [] });
+    if (method === "POST") return jsonResponse({ data: recordBackendWrite(tableName, readRequestBody(init)) });
+  }
+  if (path === "/api/uploads/predictions" && method === "POST") {
+    return jsonResponse({ data: { imageName: "paper.jpg", imageUrl: "/uploads/predictions/paper.jpg", thumbnailUrl: "" } }, 201);
+  }
+  if (path === "/api/avatar-presets" && method === "GET") return jsonResponse(mockTables.avatar_presets || []);
+  if (path === "/api/avatar-presets" && method === "POST") return jsonResponse({ key: "avatar-test", label: "Avatar test", imageUrl: "/uploads/avatars/avatar-test.png" });
+  return jsonResponse({ detail: "Not Found" }, 404);
+}
 
 const seedSupabase = () => {
   mockTables = {
@@ -187,10 +303,14 @@ beforeAll(() => {
 
 beforeEach(() => {
   localStorage.clear();
+  localStorage.setItem("ecoloop_admin_token", "test-admin-token");
   window.location.hash = "";
   mockAuthUser = { id: "AD001", email: "admin@school.edu.vn" };
   mockSupabaseFailure = false;
   mockSupabaseUpdateFailure = false;
+  mockBackendLoginError = null;
+  mockBackendLogoutError = null;
+  mockBackendSessionError = null;
   seedSupabase();
   jest.clearAllMocks();
   mockSupabaseClient.auth.getSession.mockImplementation(() => Promise.resolve({ data: { session: mockAuthUser ? { user: mockAuthUser } : null }, error: null }));
@@ -202,15 +322,16 @@ beforeEach(() => {
   mockStorageUpload.mockResolvedValue({ data: { path: "ai-reviews/2026-08-02/paper.jpg" }, error: null });
   mockStorageGetPublicUrl.mockReturnValue({ data: { publicUrl: "https://school.supabase.co/storage/v1/object/public/prediction-images/ai-reviews/2026-08-02/paper.jpg" } });
   require("axios").get.mockResolvedValue({ data: { queued: 0, processing: 0, done: 0, failed: 0 } });
+  global.fetch = jest.fn(mockBackendFetch);
 });
 
-test("uses CRA Supabase publishable key env", () => {
-  expect(createdSupabaseClientArgs).toEqual(["https://school.supabase.co", "publishable-key"]);
+test("uses backend API URL env for PostgreSQL runtime", () => {
+  expect(process.env.REACT_APP_API_URL).toBe("http://127.0.0.1:8000");
 });
 
-test("Supabase store list functions read configured tables with select star", async () => {
+test("backend store list functions read configured API resources", async () => {
   const store = require("./admin/services/supabaseStore");
-  mockSupabaseFrom.mockClear();
+  global.fetch.mockClear();
 
   await store.listUsers();
   await store.listBins();
@@ -221,31 +342,22 @@ test("Supabase store list functions read configured tables with select star", as
   await store.listRewardRedemptions();
   await store.getModelSettings();
 
-  const entries = mockSupabaseFrom.mock.calls.map(([tableName], index) => ({
-    tableName,
-    query: mockSupabaseFrom.mock.results[index].value,
-  }));
-  expect(entries.map(item => item.tableName)).toEqual(expect.arrayContaining([
-    "users",
-    "bins",
-    "predictions",
-    "feedback",
-    "point_rules",
-    "point_history",
-    "reward_redemptions",
-    "settings",
+  const urls = global.fetch.mock.calls.map(([url]) => String(url));
+  expect(urls).toEqual(expect.arrayContaining([
+    "http://127.0.0.1:8000/api/admin/users",
+    "http://127.0.0.1:8000/api/admin/bins",
+    "http://127.0.0.1:8000/api/admin/predictions",
+    "http://127.0.0.1:8000/api/admin/feedback",
+    "http://127.0.0.1:8000/api/admin/point-rules",
+    "http://127.0.0.1:8000/api/admin/point-history",
+    "http://127.0.0.1:8000/api/admin/reward-redemptions",
+    "http://127.0.0.1:8000/api/admin/settings",
   ]));
-  ["users", "bins", "predictions", "feedback", "point_rules", "point_history", "reward_redemptions", "settings"].forEach(tableName => {
-    expect(entries.find(item => item.tableName === tableName).query.select).toHaveBeenCalledWith("*");
-  });
-  const settingsQuery = entries.find(item => item.tableName === "settings").query;
-  expect(settingsQuery.eq).toHaveBeenCalledWith("id", "model");
-  expect(settingsQuery.maybeSingle).toHaveBeenCalled();
 });
 
-test("Supabase store save and update functions use table-specific snake_case payloads", async () => {
+test("backend store save and update functions use API payloads with bearer auth", async () => {
   const store = require("./admin/services/supabaseStore");
-  mockSupabaseFrom.mockClear();
+  global.fetch.mockClear();
 
   await store.saveUser({ id: "SV002", name: "Trần Hoàng Nam", email: "nam@school.edu.vn", role: "student", group: "CNTT K19", points: "7", status: "active", createdAt: "2026-07-07T08:00:00.000Z" });
   await store.saveBin({ id: "BIN-B2", name: "Thùng B2", binGroup: "Hữu cơ", location: "Nhà B2", building: "B2", floor: "1", qrCode: "ECL-ST-BIN-B2", status: "active", capacity: 44, mapX: 41, mapY: 62 });
@@ -260,39 +372,18 @@ test("Supabase store save and update functions use table-specific snake_case pay
   await store.updateFeedbackItem({ id: "FB001", userName: "Nguyễn Minh Anh", category: "Thùng đầy", message: "Thùng đầy.", status: "unread", priority: "high", timestamp: "2026-07-07T09:00:00.000Z" }, { status: "resolved", adminNote: "Đã xử lý" });
   await store.updateRewardRedemption({ id: "RW001", userId: "SV001", rewardLabel: "Voucher căn tin", costPoints: 100, status: "pending", requestedAt: "2026-07-07T09:00:00.000Z" }, { status: "approved", adminNote: "Đã nhận" });
 
-  const entries = mockSupabaseFrom.mock.calls.map(([tableName], index) => ({
-    tableName,
-    query: mockSupabaseFrom.mock.results[index].value,
-  }));
-  const upserts = entries
-    .filter(item => item.query.upsert.mock.calls.length)
-    .map(item => ({ tableName: item.tableName, payload: item.query.upsert.mock.calls[0][0] }));
-  const inserts = entries
-    .filter(item => item.query.insert.mock.calls.length)
-    .map(item => ({ tableName: item.tableName, payload: item.query.insert.mock.calls[0][0] }));
-  const updates = entries
-    .filter(item => item.query.update.mock.calls.length)
-    .map(item => ({ tableName: item.tableName, payload: item.query.update.mock.calls[0][0] }));
-
-  expect(upserts).toEqual(expect.arrayContaining([
-    expect.objectContaining({ tableName: "users", payload: expect.objectContaining({ id: "SV002", created_at: "2026-07-07T08:00:00.000Z", points: 7 }) }),
-    expect.objectContaining({ tableName: "bins", payload: expect.objectContaining({ id: "BIN-B2", bin_group: "Hữu cơ", qr_code: "ECL-ST-BIN-B2", map_x: 41, map_y: 62 }) }),
-    expect.objectContaining({ tableName: "predictions", payload: expect.objectContaining({ id: "scan-2", bin_group: "Tái chế", user_id: "SV001", bin_id: "BIN-A1-RECYCLE", image_name: "camera-capture.jpg" }) }),
-    expect.objectContaining({ tableName: "feedback", payload: expect.objectContaining({ id: "FB002", user_name: "Giám thị A1", bin_id: "BIN-A1-RECYCLE", admin_note: "" }) }),
-    expect.objectContaining({ tableName: "point_rules", payload: [expect.objectContaining({ id: "recycle", class_keys: ["paper", "plastic"], bin_group: "Tái chế" })] }),
-    expect.objectContaining({ tableName: "reward_redemptions", payload: expect.objectContaining({ id: "RW002", user_id: "SV001", reward_label: "Voucher căn tin", cost_points: 100 }) }),
-    expect.objectContaining({ tableName: "settings", payload: expect.objectContaining({ id: "model", threshold: 0.72, model_name: "MobileNetV2", class_count: 10 }) }),
+  const calls = global.fetch.mock.calls.map(([url, init]) => ({ url: String(url), init }));
+  expect(calls).toEqual(expect.arrayContaining([
+    expect.objectContaining({ url: "http://127.0.0.1:8000/api/admin/users" }),
+    expect.objectContaining({ url: "http://127.0.0.1:8000/api/admin/bins" }),
+    expect.objectContaining({ url: "http://127.0.0.1:8000/api/admin/predictions" }),
+    expect.objectContaining({ url: "http://127.0.0.1:8000/api/admin/feedback" }),
+    expect.objectContaining({ url: "http://127.0.0.1:8000/api/admin/point-rules" }),
+    expect.objectContaining({ url: "http://127.0.0.1:8000/api/admin/reward-redemptions" }),
+    expect.objectContaining({ url: "http://127.0.0.1:8000/api/admin/settings" }),
   ]));
-  expect(inserts).toEqual(expect.arrayContaining([
-    expect.objectContaining({ tableName: "point_history", payload: [expect.objectContaining({ user_id: "SV001", bin_id: "BIN-A1-RECYCLE", bin_group: "Tái chế", points: 4, source: "manual_adjustment", admin_note: "Ghi nhận sự kiện" })] }),
-  ]));
-  expect(updates).toEqual(expect.arrayContaining([
-    expect.objectContaining({ tableName: "users", payload: { points: 249 } }),
-    expect.objectContaining({ tableName: "users", payload: { status: "locked" } }),
-    expect.objectContaining({ tableName: "bins", payload: { status: "maintenance" } }),
-    expect.objectContaining({ tableName: "feedback", payload: expect.objectContaining({ status: "resolved", admin_note: "Đã xử lý" }) }),
-    expect.objectContaining({ tableName: "reward_redemptions", payload: expect.objectContaining({ status: "approved", admin_note: "Đã nhận" }) }),
-  ]));
+  expect(calls.find(item => item.url.endsWith("/api/admin/bins")).init.headers.Authorization).toBe("Bearer test-admin-token");
+  expect(JSON.parse(calls.find(item => item.url.endsWith("/api/admin/bins")).init.body)).toEqual(expect.objectContaining({ id: "BIN-B2", bin_group: "Hữu cơ", qr_code: "ECL-ST-BIN-B2", map_x: 41, map_y: 62 }));
 });
 
 test("setPredictionStatus awards points once when approval is repeated", async () => {
@@ -754,7 +845,7 @@ test.skip("Supabase store save and update failures persist every local fallback 
     expect.objectContaining({ userId: "SV002", binId: "BIN-FALLBACK", points: 4, source: "manual_adjustment", adminNote: "Ghi fallback point" }),
   ]));
 });
-test("redirects unauthenticated users to Supabase login", async () => {
+test("redirects unauthenticated users to backend login", async () => {
   mockAuthUser = null;
   render(<App />);
 
@@ -762,11 +853,8 @@ test("redirects unauthenticated users to Supabase login", async () => {
   expect(screen.getByRole("button", { name: /đăng nhập/i })).toBeInTheDocument();
 });
 
-test("redirects to login when initial Supabase session check fails", async () => {
-  mockSupabaseClient.auth.getSession.mockResolvedValueOnce({
-    data: null,
-    error: new Error("Auth session unavailable"),
-  });
+test("redirects to login when initial backend session check fails", async () => {
+  mockBackendSessionError = new Error("Auth session unavailable");
 
   render(<App />);
 
@@ -774,7 +862,7 @@ test("redirects to login when initial Supabase session check fails", async () =>
   expect(screen.queryByRole("heading", { name: /tổng quan quản trị/i })).not.toBeInTheDocument();
 });
 
-test("loads admin dashboard when Supabase auth listener registration fails", async () => {
+test("loads admin dashboard from backend session without auth listener", async () => {
   mockSupabaseClient.auth.onAuthStateChange.mockImplementationOnce(() => {
     throw new Error("Auth listener unavailable");
   });
@@ -784,7 +872,7 @@ test("loads admin dashboard when Supabase auth listener registration fails", asy
   expect(await screen.findByRole("heading", { name: /tổng quan quản trị/i })).toBeInTheDocument();
 });
 
-test("login page rejects blank credentials before calling Supabase Auth", async () => {
+test("login page rejects blank credentials before calling backend Auth", async () => {
   mockAuthUser = null;
   render(<App />);
 
@@ -794,11 +882,11 @@ test("login page rejects blank credentials before calling Supabase Auth", async 
   fireEvent.click(screen.getByRole("button", { name: /đăng nhập/i }));
 
   expect(await screen.findByText(/nhập email và mật khẩu/i)).toBeInTheDocument();
-  expect(mockSupabaseClient.auth.signInWithPassword).not.toHaveBeenCalled();
+  expect(global.fetch.mock.calls.some(([url]) => String(url).endsWith("/api/auth/login"))).toBe(false);
   expect(screen.queryByRole("heading", { name: /tổng quan quản trị/i })).not.toBeInTheDocument();
 });
 
-test("login page rejects invalid email format before calling Supabase Auth", async () => {
+test("login page rejects invalid email format before calling backend Auth", async () => {
   mockAuthUser = null;
   render(<App />);
 
@@ -808,15 +896,12 @@ test("login page rejects invalid email format before calling Supabase Auth", asy
   fireEvent.click(screen.getByRole("button", { name: /đăng nhập/i }));
 
   expect(await screen.findByText(/email không hợp lệ/i)).toBeInTheDocument();
-  expect(mockSupabaseClient.auth.signInWithPassword).not.toHaveBeenCalled();
+  expect(global.fetch.mock.calls.some(([url]) => String(url).endsWith("/api/auth/login"))).toBe(false);
   expect(screen.queryByRole("heading", { name: /tổng quan quản trị/i })).not.toBeInTheDocument();
 });
-test("shows Supabase login errors from Auth", async () => {
+test("shows backend login errors from Auth", async () => {
   mockAuthUser = null;
-  mockSupabaseClient.auth.signInWithPassword.mockResolvedValueOnce({
-    data: null,
-    error: new Error("Invalid login credentials"),
-  });
+  mockBackendLoginError = new Error("Invalid login credentials");
 
   render(<App />);
 
@@ -827,10 +912,6 @@ test("shows Supabase login errors from Auth", async () => {
 
 test("loads admin dashboard after login even when auth listener has not fired yet", async () => {
   mockAuthUser = null;
-  mockSupabaseClient.auth.signInWithPassword.mockResolvedValueOnce({
-    data: { user: { id: "AD001", email: "admin@school.edu.vn" } },
-    error: null,
-  });
 
   render(<App />);
 
@@ -840,12 +921,9 @@ test("loads admin dashboard after login even when auth listener has not fired ye
   expect(screen.queryByRole("heading", { name: /đăng nhập quản trị/i })).not.toBeInTheDocument();
 });
 
-test("blocks successful Supabase login when profile is not admin", async () => {
+test("blocks successful backend login when profile is not admin", async () => {
   mockAuthUser = null;
-  mockSupabaseClient.auth.signInWithPassword.mockResolvedValueOnce({
-    data: { user: { id: "SV001", email: "minhanh@school.edu.vn" } },
-    error: null,
-  });
+  mockTables.users = mockTables.users.map(user => user.id === "AD001" ? { ...user, role: "student" } : user);
 
   render(<App />);
 
@@ -890,11 +968,11 @@ test("matches admin profile by trimmed case-insensitive email when auth id diffe
   expect(screen.queryByRole("heading", { name: /không có quyền truy cập/i })).not.toBeInTheDocument();
 });
 
-test("loads dashboard data from Supabase for admin users", async () => {
+test("loads dashboard data from PostgreSQL backend for admin users", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /tổng quan quản trị/i })).toBeInTheDocument();
-  expect((await screen.findAllByText(/Dữ liệu Supabase/i)).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(/Dữ liệu PostgreSQL/i)).length).toBeGreaterThan(0);
   const adminNav = screen.getByRole("navigation", { name: /menu/i });
   expect(within(adminNav).getByRole("link", { name: /lượt quét/i })).toBeInTheDocument();
   expect(screen.getAllByText("Pin / nguy hại").length).toBeGreaterThan(0);
@@ -907,19 +985,19 @@ test("logs out admin users and returns to login", async () => {
   expect(await screen.findByRole("heading", { name: /tổng quan quản trị/i })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /đăng xuất/i }));
 
-  await waitFor(() => expect(mockSupabaseClient.auth.signOut).toHaveBeenCalled());
+  await waitFor(() => expect(global.fetch.mock.calls.some(([url]) => String(url).endsWith("/api/auth/logout"))).toBe(true));
   expect(await screen.findByRole("heading", { name: /đăng nhập quản trị/i })).toBeInTheDocument();
 });
 
-test("returns to login when Supabase signOut fails", async () => {
-  mockSupabaseClient.auth.signOut.mockImplementationOnce(() => Promise.resolve({ error: new Error("network-down") }));
+test("returns to login when backend logout fails", async () => {
+  mockBackendLogoutError = new Error("network-down");
 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /tổng quan quản trị/i })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /đăng xuất/i }));
 
-  await waitFor(() => expect(mockSupabaseClient.auth.signOut).toHaveBeenCalled());
+  await waitFor(() => expect(global.fetch.mock.calls.some(([url]) => String(url).endsWith("/api/auth/logout"))).toBe(true));
   expect(await screen.findByRole("heading", { name: /đăng nhập quản trị/i })).toBeInTheDocument();
 });
 test("dashboard uses point history for awarded Ecopoint KPI and activity", async () => {
@@ -2359,7 +2437,7 @@ test.skip("falls back to localStorage when Supabase is unavailable", async () =>
   expect(screen.getByText("Giấy")).toBeInTheDocument();
 });
 
-test("AI tester writes predictions to Supabase after backend returns a result", async () => {
+test("AI tester writes predictions to PostgreSQL backend after AI queue returns a result", async () => {
   const axios = require("axios");
   axios.post.mockResolvedValueOnce({ data: { job_id: "job-paper", status: "queued", position: 1, poll_url: "/predict/jobs/job-paper" } });
   axios.get
@@ -2381,11 +2459,12 @@ test("AI tester writes predictions to Supabase after backend returns a result", 
   await waitFor(() => expect(axios.get).toHaveBeenCalledWith("http://127.0.0.1:8000/predict/queue"));
   await waitFor(() => expect(axios.get).toHaveBeenCalledWith("http://127.0.0.1:8000/predict/jobs/job-paper"));
   await waitFor(() => expect(screen.getByText(/giấy/i)).toBeInTheDocument());
-  expect(mockStorageFrom).toHaveBeenCalledWith("prediction-images");
-  expect(mockStorageUpload).toHaveBeenCalledWith(expect.stringMatching(/^ai-reviews\/\d{4}-\d{2}-\d{2}\//), file, expect.objectContaining({ contentType: "image/jpeg", upsert: false }));
-  expect(mockSupabaseFrom).toHaveBeenCalledWith("predictions");
+  expect(global.fetch).toHaveBeenCalledWith(
+    "http://127.0.0.1:8000/api/uploads/predictions",
+    expect.objectContaining({ method: "POST", body: expect.any(FormData) })
+  );
   expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
-    image_url: "https://school.supabase.co/storage/v1/object/public/prediction-images/ai-reviews/2026-08-02/paper.jpg",
+    image_url: "http://127.0.0.1:8000/uploads/predictions/paper.jpg",
   }));
   expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({ class: "paper", bin_group: "Tái chế", status: "pending" }));
 });

@@ -132,6 +132,7 @@ RUNTIME_AUTH_SECRET_PATH = PROJECT_DIR / ".runtime" / "AUTH_SECRET.txt"
 UPLOADS_DIR = Path(BASE_DIR) / "uploads"
 AVATAR_UPLOADS_DIR = UPLOADS_DIR / "avatars"
 PROOF_UPLOADS_DIR = UPLOADS_DIR / "proofs"
+PREDICTION_UPLOADS_DIR = UPLOADS_DIR / "predictions"
 
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
@@ -725,13 +726,15 @@ ADMIN_RESOURCES = {
         "writable": ["id", "submission_id", "image_url", "image_hash", "verification_code", "status", "note"],
         "order": "captured_at desc",
     },
+    "point-history": {
+        "table": "point_history",
+        "columns": ["id", "prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "created_at", "admin_note", "source", "description", "status"],
+        "writable": ["prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "admin_note", "source", "description", "status"],
+        "order": "timestamp desc",
+    },
 }
 
-POINT_HISTORY_CONFIG = {
-    "table": "point_history",
-    "columns": ["id", "prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "created_at", "admin_note", "source", "description", "status"],
-    "order": "timestamp desc",
-}
+POINT_HISTORY_CONFIG = ADMIN_RESOURCES["point-history"]
 
 USER_MISSIONS_CONFIG = {
     "table": "user_missions",
@@ -1201,6 +1204,24 @@ def save_submission_proof_image(submission_id, file_name, content_type, content,
         connection.commit()
     return to_proof_image(row)
 
+def save_prediction_upload(file_name, content_type, content):
+    if not str(content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="File phân loại phải là ảnh")
+    if not content:
+        raise HTTPException(status_code=400, detail="File phân loại trống")
+
+    PREDICTION_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    date_dir = PREDICTION_UPLOADS_DIR / time.strftime("%Y-%m-%d")
+    date_dir.mkdir(parents=True, exist_ok=True)
+    storage_name = f"{int(time.time() * 1000)}-{safe_upload_file_name(file_name)}"
+    storage_path = date_dir / storage_name
+    storage_path.write_bytes(content)
+    return {
+        "imageName": file_name or storage_name,
+        "imageUrl": f"/uploads/predictions/{date_dir.name}/{storage_name}",
+        "thumbnailUrl": "",
+    }
+
 @app.post("/api/mobile/recycling-submissions", status_code=201)
 def mobile_create_recycling_submission(payload: dict, authorization: str | None = Header(default=None)):
     user = require_role_user(authorization, {"student"})
@@ -1221,6 +1242,12 @@ async def mobile_upload_recycling_proof(
     require_role_user(authorization, {"volunteer", "admin"})
     content = await file.read()
     return {"data": save_submission_proof_image(submission_id, file.filename, file.content_type, content, note)}
+
+@app.post("/api/uploads/predictions", status_code=201)
+async def upload_prediction_image(file: UploadFile = File(...), authorization: str | None = Header(default=None)):
+    require_role_user(authorization, {"student", "volunteer", "admin"})
+    content = await file.read()
+    return {"data": save_prediction_upload(file.filename, file.content_type, content)}
 
 @app.post("/api/mobile/recycling-submissions/{submission_id}/confirm")
 def mobile_confirm_recycling_submission(submission_id: str, payload: dict, authorization: str | None = Header(default=None)):

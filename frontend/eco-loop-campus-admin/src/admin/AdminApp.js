@@ -79,7 +79,7 @@ function ForbiddenPage() {
       <section className="eg-login-card">
         <span>Eco-loop Campus</span>
         <h1>Không có quyền truy cập</h1>
-        <p>Tài khoản hiện tại không có vai trò admin trong Supabase.</p>
+        <p>Tài khoản hiện tại không có vai trò admin trong backend PostgreSQL.</p>
       </section>
     </div>
   );

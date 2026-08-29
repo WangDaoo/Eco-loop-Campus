@@ -1,4 +1,3 @@
-import { isSupabaseConfigured, supabase } from "../../supabaseClient";
 import {
   BIN_GROUPS,
   WASTE_CLASSES,
@@ -8,18 +7,87 @@ import {
 } from "../data/wasteConfig";
 import { FEEDBACK_PRIORITIES, FEEDBACK_STATUSES, normalizeFeedback } from "../data/feedbackConfig";
 
-const SUPABASE = "supabase";
+const BACKEND = "backend";
+const TOKEN_KEY = "ecoloop_admin_token";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PREDICTION_IMAGE_BUCKET = "prediction-images";
-const AVATAR_PRESET_BUCKET = "avatar-presets";
+const PREDICTION_STATUSES = ["pending", "approved", "rejected"];
+const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
+const PREDICTION_SOURCES = ["upload", "camera", "mobile"];
+const REWARD_STATUSES = ["pending", "approved", "rejected"];
+const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
+const REWARD_CATALOG_STATUSES = ["active", "inactive"];
+const USER_ROLES = ["student", "teacher", "volunteer", "admin"];
+const USER_STATUS_ACTIONS = ["active", "locked", "pending", "rejected"];
+const BIN_STATUS_ACTIONS = ["active", "full", "maintenance", "closed"];
 
-function result(data, source = SUPABASE, error = null) {
+const RESOURCE_PATHS = {
+  users: "/api/admin/users",
+  bins: "/api/admin/bins",
+  "waste-types": "/api/admin/waste-types",
+  predictions: "/api/admin/predictions",
+  "point-rules": "/api/admin/point-rules",
+  "point-history": "/api/admin/point-history",
+  feedback: "/api/admin/feedback",
+  rewards: "/api/admin/rewards",
+  "reward-redemptions": "/api/admin/reward-redemptions",
+  "recycling-submissions": "/api/admin/recycling-submissions",
+  "proof-images": "/api/admin/proof-images",
+  settings: "/api/admin/settings",
+};
+
+function apiUrl() {
+  return (process.env.REACT_APP_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+}
+
+function result(data, source = BACKEND, error = null) {
   return { data, source, error };
 }
 
-function client() {
-  if (!isSupabaseConfigured || !supabase) throw new Error("Supabase chưa cấu hình");
-  return supabase;
+function authHeaders(extra = {}) {
+  const token = localStorage.getItem(TOKEN_KEY) || "";
+  return {
+    ...extra,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+async function readError(response) {
+  try {
+    const payload = await response.json();
+    return payload?.detail || payload?.error || payload?.message || `Backend lỗi HTTP ${response.status}`;
+  } catch {
+    return `Backend lỗi HTTP ${response.status}`;
+  }
+}
+
+async function requestBackend(path, options = {}) {
+  const headers = authHeaders(options.headers || {});
+  const init = { ...options, headers };
+  if (init.body && !(init.body instanceof FormData)) {
+    init.headers = { "Content-Type": "application/json", ...headers };
+    init.body = JSON.stringify(init.body);
+  }
+  const response = await fetch(`${apiUrl()}${path}`, init);
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+async function listResource(resource, mapper = item => item) {
+  try {
+    const payload = await requestBackend(RESOURCE_PATHS[resource]);
+    return result((payload.data || []).map(mapper));
+  } catch (error) {
+    return result([], BACKEND, error);
+  }
+}
+
+async function saveResource(resource, payload, mapper = item => item) {
+  try {
+    const response = await requestBackend(RESOURCE_PATHS[resource], { method: "POST", body: payload });
+    return result(mapper(response.data || payload));
+  } catch (error) {
+    return result(null, BACKEND, error);
+  }
 }
 
 function normalizedStatus(value, fallback = "pending") {
@@ -43,16 +111,6 @@ function normalizedBinGroup(value) {
   const normalized = typeof value === "string" ? value.trim().toLocaleLowerCase("vi-VN") : "";
   return (BIN_GROUPS.find(group => group.label.toLocaleLowerCase("vi-VN") === normalized) || {}).label || "";
 }
-
-const PREDICTION_STATUSES = ["pending", "approved", "rejected"];
-const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
-const PREDICTION_SOURCES = ["upload", "camera"];
-const REWARD_STATUSES = ["pending", "approved", "rejected"];
-const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
-const REWARD_CATALOG_STATUSES = ["active", "inactive"];
-const USER_ROLES = ["student", "teacher", "volunteer", "admin"];
-const USER_STATUS_ACTIONS = ["active", "locked", "pending", "rejected"];
-const BIN_STATUS_ACTIONS = ["active", "full", "maintenance"];
 
 function normalizedPredictionStatusAction(value) {
   const status = normalizedStatus(value, "");
@@ -116,6 +174,10 @@ function addPoints(currentPoints, deltaPoints) {
   return (Number.isFinite(current) ? current : 0) + (Number.isFinite(delta) ? delta : 0);
 }
 
+function isActiveAdminProfile(profile = {}) {
+  return normalizedUserRole(profile.role) === "admin" && normalizedStatus(profile.status) === "active";
+}
+
 function safeImageFileName(fileName = "scan.jpg") {
   const rawName = String(fileName || "scan.jpg").trim() || "scan.jpg";
   const parts = rawName.split(".");
@@ -174,6 +236,11 @@ function buildQrSlug(value = "station") {
     .slice(0, 64) || "STATION";
 }
 
+function absoluteAssetUrl(path) {
+  if (!path || /^https?:\/\//i.test(path)) return path || "";
+  return `${apiUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 export function buildStationQrCode(value = "station") {
   const normalized = String(value || "").trim();
   if (/^ECL-ST-[A-Z0-9-]+$/i.test(normalized)) return normalized.toUpperCase();
@@ -207,7 +274,7 @@ function hasPointHistoryForPrediction(history, predictionId) {
   return Boolean(targetId) && history.some(item => String(item.predictionId || item.prediction_id || "") === targetId);
 }
 
-function fromBin(row) {
+function fromBin(row = {}) {
   const { bin_group: binGroupSnake, qr_code: qrCodeSnake, map_x: mapXSnake, map_y: mapYSnake, ...rest } = row;
   return {
     ...rest,
@@ -245,25 +312,34 @@ export function applyBinRealtimeChange(current, payload) {
 }
 
 export function subscribeBins(onChange) {
-  if (!isSupabaseConfigured || !supabase || typeof supabase.channel !== "function") return () => {};
-  const channel = supabase
-    .channel("ecoloop-admin-bins")
-    .on("postgres_changes", { event: "*", schema: "public", table: "bins" }, payload => onChange(payload))
-    .subscribe();
+  let active = true;
+  let lastSnapshot = "";
+  async function poll() {
+    if (!active) return;
+    const response = await listBins();
+    const snapshot = JSON.stringify(response.data);
+    if (snapshot !== lastSnapshot) {
+      lastSnapshot = snapshot;
+      onChange({ eventType: "UPDATE", new: null, data: response.data });
+    }
+  }
+  poll();
+  const timer = setInterval(poll, 5000);
   return () => {
-    if (typeof supabase.removeChannel === "function") supabase.removeChannel(channel);
+    active = false;
+    clearInterval(timer);
   };
 }
 
-function fromUser(row) {
+function fromUser(row = {}) {
   const { created_at: createdAtSnake, avatar_key: avatarKeySnake, avatar_url: avatarUrlSnake, ...rest } = row;
   const points = Number(row.points ?? 0);
   return {
     ...rest,
     points: Number.isFinite(points) ? points : 0,
     createdAt: row.createdAt || createdAtSnake,
-    avatarKey: row.avatarKey || avatarKeySnake || '',
-    avatarUrl: row.avatarUrl || avatarUrlSnake || '',
+    avatarKey: row.avatarKey || avatarKeySnake || "",
+    avatarUrl: absoluteAssetUrl(row.avatarUrl || avatarUrlSnake || ""),
   };
 }
 
@@ -283,15 +359,15 @@ function toUser(user) {
   };
 }
 
-function fromPrediction(row) {
+function fromPrediction(row = {}) {
   return normalizePrediction({
     ...row,
     binGroup: row.binGroup || row.bin_group,
     userId: row.userId || row.user_id,
     binId: row.binId || row.bin_id,
     imageName: row.imageName || row.image_name,
-    imageUrl: row.imageUrl || row.image_url,
-    thumbnailUrl: row.thumbnailUrl || row.thumbnail_url,
+    imageUrl: absoluteAssetUrl(row.imageUrl || row.image_url || ""),
+    thumbnailUrl: absoluteAssetUrl(row.thumbnailUrl || row.thumbnail_url || ""),
   });
 }
 
@@ -313,7 +389,7 @@ function toPrediction(record) {
   };
 }
 
-function fromPointRule(row) {
+function fromPointRule(row = {}) {
   const { class_keys: classKeysSnake, bin_group: binGroupSnake, ...rest } = row;
   return {
     ...rest,
@@ -334,18 +410,8 @@ function toPointRule(rule) {
   };
 }
 
-function fromPointHistory(row) {
-  const {
-    prediction_id: predictionIdSnake,
-    user_id: userIdSnake,
-    bin_id: binIdSnake,
-    bin_group: binGroupSnake,
-    user_name: userNameSnake,
-    bin_name: binNameSnake,
-    created_at: createdAtSnake,
-    admin_note: adminNoteSnake,
-    ...rest
-  } = row;
+function fromPointHistory(row = {}) {
+  const { prediction_id: predictionIdSnake, user_id: userIdSnake, bin_id: binIdSnake, bin_group: binGroupSnake, user_name: userNameSnake, bin_name: binNameSnake, created_at: createdAtSnake, admin_note: adminNoteSnake, ...rest } = row;
   const points = Number(row.points ?? 0);
   return {
     ...rest,
@@ -377,23 +443,18 @@ function toPointHistory(record) {
     created_at: normalized.createdAt || normalized.timestamp,
     admin_note: normalized.adminNote || "",
     source: normalized.source || "ai_approval",
+    description: normalized.description || normalized.action || "",
+    status: normalized.status || "confirmed",
   };
 }
 
-function fromRewardRedemption(row) {
-  const {
-    user_id: userIdSnake,
-    reward_label: rewardLabelSnake,
-    cost_points: costPointsSnake,
-    requested_at: requestedAtSnake,
-    reviewed_at: reviewedAtSnake,
-    admin_note: adminNoteSnake,
-    ...rest
-  } = row;
+function fromRewardRedemption(row = {}) {
+  const { user_id: userIdSnake, reward_id: rewardIdSnake, reward_label: rewardLabelSnake, cost_points: costPointsSnake, requested_at: requestedAtSnake, reviewed_at: reviewedAtSnake, admin_note: adminNoteSnake, ...rest } = row;
   const costPoints = Number(row.costPoints ?? costPointsSnake ?? 0);
   return {
     ...rest,
     userId: row.userId || userIdSnake,
+    rewardId: row.rewardId || rewardIdSnake,
     rewardLabel: row.rewardLabel || rewardLabelSnake,
     costPoints: Number.isFinite(costPoints) ? costPoints : 0,
     status: normalizedRewardStatus(row.status),
@@ -408,6 +469,7 @@ function toRewardRedemption(item) {
   return {
     id: normalized.id,
     user_id: normalized.userId,
+    reward_id: normalized.rewardId,
     reward_label: normalized.rewardLabel,
     cost_points: Number(normalized.costPoints || 0),
     status: normalized.status || "pending",
@@ -417,7 +479,7 @@ function toRewardRedemption(item) {
   };
 }
 
-function fromRewardCatalog(row) {
+function fromRewardCatalog(row = {}) {
   const { cost_points: costPointsSnake, created_at: createdAtSnake, ...rest } = row;
   const costPoints = Number(row.costPoints ?? costPointsSnake ?? 0);
   return {
@@ -433,26 +495,25 @@ function fromRewardCatalog(row) {
 }
 
 function fromAvatarPreset(row = {}) {
-  const { image_url: imageUrlSnake, sort_order: sortOrderSnake, created_at: createdAtSnake, updated_at: updatedAtSnake, ...rest } = row;
-  const sortOrder = Number(row.sortOrder ?? sortOrderSnake ?? 0);
-  const status = normalizedRewardCatalogStatus(row.status || "active");
+  const { image_url: imageUrlSnake, created_at: createdAtSnake, updated_at: updatedAtSnake, ...rest } = row;
+  const sortOrder = Number(row.sortOrder ?? row.sort_order ?? 0);
   return {
     ...rest,
     key: row.key || row.id || "",
     label: row.label || "Avatar Eco-loop",
-    imageUrl: row.imageUrl || imageUrlSnake || "",
-    background: row.background || "#cbf9e4",
-    tile: row.tile || "#a8f2ab",
-    accent: row.accent || "#8bc34a",
-    face: row.face || "#2c6e6e",
-    status,
+    imageUrl: absoluteAssetUrl(row.imageUrl || imageUrlSnake || ""),
+    background: "#cbf9e4",
+    tile: "#a8f2ab",
+    accent: "#8bc34a",
+    face: "#2c6e6e",
+    status: "active",
     sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
     createdAt: row.createdAt || createdAtSnake,
     updatedAt: row.updatedAt || updatedAtSnake,
   };
 }
 
-function fromWasteType(row) {
+function fromWasteType(row = {}) {
   const { point_per_unit: pointPerUnitSnake, recycle_method: recycleMethodSnake, ...rest } = row || {};
   const pointPerUnit = Number(row?.pointPerUnit ?? pointPerUnitSnake ?? 0);
   return {
@@ -466,20 +527,13 @@ function fromWasteType(row) {
   };
 }
 
-function fromProofImage(row) {
-  const {
-    submission_id: submissionIdSnake,
-    image_url: imageUrlSnake,
-    image_hash: imageHashSnake,
-    captured_at: capturedAtSnake,
-    verification_code: verificationCodeSnake,
-    ...rest
-  } = row || {};
+function fromProofImage(row = {}) {
+  const { submission_id: submissionIdSnake, image_url: imageUrlSnake, image_hash: imageHashSnake, captured_at: capturedAtSnake, verification_code: verificationCodeSnake, ...rest } = row || {};
   return {
     ...rest,
     id: row?.id || "",
     submissionId: row?.submissionId || submissionIdSnake || "",
-    imageUrl: row?.imageUrl || imageUrlSnake || "",
+    imageUrl: absoluteAssetUrl(row?.imageUrl || imageUrlSnake || ""),
     imageHash: row?.imageHash || imageHashSnake || "",
     capturedAt: row?.capturedAt || capturedAtSnake || "",
     verificationCode: row?.verificationCode || verificationCodeSnake || "",
@@ -488,20 +542,8 @@ function fromProofImage(row) {
   };
 }
 
-function fromRecyclingSubmission(row) {
-  const {
-    user_id: userIdSnake,
-    bin_id: binIdSnake,
-    waste_type_id: wasteTypeIdSnake,
-    actual_quantity: actualQuantitySnake,
-    qr_token: qrTokenSnake,
-    expired_at: expiredAtSnake,
-    created_at: createdAtSnake,
-    verified_by: verifiedBySnake,
-    verified_at: verifiedAtSnake,
-    volunteer_note: volunteerNoteSnake,
-    ...rest
-  } = row || {};
+function fromRecyclingSubmission(row = {}) {
+  const { user_id: userIdSnake, bin_id: binIdSnake, waste_type_id: wasteTypeIdSnake, actual_quantity: actualQuantitySnake, qr_token: qrTokenSnake, expired_at: expiredAtSnake, created_at: createdAtSnake, verified_by: verifiedBySnake, verified_at: verifiedAtSnake, volunteer_note: volunteerNoteSnake, ...rest } = row || {};
   const quantity = Number(row?.quantity ?? 0);
   const actualQuantity = normalizeNumber(row?.actualQuantity ?? actualQuantitySnake, null);
   return {
@@ -524,6 +566,7 @@ function fromRecyclingSubmission(row) {
 
 function toRecyclingSubmissionUpdate(item) {
   return {
+    id: item.id,
     status: item.status,
     actual_quantity: item.actualQuantity ?? null,
     verified_at: item.verifiedAt || null,
@@ -549,13 +592,7 @@ function toAvatarPreset(item) {
     key: normalized.key || buildAvatarPresetKey(normalized.label),
     label: normalized.label,
     image_url: normalized.imageUrl || null,
-    background: normalized.background || "#cbf9e4",
-    tile: normalized.tile || "#a8f2ab",
-    accent: normalized.accent || "#8bc34a",
-    face: normalized.face || "#2c6e6e",
-    status: normalized.status || "active",
     sort_order: Number(normalized.sortOrder || 0),
-    updated_at: new Date().toISOString(),
   };
 }
 
@@ -609,14 +646,8 @@ function buildPointHistoryRecord(record, rule) {
   };
 }
 
-function fromFeedback(row) {
-  const {
-    user_name: userNameSnake,
-    bin_id: binIdSnake,
-    admin_note: adminNoteSnake,
-    resolved_at: resolvedAtSnake,
-    ...rest
-  } = row;
+function fromFeedback(row = {}) {
+  const { user_name: userNameSnake, bin_id: binIdSnake, admin_note: adminNoteSnake, resolved_at: resolvedAtSnake, ...rest } = row;
   return normalizeFeedback({
     ...rest,
     userName: row.userName || userNameSnake,
@@ -642,7 +673,7 @@ function toFeedback(feedback) {
   };
 }
 
-function fromSettings(row) {
+function fromSettings(row = {}) {
   return {
     id: row.id || "model",
     threshold: normalizeModelThreshold(row.threshold),
@@ -673,58 +704,44 @@ function toSettings(settings) {
   };
 }
 
-async function readTable(tableName, mapper = item => item) {
-  try {
-    const response = await client().from(tableName).select("*");
-    if (response.error) throw response.error;
-    return result((response.data || []).map(mapper), SUPABASE);
-  } catch (error) {
-    return result([], SUPABASE, error);
-  }
-}
-
-async function upsert(tableName, dbPayload, appPayload) {
-  try {
-    const response = await client().from(tableName).upsert(dbPayload);
-    if (response.error) throw response.error;
-    return result(appPayload, SUPABASE);
-  } catch (error) {
-    return result(null, SUPABASE, error);
-  }
-}
-
-async function mutationWithOptionalSingleSelect(query) {
-  const selectedQuery = typeof query?.select === "function" ? query.select("*").single() : query;
-  const response = await selectedQuery;
-  if (response.error) throw response.error;
-  return Array.isArray(response.data) ? response.data[0] : response.data;
-}
-
 export async function signInAdmin(email, password) {
-  const response = await client().auth.signInWithPassword({ email, password });
-  if (response.error) throw response.error;
-  return response.data;
+  const payload = await requestBackend("/api/auth/login", { method: "POST", body: { email, password } });
+  const profile = fromUser(payload.user || {});
+  if (!isActiveAdminProfile(profile)) throw new Error("Tài khoản chưa có quyền admin hoặc đang bị khóa.");
+  localStorage.setItem(TOKEN_KEY, payload.token || "");
+  return { user: profile, token: payload.token, session: { user: profile } };
 }
 
 export async function signOutAdmin() {
-  if (!isSupabaseConfigured || !supabase) return;
-  const response = await supabase.auth.signOut();
-  if (response.error) throw response.error;
+  try {
+    await requestBackend("/api/auth/logout", { method: "POST" });
+  } catch {
+    // Local token is the source of the browser session; clear it even if backend logout is unreachable.
+  } finally {
+    localStorage.removeItem(TOKEN_KEY);
+  }
+}
+
+export async function loadAdminSession() {
+  if (!localStorage.getItem(TOKEN_KEY)) return result(null);
+  try {
+    const payload = await requestBackend("/api/auth/me");
+    const profile = fromUser(payload.user || {});
+    return result({ user: profile, profile: isActiveAdminProfile(profile) ? profile : null });
+  } catch (error) {
+    localStorage.removeItem(TOKEN_KEY);
+    return result(null, BACKEND, error);
+  }
 }
 
 export async function getAdminProfile(user) {
-  if (!user?.email) return result(null, SUPABASE);
-  const users = await listUsers();
-  const email = user.email.trim().toLowerCase();
-  const profile = users.data.find(item => (item.email || "").trim().toLowerCase() === email || item.id === user.id);
-  const role = (profile?.role || "").trim().toLowerCase();
-  const status = (profile?.status || "active").trim().toLowerCase();
-  const isAdmin = role === "admin" || role === "quản trị" || role === "quan tri";
-  return result(isAdmin && status === "active" ? { ...profile, uid: user.id } : null, users.source, users.error);
+  if (!user) return result(null);
+  const profile = fromUser(user);
+  return result(isActiveAdminProfile(profile) ? profile : null);
 }
 
 export async function listPredictions() {
-  const rows = await readTable("predictions", fromPrediction);
+  const rows = await listResource("predictions", fromPrediction);
   return result([...rows.data].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)), rows.source, rows.error);
 }
 
@@ -735,35 +752,25 @@ export async function savePredictionRecord(record) {
   const confidence = Number(record?.confidence);
   const status = normalizedStatus(record?.status, "pending");
   if (!classKey || !PREDICTION_SOURCES.includes(source) || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 || !PREDICTION_STATUSES.includes(status)) {
-    return result(null, SUPABASE, new Error("Invalid prediction record"));
+    return result(null, BACKEND, new Error("Invalid prediction record"));
   }
   const appRecord = fromPrediction({ ...record, class: classKey, source, confidence, status });
-  return upsert("predictions", toPrediction(appRecord), appRecord);
+  return saveResource("predictions", toPrediction(appRecord), fromPrediction);
 }
 
 export async function uploadPredictionImage(file) {
   const imageName = typeof file?.name === "string" && file.name.trim() ? file.name.trim() : "capture.jpg";
   const imageType = typeof file?.type === "string" ? file.type : "";
   if (!file || (imageType && !imageType.startsWith("image/"))) {
-    return result(null, SUPABASE, new Error("Invalid prediction image"));
+    return result(null, BACKEND, new Error("Invalid prediction image"));
   }
   try {
-    const storage = client().storage;
-    if (!storage?.from) throw new Error("Supabase Storage unavailable");
-    const path = buildPredictionImagePath(imageName);
-    const bucket = storage.from(PREDICTION_IMAGE_BUCKET);
-    const uploadResponse = await bucket.upload(path, file, {
-      cacheControl: "3600",
-      contentType: imageType || undefined,
-      upsert: false,
-    });
-    if (uploadResponse.error) throw uploadResponse.error;
-    const publicResponse = bucket.getPublicUrl(path);
-    const publicUrl = publicResponse?.data?.publicUrl || "";
-    if (!publicUrl) throw new Error("Prediction image URL unavailable");
-    return result({ imageName, imageUrl: publicUrl, thumbnailUrl: "", storagePath: path }, SUPABASE);
+    const formData = new FormData();
+    formData.append("file", file, imageName);
+    const payload = await requestBackend("/api/uploads/predictions", { method: "POST", body: formData });
+    return result({ ...payload.data, imageUrl: absoluteAssetUrl(payload.data?.imageUrl || ""), thumbnailUrl: absoluteAssetUrl(payload.data?.thumbnailUrl || "") });
   } catch (error) {
-    return result(null, SUPABASE, error);
+    return result(null, BACKEND, error);
   }
 }
 
@@ -771,61 +778,41 @@ export async function uploadAvatarPresetImage(file, presetKey = "avatar") {
   const imageName = typeof file?.name === "string" && file.name.trim() ? file.name.trim() : "avatar.png";
   const imageType = typeof file?.type === "string" ? file.type : "";
   if (!file || (imageType && !imageType.startsWith("image/"))) {
-    return result(null, SUPABASE, new Error("Invalid avatar image"));
+    return result(null, BACKEND, new Error("Invalid avatar image"));
   }
   try {
-    const storage = client().storage;
-    if (!storage?.from) throw new Error("Supabase Storage unavailable");
-    const safeKey = buildAvatarPresetKey(presetKey);
-    const path = `${safeKey}/${Date.now()}-${safeImageFileName(imageName)}`;
-    const bucket = storage.from(AVATAR_PRESET_BUCKET);
-    const uploadResponse = await bucket.upload(path, file, {
-      cacheControl: "86400",
-      contentType: imageType || undefined,
-      upsert: true,
-    });
-    if (uploadResponse.error) throw uploadResponse.error;
-    const publicUrl = bucket.getPublicUrl(path)?.data?.publicUrl || "";
-    if (!publicUrl) throw new Error("Avatar image URL unavailable");
-    return result({ imageName, imageUrl: publicUrl, storagePath: path }, SUPABASE);
+    const formData = new FormData();
+    formData.append("key", buildAvatarPresetKey(presetKey));
+    formData.append("label", presetKey || "Avatar");
+    formData.append("file", file, imageName);
+    const payload = await requestBackend("/api/avatar-presets", { method: "POST", body: formData });
+    return result({ imageName, imageUrl: absoluteAssetUrl(payload.imageUrl || ""), storagePath: payload.key || "" });
   } catch (error) {
-    return result(null, SUPABASE, new Error("Storage avatar chưa mở quyền upload cho admin", { cause: error }));
+    return result(null, BACKEND, error);
   }
 }
 
 export async function setPredictionStatus(record, status) {
   const nextStatus = normalizedPredictionStatusAction(status);
   const currentRecord = { ...record, status: normalizedStatus(record.status) };
-  if (!nextStatus) return result(currentRecord, SUPABASE, new Error("Invalid prediction status"));
+  if (!nextStatus) return result(currentRecord, BACKEND, new Error("Invalid prediction status"));
   const nextRecord = { ...record, status: nextStatus };
-  try {
-    const response = await client().from("predictions").update({ status: nextStatus }).eq("id", record.id);
-    if (response.error) throw response.error;
-    if (nextStatus === "approved" && record.userId && record.binId) {
-      const history = await listPointHistory();
-      const alreadyAwarded = hasPointHistoryForPrediction(history.data, record.id);
-      const rules = await listPointRules();
-      const rule = rules.data.find(item => normalizedEnabled(item.enabled) && ruleMatchesClass(item, record.class));
-      if (!alreadyAwarded && rule && rule.points > 0) {
-        const pointRecord = buildPointHistoryRecord(record, rule);
-        const insertResponse = await client().from("point_history").insert([toPointHistory(pointRecord)]);
-        if (insertResponse.error) throw insertResponse.error;
-        const users = await listUsers();
-        const user = users.data.find(item => item.id === pointRecord.userId);
-        if (user) {
-          const userResponse = await client().from("users").update({ points: addPoints(user.points, rule.points) }).eq("id", user.id);
-          if (userResponse.error) throw userResponse.error;
-        }
-      }
+  const saved = await saveResource("predictions", toPrediction(nextRecord), fromPrediction);
+  if (saved.error || !saved.data) return saved;
+  if (nextStatus === "approved" && record.userId && record.binId) {
+    const history = await listPointHistory();
+    const alreadyAwarded = hasPointHistoryForPrediction(history.data, record.id);
+    const rules = await listPointRules();
+    const rule = rules.data.find(item => normalizedEnabled(item.enabled) && ruleMatchesClass(item, record.class));
+    if (!alreadyAwarded && rule && rule.points > 0) {
+      await saveManualPointHistory(buildPointHistoryRecord(record, rule));
     }
-    return result(nextRecord, SUPABASE);
-  } catch (error) {
-    return result(null, SUPABASE, error);
   }
+  return result(saved.data);
 }
 
 export async function listUsers() {
-  return readTable("users", fromUser);
+  return listResource("users", fromUser);
 }
 
 export async function saveUser(user) {
@@ -833,25 +820,24 @@ export async function saveUser(user) {
   const email = typeof user.email === "string" ? user.email.trim() : "";
   const role = normalizedUserRole(user.role);
   const status = normalizedUserStatusAction(user.status || "active");
-  if (!name || !EMAIL_PATTERN.test(email) || !role || !status) return result(null, SUPABASE, new Error("Invalid user profile"));
+  if (!name || !EMAIL_PATTERN.test(email) || !role || !status) return result(null, BACKEND, new Error("Invalid user profile"));
   const payload = fromUser({ ...user, name, email, role, status, group: typeof user.group === "string" ? user.group.trim() : user.group, createdAt: user.createdAt || new Date().toISOString() });
-  return upsert("users", toUser(payload), payload);
+  return saveResource("users", toUser(payload), fromUser);
 }
 
 export async function updateUserStatus(user, status) {
   const nextStatus = normalizedUserStatusAction(status);
-  if (!nextStatus) return result(user, SUPABASE, new Error("Invalid user status"));
+  if (!nextStatus) return result(user, BACKEND, new Error("Invalid user status"));
   try {
-    const response = await client().from("users").update({ status: nextStatus }).eq("id", user.id);
-    if (response.error) throw response.error;
-    return result({ ...user, status: nextStatus }, SUPABASE);
+    const payload = await requestBackend(`/api/users/${encodeURIComponent(user.id)}/status`, { method: "PATCH", body: { status: nextStatus } });
+    return result(fromUser(payload.user || { ...user, status: nextStatus }));
   } catch (error) {
-    return result(null, SUPABASE, error);
+    return result(null, BACKEND, error);
   }
 }
 
 export async function listBins() {
-  return readTable("bins", fromBin);
+  return listResource("bins", fromBin);
 }
 
 export async function saveBin(bin) {
@@ -860,42 +846,19 @@ export async function saveBin(bin) {
   const location = typeof bin.location === "string" ? bin.location.trim() : "";
   const binGroup = normalizedBinGroup(bin.binGroup);
   const status = normalizedBinStatusAction(bin.status || "active");
-  if (!id || !name || !location || !binGroup || !status) return result(null, SUPABASE, new Error("Invalid bin station"));
-  const payload = {
-    ...bin,
-    id,
-    name,
-    binGroup,
-    location,
-    status,
-    building: typeof bin.building === "string" ? bin.building.trim() : bin.building,
-    floor: typeof bin.floor === "string" ? bin.floor.trim() : bin.floor,
-    qrCode: buildStationQrCode(bin.qrCode || id || name),
-    capacity: normalizePercent(bin.capacity, 0),
-    mapX: normalizePercent(bin.mapX),
-    mapY: normalizePercent(bin.mapY),
-  };
-  try {
-    const row = await mutationWithOptionalSingleSelect(client().from("bins").upsert(toBin(payload)));
-    return result(fromBin(row || toBin(payload)), SUPABASE);
-  } catch (error) {
-    return result(null, SUPABASE, error);
-  }
+  if (!id || !name || !location || !binGroup || !status) return result(null, BACKEND, new Error("Invalid bin station"));
+  const payload = { ...bin, id, name, binGroup, location, status, building: typeof bin.building === "string" ? bin.building.trim() : bin.building, floor: typeof bin.floor === "string" ? bin.floor.trim() : bin.floor, qrCode: buildStationQrCode(bin.qrCode || id || name), capacity: normalizePercent(bin.capacity, 0), mapX: normalizePercent(bin.mapX), mapY: normalizePercent(bin.mapY) };
+  return saveResource("bins", toBin(payload), fromBin);
 }
 
 export async function updateBinStatus(bin, status) {
   const nextStatus = normalizedBinStatusAction(status);
-  if (!nextStatus) return result(bin, SUPABASE, new Error("Invalid bin status"));
-  try {
-    const row = await mutationWithOptionalSingleSelect(client().from("bins").update({ status: nextStatus }).eq("id", bin.id));
-    return result(fromBin(row || { ...toBin(bin), status: nextStatus }), SUPABASE);
-  } catch (error) {
-    return result(null, SUPABASE, error);
-  }
+  if (!nextStatus) return result(bin, BACKEND, new Error("Invalid bin status"));
+  return saveBin({ ...bin, status: nextStatus });
 }
 
 export async function listFeedback() {
-  const rows = await readTable("feedback", fromFeedback);
+  const rows = await listResource("feedback", fromFeedback);
   return result([...rows.data].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)), rows.source, rows.error);
 }
 
@@ -903,16 +866,9 @@ export async function saveFeedbackItem(feedback) {
   const message = typeof feedback.message === "string" ? feedback.message.trim() : "";
   const status = normalizedFeedbackStatusAction(feedback.status || "unread");
   const priority = normalizedFeedbackPriorityAction(feedback.priority || "medium");
-  if (!message || !status || !priority) return result(null, SUPABASE, new Error("Invalid feedback message"));
-  const payload = normalizeFeedback({
-    ...feedback,
-    message,
-    id: feedback.id || `FB-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    status,
-    priority,
-    timestamp: feedback.timestamp || new Date().toISOString(),
-  });
-  return upsert("feedback", toFeedback(payload), payload);
+  if (!message || !status || !priority) return result(null, BACKEND, new Error("Invalid feedback message"));
+  const payload = normalizeFeedback({ ...feedback, message, id: feedback.id || `FB-${Date.now()}-${Math.random().toString(16).slice(2)}`, status, priority, timestamp: feedback.timestamp || new Date().toISOString() });
+  return saveResource("feedback", toFeedback(payload), fromFeedback);
 }
 
 export async function updateFeedbackItem(feedback, updates) {
@@ -923,153 +879,105 @@ export async function updateFeedbackItem(feedback, updates) {
   const nextStatus = hasStatusUpdate ? normalizedFeedbackStatusAction(updates.status) : "";
   const nextPriority = hasPriorityUpdate ? normalizedFeedbackPriorityAction(updates.priority) : "";
   const nextMessage = hasMessageUpdate && typeof updates.message === "string" ? updates.message.trim() : "";
-  if (hasStatusUpdate && !nextStatus) return result(currentFeedback, SUPABASE, new Error("Invalid feedback status"));
-  if (hasPriorityUpdate && !nextPriority) return result(currentFeedback, SUPABASE, new Error("Invalid feedback priority"));
-  if (hasMessageUpdate && !nextMessage) return result(currentFeedback, SUPABASE, new Error("Invalid feedback message"));
+  if (hasStatusUpdate && !nextStatus) return result(currentFeedback, BACKEND, new Error("Invalid feedback status"));
+  if (hasPriorityUpdate && !nextPriority) return result(currentFeedback, BACKEND, new Error("Invalid feedback priority"));
+  if (hasMessageUpdate && !nextMessage) return result(currentFeedback, BACKEND, new Error("Invalid feedback message"));
   const nextFeedback = normalizeFeedback({ ...feedback, ...updates, ...(hasStatusUpdate ? { status: nextStatus } : {}), ...(hasPriorityUpdate ? { priority: nextPriority } : {}), ...(hasMessageUpdate ? { message: nextMessage } : {}) });
-  try {
-    const response = await client().from("feedback").update(toFeedback(nextFeedback)).eq("id", feedback.id);
-    if (response.error) throw response.error;
-    return result(nextFeedback, SUPABASE);
-  } catch (error) {
-    return result(null, SUPABASE, error);
-  }
+  return saveResource("feedback", toFeedback(nextFeedback), fromFeedback);
 }
 
 export async function updateFeedbackStatus(feedback, status) {
   const nextStatus = normalizedFeedbackStatusAction(status);
-  if (!nextStatus) return result(normalizeFeedback(feedback), SUPABASE, new Error("Invalid feedback status"));
-  const updates = nextStatus === "resolved"
-    ? { status: nextStatus, resolvedAt: new Date().toISOString() }
-    : { status: nextStatus };
+  if (!nextStatus) return result(normalizeFeedback(feedback), BACKEND, new Error("Invalid feedback status"));
+  const updates = nextStatus === "resolved" ? { status: nextStatus, resolvedAt: new Date().toISOString() } : { status: nextStatus };
   return updateFeedbackItem(feedback, updates);
 }
 
 export async function listPointRules() {
-  return readTable("point_rules", fromPointRule);
+  return listResource("point-rules", fromPointRule);
 }
 
 export async function savePointRules(rules) {
-  if (!Array.isArray(rules)) return result([], SUPABASE, new Error("Invalid point rules"));
+  if (!Array.isArray(rules)) return result([], BACKEND, new Error("Invalid point rules"));
   try {
-    const response = await client().from("point_rules").upsert(rules.map(toPointRule));
-    if (response.error) throw response.error;
-    return result(rules, SUPABASE);
+    const saved = await Promise.all(rules.map(rule => saveResource("point-rules", toPointRule(rule), fromPointRule)));
+    const error = saved.find(item => item.error)?.error || null;
+    return result(saved.map(item => item.data).filter(Boolean), BACKEND, error);
   } catch (error) {
-    return result(null, SUPABASE, error);
+    return result(null, BACKEND, error);
   }
 }
 
 export async function listPointHistory() {
-  const [history, users, bins] = await Promise.all([
-    readTable("point_history", fromPointHistory),
-    listUsers(),
-    listBins(),
-  ]);
+  const [history, users, bins] = await Promise.all([listResource("point-history", fromPointHistory), listUsers(), listBins()]);
   const sources = [history, users, bins];
   const error = sources.find(item => item.error)?.error || null;
   const data = enrichPointHistory(history.data, users.data, bins.data).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  return result(data, SUPABASE, error);
+  return result(data, BACKEND, error);
 }
 
 export async function saveManualPointHistory(record) {
   const userId = typeof record.userId === "string" ? record.userId.trim() : "";
   const action = typeof record.action === "string" ? record.action.trim() : "";
   const points = Number(record.points);
-  if (!userId || !action || !Number.isFinite(points) || points === 0) {
-    return result(null, SUPABASE, new Error("Invalid manual point record"));
-  }
+  if (!userId || !action || !Number.isFinite(points) || points === 0) return result(null, BACKEND, new Error("Invalid manual point record"));
   const timestamp = new Date().toISOString();
-  const pointRecord = fromPointHistory({
-    predictionId: null,
-    userId,
-    binId: record.binId || null,
-    class: "manual_adjustment",
-    binGroup: record.binGroup || "Điều chỉnh",
-    action,
-    points,
-    timestamp,
-    createdAt: timestamp,
-    source: "manual_adjustment",
-    adminNote: record.adminNote || "",
-  });
-
-  try {
-    const insertResponse = await client().from("point_history").insert([toPointHistory(pointRecord)]);
-    if (insertResponse.error) throw insertResponse.error;
-    const users = await listUsers();
-    const user = users.data.find(item => item.id === pointRecord.userId);
-    if (user) {
-      const userResponse = await client().from("users").update({ points: addPoints(user.points, pointRecord.points) }).eq("id", user.id);
-      if (userResponse.error) throw userResponse.error;
-    }
-    return result(pointRecord, SUPABASE);
-  } catch (error) {
-    return result(null, SUPABASE, error);
-  }
+  const pointRecord = fromPointHistory({ predictionId: record.predictionId || null, userId, binId: record.binId || null, class: record.class || "manual_adjustment", binGroup: record.binGroup || "Điều chỉnh", action, points, timestamp, createdAt: timestamp, source: record.source || "manual_adjustment", adminNote: record.adminNote || "", description: record.description || action, status: "confirmed" });
+  const saved = await saveResource("point-history", toPointHistory(pointRecord), fromPointHistory);
+  if (saved.error || !saved.data) return saved;
+  const users = await listUsers();
+  const user = users.data.find(item => item.id === pointRecord.userId);
+  if (user) await saveUser({ ...user, points: addPoints(user.points, pointRecord.points) });
+  return result(pointRecord);
 }
 
 export async function listRewardRedemptions() {
-  const [rewards, users] = await Promise.all([
-    readTable("reward_redemptions", fromRewardRedemption),
-    listUsers(),
-  ]);
+  const [rewards, users] = await Promise.all([listResource("reward-redemptions", fromRewardRedemption), listUsers()]);
   const error = rewards.error || users.error || null;
   const data = rewards.data.map(item => {
     const user = users.data.find(row => row.id === item.userId);
-    return {
-      ...item,
-      userName: user?.name || item.userId || "Chưa rõ người dùng",
-      userGroup: user?.group || "",
-    };
+    return { ...item, userName: user?.name || item.userId || "Chưa rõ người dùng", userGroup: user?.group || "" };
   }).sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
-  return result(data, SUPABASE, error);
+  return result(data, BACKEND, error);
 }
 
 export async function listRewards() {
-  const rows = await readTable("rewards", fromRewardCatalog);
+  const rows = await listResource("rewards", fromRewardCatalog);
   return result([...rows.data].sort((a, b) => Number(a.costPoints || 0) - Number(b.costPoints || 0)), rows.source, rows.error);
 }
 
 export async function listAvatarPresets() {
-  const rows = await readTable("avatar_presets", fromAvatarPreset);
-  return result([...rows.data].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)), rows.source, rows.error);
+  try {
+    const payload = await requestBackend("/api/avatar-presets");
+    return result((payload || []).map(fromAvatarPreset).sort((a, b) => a.label.localeCompare(b.label, "vi")));
+  } catch (error) {
+    return result([], BACKEND, error);
+  }
 }
 
 export async function listRecyclingSubmissions() {
   const [submissions, users, bins, wasteTypes, proofImages] = await Promise.all([
-    readTable("recycling_submissions", fromRecyclingSubmission),
+    listResource("recycling-submissions", fromRecyclingSubmission),
     listUsers(),
     listBins(),
-    readTable("waste_types", fromWasteType),
-    readTable("proof_images", fromProofImage),
+    listResource("waste-types", fromWasteType),
+    listResource("proof-images", fromProofImage),
   ]);
   const sources = [submissions, users, bins, wasteTypes, proofImages];
   const error = sources.find(item => item.error)?.error || null;
   const data = enrichRecyclingSubmissions(submissions.data, users.data, bins.data, wasteTypes.data, proofImages.data)
     .sort((a, b) => new Date(b.createdAt || b.verifiedAt || 0) - new Date(a.createdAt || a.verifiedAt || 0));
-  return result(data, SUPABASE, error);
+  return result(data, BACKEND, error);
 }
 
 export async function updateRecyclingSubmissionReview(item, updates) {
   const current = fromRecyclingSubmission(item);
   const nextStatus = String(updates.status || current.status || "").trim().toUpperCase();
   if (!nextStatus || ["POINT_CONFIRMED", "LOCKED"].includes(String(current.status || "").trim().toUpperCase())) {
-    return result(current, SUPABASE, new Error("Invalid recycling submission status"));
+    return result(current, BACKEND, new Error("Invalid recycling submission status"));
   }
-  const next = fromRecyclingSubmission({
-    ...current,
-    status: nextStatus,
-    volunteerNote: typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : current.volunteerNote,
-    verifiedAt: updates.verifiedAt || new Date().toISOString(),
-  });
-  try {
-    const response = await client().from("recycling_submissions").update(toRecyclingSubmissionUpdate(next)).eq("id", current.id);
-    if (response.error) throw response.error;
-    return result(next, SUPABASE);
-  } catch (error) {
-    return result(null, SUPABASE, error);
-  }
+  const next = fromRecyclingSubmission({ ...current, status: nextStatus, volunteerNote: typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : current.volunteerNote, verifiedAt: updates.verifiedAt || new Date().toISOString() });
+  return saveResource("recycling-submissions", toRecyclingSubmissionUpdate(next), fromRecyclingSubmission);
 }
 
 export async function saveRewardProduct(item) {
@@ -1077,95 +985,60 @@ export async function saveRewardProduct(item) {
   const description = typeof item.description === "string" ? item.description.trim() : "";
   const costPoints = Number(item.costPoints);
   const status = normalizedRewardCatalogStatus(item.status || "active", "");
-  if (!title || !Number.isFinite(costPoints) || costPoints < 0 || !status) {
-    return result(null, SUPABASE, new Error("Invalid reward product"));
-  }
-  const payload = fromRewardCatalog({
-    ...item,
-    id: item.id || buildRewardProductId(title),
-    title,
-    description,
-    costPoints,
-    status,
-    color: item.color || "#2F8F5B",
-  });
-  return upsert("rewards", toRewardCatalog(payload), payload);
+  if (!title || !Number.isFinite(costPoints) || costPoints < 0 || !status) return result(null, BACKEND, new Error("Invalid reward product"));
+  const payload = fromRewardCatalog({ ...item, id: item.id || buildRewardProductId(title), title, description, costPoints, status, color: item.color || "#2F8F5B" });
+  return saveResource("rewards", toRewardCatalog(payload), fromRewardCatalog);
 }
 
 export async function saveAvatarPreset(item) {
   const label = typeof item.label === "string" ? item.label.trim() : "";
-  const status = normalizedRewardCatalogStatus(item.status || "active", "");
   const key = buildAvatarPresetKey(item.key || label);
-  if (!key || !label || !status) {
-    return result(null, SUPABASE, new Error("Invalid avatar preset"));
+  const file = item.file;
+  if (!key || !label || !file) return result(null, BACKEND, new Error("Invalid avatar preset"));
+  try {
+    const formData = new FormData();
+    formData.append("key", key);
+    formData.append("label", label);
+    formData.append("file", file, file.name || "avatar.png");
+    const payload = await requestBackend("/api/avatar-presets", { method: "POST", body: formData });
+    return result(fromAvatarPreset(payload));
+  } catch (error) {
+    return result(null, BACKEND, error);
   }
-  const payload = fromAvatarPreset({
-    ...item,
-    key,
-    label,
-    imageUrl: typeof item.imageUrl === "string" ? item.imageUrl.trim() : "",
-    status,
-    sortOrder: normalizeNumber(item.sortOrder, 0),
-  });
-  return upsert("avatar_presets", toAvatarPreset(payload), payload);
 }
 
 export async function saveRewardRedemption(item) {
   const userId = typeof item.userId === "string" ? item.userId.trim() : "";
   const rewardLabel = typeof item.rewardLabel === "string" ? item.rewardLabel.trim() : "";
   const costPoints = Number(item.costPoints);
-  if (!userId || !rewardLabel || !Number.isFinite(costPoints) || costPoints <= 0) {
-    return result(null, SUPABASE, new Error("Invalid reward redemption"));
-  }
-  const payload = fromRewardRedemption({
-    ...item,
-    userId,
-    rewardLabel,
-    costPoints,
-    id: item.id || `RW-${Date.now()}`,
-    status: item.status || "pending",
-    requestedAt: item.requestedAt || new Date().toISOString(),
-  });
-  return upsert("reward_redemptions", toRewardRedemption(payload), payload);
+  if (!userId || !rewardLabel || !Number.isFinite(costPoints) || costPoints <= 0) return result(null, BACKEND, new Error("Invalid reward redemption"));
+  const payload = fromRewardRedemption({ ...item, userId, rewardLabel, costPoints, id: item.id || `RW-${Date.now()}`, status: item.status || "pending", requestedAt: item.requestedAt || new Date().toISOString() });
+  return saveResource("reward-redemptions", toRewardRedemption(payload), fromRewardRedemption);
 }
 
 export async function updateRewardRedemption(item, updates) {
   const currentItem = fromRewardRedemption(item);
   const hasStatusUpdate = Object.prototype.hasOwnProperty.call(updates, "status");
-  if (hasStatusUpdate && !normalizedRewardStatusAction(updates.status)) {
-    return result(currentItem, SUPABASE, new Error("Invalid reward status"));
-  }
-  const nextItem = fromRewardRedemption({ ...item, ...updates, ...(hasStatusUpdate ? { status: normalizedRewardStatusAction(updates.status) } : {}) });
-  try {
-    const response = await client().from("reward_redemptions").update(toRewardRedemption(nextItem)).eq("id", item.id);
-    if (response.error) throw response.error;
-    return result(nextItem, SUPABASE);
-  } catch (error) {
-    return result(null, SUPABASE, error);
-  }
+  if (hasStatusUpdate && !normalizedRewardStatusAction(updates.status)) return result(currentItem, BACKEND, new Error("Invalid reward status"));
+  const nextItem = fromRewardRedemption({ ...item, ...updates, ...(hasStatusUpdate ? { status: normalizedRewardStatusAction(updates.status), reviewedAt: new Date().toISOString() } : {}) });
+  return saveResource("reward-redemptions", toRewardRedemption(nextItem), fromRewardRedemption);
 }
 
 export async function getModelSettings() {
-  try {
-    const response = await client().from("settings").select("*").eq("id", "model").maybeSingle();
-    if (response.error) throw response.error;
-    if (response.data) return result(fromSettings(response.data), SUPABASE);
-  } catch (error) {
-    return result({ threshold: 0.65, modelName: "MobileNetV2", classCount: WASTE_CLASSES.length }, SUPABASE, error);
-  }
-  return result({ threshold: 0.65, modelName: "MobileNetV2", classCount: WASTE_CLASSES.length }, SUPABASE);
+  const rows = await listResource("settings", fromSettings);
+  return result(rows.data[0] || { threshold: 0.65, modelName: "MobileNetV2", classCount: WASTE_CLASSES.length }, BACKEND, rows.error);
 }
 
 export async function saveModelThreshold(threshold) {
   const payload = { threshold: normalizeModelThreshold(threshold), modelName: "MobileNetV2", classCount: WASTE_CLASSES.length, updatedAt: new Date().toISOString() };
-  return upsert("settings", toSettings(payload), payload);
+  return saveResource("settings", toSettings(payload), fromSettings);
 }
 
 export async function loadDashboardData() {
   const [predictions, bins, users, pointRules, feedback, pointHistory, settings] = await Promise.all([listPredictions(), listBins(), listUsers(), listPointRules(), listFeedback(), listPointHistory(), getModelSettings()]);
   const sources = [predictions, bins, users, pointRules, feedback, pointHistory, settings];
   const error = sources.find(item => item.error)?.error || null;
-  return result({ predictions: predictions.data, bins: bins.data, users: users.data, pointRules: pointRules.data, feedback: feedback.data, pointHistory: pointHistory.data, settings: settings.data }, SUPABASE, error);
+  return result({ predictions: predictions.data, bins: bins.data, users: users.data, pointRules: pointRules.data, feedback: feedback.data, pointHistory: pointHistory.data, settings: settings.data }, BACKEND, error);
 }
 
 export const __testing = {
@@ -1197,4 +1070,5 @@ export const __testing = {
   toSettings,
   fromUser,
   toUser,
+  requestBackend,
 };

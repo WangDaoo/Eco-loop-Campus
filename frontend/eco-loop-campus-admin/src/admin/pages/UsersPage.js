@@ -153,7 +153,7 @@ export default function UsersPage() {
       return;
     }
     if (!editingUser) {
-      showToast("Không tạo hồ sơ thủ công trên web. Người dùng cần đăng ký trong app hoặc được tạo qua Supabase Auth.", "danger");
+      showToast("Không tạo hồ sơ thủ công trên web. Người dùng cần đăng ký trong app hoặc được tạo qua backend Auth.", "danger");
       return;
     }
     const nextUser = {
@@ -210,7 +210,7 @@ export default function UsersPage() {
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải người dùng...</section>}
-      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ backend PostgreSQL. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card">
         <div className="eg-filter-row">

@@ -55,7 +55,7 @@ export default function ModelSettingsPage() {
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải cài đặt model...</section>}
-      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ backend PostgreSQL. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <div className="eg-two-col model-grid">
         <section className="eg-card">

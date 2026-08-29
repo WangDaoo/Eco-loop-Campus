@@ -133,7 +133,7 @@ export default function ReportsPage() {
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải báo cáo...</section>}
-      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ backend PostgreSQL. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card eg-filter-panel" aria-label="Bộ lọc báo cáo">
         <label>Từ ngày<input aria-label="Từ ngày" type="date" value={filters.dateFrom} onChange={event => updateFilter("dateFrom", event.target.value)} /></label>

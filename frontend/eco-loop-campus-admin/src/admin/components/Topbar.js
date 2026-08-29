@@ -1,16 +1,15 @@
 import { Bell, CheckCircle, List, MagnifyingGlass, SignOut, UserCircle } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
 import { useAdminAuth } from "../services/authContext";
-import { signOutAdmin } from "../services/supabaseStore";
 
 export default function Topbar({ onToggleSidebar, sidebarOpen }) {
   const navigate = useNavigate();
-  const { profile } = useAdminAuth();
+  const { profile, logout: logoutSession } = useAdminAuth();
   const today = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
 
   const logout = async () => {
     try {
-      await signOutAdmin();
+      await logoutSession();
     } catch (error) {
       // The admin should leave the shell even when the remote sign-out request fails.
     }

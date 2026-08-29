@@ -230,7 +230,7 @@ export default function FeedbackPage() {
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải phản hồi...</section>}
-      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ backend PostgreSQL. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-feedback-kpis" aria-label="Tóm tắt phản hồi">
         <article>

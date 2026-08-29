@@ -32,10 +32,10 @@ export default function LoginPage() {
       const authUser = authData?.user || authData?.session?.user || null;
       const authState = await applyAuthUser(authUser);
       if (!authState.profile) throw new Error(authState.error?.message || "Tài khoản chưa có quyền admin hoặc đang bị khóa.");
-      setToast("Đã đăng nhập Supabase Auth");
+      setToast("Đã đăng nhập backend PostgreSQL");
       navigate("/dashboard", { replace: true });
     } catch (error) {
-      const message = error?.message || "Kiểm tra Supabase Auth hoặc tài khoản admin.";
+      const message = error?.message || "Kiểm tra backend Auth hoặc tài khoản admin.";
       setToast(`Không đăng nhập được: ${message}`);
     } finally {
       setLoading(false);
@@ -47,7 +47,7 @@ export default function LoginPage() {
       <form className="eg-login-card" onSubmit={submitLogin}>
         <span>Eco-loop Campus</span>
         <h1>Đăng nhập quản trị</h1>
-        <p>Dùng Supabase Auth email/password. Tài khoản phải có vai trò admin trong bảng users.</p>
+        <p>Dùng tài khoản backend PostgreSQL. Tài khoản phải có vai trò admin trong bảng users.</p>
         <label>Email<input value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" /></label>
         <label>Mật khẩu<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label>
         <button type="submit" className="eg-primary-btn" disabled={loading}>{loading ? "Đang đăng nhập" : "Đăng nhập"}</button>

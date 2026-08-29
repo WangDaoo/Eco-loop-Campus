@@ -151,3 +151,26 @@ def test_mobile_requests_reward_for_current_user(client, monkeypatch):
 
     assert response.status_code == 201
     assert response.json()["data"]["rewardId"] == "reward-1"
+
+
+def test_admin_uploads_prediction_image(client, monkeypatch):
+    patch_current_user(monkeypatch, "admin")
+    monkeypatch.setattr(
+        app,
+        "save_prediction_upload",
+        lambda file_name, content_type, content: {
+            "imageName": file_name,
+            "imageUrl": "/uploads/predictions/e2e.png",
+            "thumbnailUrl": "",
+        },
+        raising=False,
+    )
+
+    response = client.post(
+        "/api/uploads/predictions",
+        files={"file": ("e2e.png", b"image-bytes", "image/png")},
+        headers=bearer("admin"),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["imageUrl"] == "/uploads/predictions/e2e.png"

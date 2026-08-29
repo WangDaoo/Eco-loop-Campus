@@ -184,7 +184,7 @@ export default function BinsPage() {
       setError(response.error);
       setSaving(false);
       setToastTone("danger");
-      setToast("Không lưu được trạm. Kiểm tra Supabase và thử lại.");
+      setToast("Không lưu được trạm. Kiểm tra backend PostgreSQL và thử lại.");
       return;
     }
     setBins(current => [response.data, ...current.filter(item => item.id !== response.data.id)]);
@@ -250,7 +250,7 @@ export default function BinsPage() {
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải thùng rác...</section>}
-      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ backend PostgreSQL. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card">
         <div className="eg-filter-row">

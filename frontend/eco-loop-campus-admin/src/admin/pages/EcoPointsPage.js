@@ -335,7 +335,7 @@ export default function EcoPointsPage() {
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải quy tắc điểm...</section>}
-      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ backend PostgreSQL. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card eg-filter-panel" aria-label="Bộ lọc Ecopoint">
         <label>

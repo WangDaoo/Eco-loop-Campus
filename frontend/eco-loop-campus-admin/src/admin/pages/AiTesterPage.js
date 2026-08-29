@@ -151,7 +151,7 @@ export default function AiTesterPage() {
       });
       setResult(record.data);
       setToastTone("success");
-      setToast(imageUpload.error ? "Đã lưu lượt kiểm thử AI, nhưng chưa lưu được ảnh xem trước." : "Đã lưu lượt kiểm thử AI vào Supabase.");
+      setToast(imageUpload.error ? "Đã lưu lượt kiểm thử AI, nhưng chưa lưu được ảnh xem trước." : "Đã lưu lượt kiểm thử AI vào backend PostgreSQL.");
     } catch (error) {
       setResult(null);
       setToastTone("danger");

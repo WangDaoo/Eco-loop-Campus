@@ -67,7 +67,7 @@ export default function ScansPage() {
     const response = await setPredictionStatus(record, status);
     if (!response.data) {
       setError(response.error);
-      setToast("Không cập nhật được lượt quét. Kiểm tra Supabase và thử lại.");
+      setToast("Không cập nhật được lượt quét. Kiểm tra backend PostgreSQL và thử lại.");
       return;
     }
     setPredictions(current => current.map(item => item.id === record.id ? response.data : item));
@@ -128,7 +128,7 @@ export default function ScansPage() {
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải lượt quét...</section>}
-      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ backend PostgreSQL. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-card">
         <div className="eg-filter-row">

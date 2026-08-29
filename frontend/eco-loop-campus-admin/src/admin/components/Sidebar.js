@@ -48,7 +48,7 @@ export default function Sidebar({ items, open, onClose }) {
       <div className="eg-sidebar-footer">
         <span>Tình trạng campus</span>
         <strong>Đang vận hành</strong>
-        <small>Supabase + AI test sẵn sàng</small>
+        <small>PostgreSQL + AI test sẵn sàng</small>
       </div>
     </aside>
   );

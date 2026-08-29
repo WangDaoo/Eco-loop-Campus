@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { isSupabaseConfigured, supabase } from "../../supabaseClient";
-import { getAdminProfile } from "./supabaseStore";
+import { getAdminProfile, loadAdminSession, signOutAdmin } from "./supabaseStore";
 
 const AuthContext = createContext(null);
 
@@ -31,50 +30,32 @@ export function AdminAuthProvider({ children }) {
     return nextState;
   }, []);
 
+  const logout = useCallback(async () => {
+    await signOutAdmin();
+    setState({ loading: false, user: null, profile: null, source: null, error: null });
+  }, []);
+
   useEffect(() => {
     let active = true;
-
     async function loadSession() {
-      if (!isSupabaseConfigured || !supabase) {
-        if (active) setState({ loading: false, user: null, profile: null, source: null, error: null });
-        return;
-      }
-
-      try {
-        const response = await supabase.auth.getSession();
-        if (response.error) throw response.error;
-        const nextState = await makeAuthState(response.data?.session?.user || null);
-        if (active) setState(nextState);
-      } catch (error) {
-        if (active) setState({ loading: false, user: null, profile: null, source: null, error });
-      }
+      const session = await loadAdminSession();
+      const sessionData = session.data || {};
+      if (!active) return;
+      setState({
+        loading: false,
+        user: sessionData.user || session.data,
+        profile: Object.prototype.hasOwnProperty.call(sessionData, "profile") ? sessionData.profile : session.data,
+        source: session.source,
+        error: session.error,
+      });
     }
-
     loadSession();
-
-    let listener = null;
-    if (isSupabaseConfigured && supabase) {
-      try {
-        listener = supabase.auth.onAuthStateChange(async (event, session) => {
-        try {
-          const nextState = await makeAuthState(session?.user || null);
-          if (active) setState(nextState);
-        } catch (error) {
-          if (active) setState({ loading: false, user: session?.user || null, profile: null, source: null, error });
-        }
-        });
-      } catch (error) {
-        if (active) setState(current => ({ ...current, error }));
-      }
-    }
-
     return () => {
       active = false;
-      listener?.data?.subscription?.unsubscribe?.();
     };
   }, []);
 
-  const value = useMemo(() => ({ ...state, isAdmin: Boolean(state.profile), applyAuthUser }), [state, applyAuthUser]);
+  const value = useMemo(() => ({ ...state, isAdmin: Boolean(state.profile), applyAuthUser, logout }), [state, applyAuthUser, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

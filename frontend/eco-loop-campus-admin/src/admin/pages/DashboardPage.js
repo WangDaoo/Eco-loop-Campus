@@ -224,7 +224,7 @@ export default function DashboardPage() {
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải dữ liệu quản trị...</section>}
-      {error && <section className="eg-alert">Không tải được dữ liệu từ Supabase. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
+      {error && <section className="eg-alert">Không tải được dữ liệu từ backend PostgreSQL. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
       <section className="eg-command-panel" aria-labelledby="ops-center-title">
         <div>
@@ -275,7 +275,7 @@ export default function DashboardPage() {
       </section>
 
       <div className="eg-stat-grid">
-        <StatCard title="Tổng lượt quét" value={predictions.length} hint="Dữ liệu Supabase" tone="blue" icon={ChartLineUp} />
+        <StatCard title="Tổng lượt quét" value={predictions.length} hint="Dữ liệu PostgreSQL" tone="blue" icon={ChartLineUp} />
         <StatCard title="Chờ duyệt" value={pendingCount} hint="Cần admin kiểm tra" tone="orange" icon={Clock} />
         <StatCard title="Thùng cần kiểm tra" value={binAttentionCount} hint={`${bins.length} điểm thu gom`} tone="red" icon={Trash} />
         <StatCard title="Ecopoint đã cấp" value={totalAwardedPoints} hint={`${pointHistory.length} lượt cộng điểm · ${totalUserPoints} điểm người dùng`} tone="green" icon={Coins} />

@@ -86,6 +86,20 @@ def test_admin_resource_deletes_reward_for_admin(client, monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 
+def test_admin_resource_lists_point_history_for_admin(client, monkeypatch):
+    patch_current_user(monkeypatch, "admin")
+    monkeypatch.setattr(
+        app,
+        "list_admin_resource",
+        lambda resource: [{"id": 1, "userId": "student-1", "points": 10}],
+        raising=False,
+    )
+
+    response = client.get("/api/admin/point-history", headers=bearer("admin"))
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["userId"] == "student-1"
+
 
 def test_admin_resource_rejects_unknown_resource(client, monkeypatch):
     patch_current_user(monkeypatch, "admin")
@@ -93,3 +107,9 @@ def test_admin_resource_rejects_unknown_resource(client, monkeypatch):
     response = client.get("/api/admin/not-a-table", headers=bearer("admin"))
 
     assert response.status_code == 404
+
+def test_admin_resource_whitelists_point_history():
+    config = app.admin_resource_config("point-history")
+
+    assert config["table"] == "point_history"
+    assert "user_id" in config["columns"]
