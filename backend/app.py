@@ -131,6 +131,7 @@ RUNTIME_DATABASE_URL_PATH = PROJECT_DIR / ".runtime" / "DATABASE_URL.txt"
 RUNTIME_AUTH_SECRET_PATH = PROJECT_DIR / ".runtime" / "AUTH_SECRET.txt"
 UPLOADS_DIR = Path(BASE_DIR) / "uploads"
 AVATAR_UPLOADS_DIR = UPLOADS_DIR / "avatars"
+PROOF_UPLOADS_DIR = UPLOADS_DIR / "proofs"
 
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
@@ -553,6 +554,12 @@ def require_admin_user(authorization):
         raise HTTPException(status_code=403, detail="Chỉ admin được thực hiện thao tác này")
     return user
 
+def require_role_user(authorization, allowed_roles):
+    user = current_user_from_authorization(authorization)
+    if user.get("role") not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Tài khoản không có quyền thực hiện thao tác này")
+    return user
+
 @app.post("/api/auth/register", status_code=201)
 def auth_register(request: RegisterRequest):
     try:
@@ -823,6 +830,152 @@ def admin_save_resource(resource: str, payload: dict, authorization: str | None 
 def admin_delete_resource(resource: str, item_id: str, authorization: str | None = Header(default=None)):
     require_admin_user(authorization)
     return delete_admin_resource(resource, item_id)
+
+
+def normalize_json_result(value):
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
+
+def call_postgres_json_function(function_name, args):
+    database_url = require_database_url()
+    placeholders = ", ".join(["%s"] * len(args))
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(f"select {function_name}({placeholders})", args)
+            row = cursor.fetchone()
+        connection.commit()
+    return normalize_json_result(row[0])
+
+def qr_payload_value(payload, camel_name, snake_name=None, default=None):
+    if camel_name in payload:
+        return payload[camel_name]
+    if snake_name and snake_name in payload:
+        return payload[snake_name]
+    return default
+
+def create_recycling_submission_account(user_id, payload):
+    return call_postgres_json_function(
+        "create_recycling_submission",
+        [
+            user_id,
+            qr_payload_value(payload, "binId", "bin_id"),
+            qr_payload_value(payload, "wasteTypeId", "waste_type_id"),
+            qr_payload_value(payload, "quantity"),
+        ],
+    )
+
+def scan_recycling_submission_account(volunteer_id, payload):
+    return call_postgres_json_function(
+        "scan_recycling_qr",
+        [
+            qr_payload_value(payload, "qrToken", "qr_token"),
+            volunteer_id,
+            qr_payload_value(payload, "stationId", "station_id"),
+        ],
+    )
+
+def confirm_recycling_submission_account(volunteer_id, submission_id, payload):
+    return call_postgres_json_function(
+        "confirm_recycling_submission",
+        [
+            submission_id,
+            volunteer_id,
+            qr_payload_value(payload, "actualQuantity", "actual_quantity"),
+            qr_payload_value(payload, "note", default=""),
+        ],
+    )
+
+def reject_recycling_submission_account(volunteer_id, submission_id, payload):
+    return call_postgres_json_function(
+        "reject_recycling_submission",
+        [submission_id, volunteer_id, qr_payload_value(payload, "note", default="")],
+    )
+
+def review_recycling_submission_account(volunteer_id, submission_id, payload):
+    return call_postgres_json_function(
+        "request_recycling_review",
+        [submission_id, volunteer_id, qr_payload_value(payload, "note", default="")],
+    )
+
+def to_proof_image(row):
+    proof_id, submission_id, image_url, image_hash, captured_at, verification_code, status, note = row
+    return {
+        "id": proof_id,
+        "submissionId": submission_id,
+        "imageUrl": image_url,
+        "imageHash": image_hash,
+        "capturedAt": captured_at.isoformat() if captured_at else None,
+        "verificationCode": verification_code,
+        "status": status,
+        "note": note,
+    }
+
+def save_submission_proof_image(submission_id, file_name, content_type, content, note=""):
+    if not str(content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="File minh chứng phải là ảnh")
+    if not content:
+        raise HTTPException(status_code=400, detail="File minh chứng trống")
+
+    PROOF_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    proof_dir = PROOF_UPLOADS_DIR / slugify(submission_id, "submission")
+    proof_dir.mkdir(parents=True, exist_ok=True)
+    storage_name = f"{int(time.time() * 1000)}-{safe_upload_file_name(file_name)}"
+    storage_path = proof_dir / storage_name
+    storage_path.write_bytes(content)
+    image_url = f"/uploads/proofs/{proof_dir.name}/{storage_name}"
+    image_hash = hashlib.sha256(content).hexdigest()
+
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                insert into proof_images (id, submission_id, image_url, image_hash, verification_code, status, note)
+                values (%s, %s, %s, %s, %s, 'pending', %s)
+                returning id, submission_id, image_url, image_hash, captured_at, verification_code, status, note
+                """,
+                (str(uuid.uuid4()), submission_id, image_url, image_hash, image_hash[:12], str(note or "")),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    return to_proof_image(row)
+
+@app.post("/api/mobile/recycling-submissions", status_code=201)
+def mobile_create_recycling_submission(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student"})
+    return {"data": create_recycling_submission_account(user["id"], payload)}
+
+@app.post("/api/mobile/recycling-submissions/scan")
+def mobile_scan_recycling_submission(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"volunteer", "admin"})
+    return {"data": scan_recycling_submission_account(user["id"], payload)}
+
+@app.post("/api/mobile/recycling-submissions/{submission_id}/proof")
+async def mobile_upload_recycling_proof(
+    submission_id: str,
+    note: str = Form(""),
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+):
+    require_role_user(authorization, {"volunteer", "admin"})
+    content = await file.read()
+    return {"data": save_submission_proof_image(submission_id, file.filename, file.content_type, content, note)}
+
+@app.post("/api/mobile/recycling-submissions/{submission_id}/confirm")
+def mobile_confirm_recycling_submission(submission_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"volunteer", "admin"})
+    return {"data": confirm_recycling_submission_account(user["id"], submission_id, payload)}
+
+@app.post("/api/mobile/recycling-submissions/{submission_id}/reject")
+def mobile_reject_recycling_submission(submission_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"volunteer", "admin"})
+    return {"data": reject_recycling_submission_account(user["id"], submission_id, payload)}
+
+@app.post("/api/mobile/recycling-submissions/{submission_id}/review")
+def mobile_review_recycling_submission(submission_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"volunteer", "admin"})
+    return {"data": review_recycling_submission_account(user["id"], submission_id, payload)}
 
 
 def slugify(value, fallback="avatar"):
