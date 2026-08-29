@@ -1,4 +1,4 @@
-﻿import { PickedImage, PredictionResult } from './predictionService';
+import type { PickedImage, PredictionResult } from './predictionService';
 export { parseTfliteClassification, rgbBytesToFloatTensor } from './localAiCore';
 
 const missingNativeRuntimeMessage = 'AI trên thiết bị chưa sẵn sàng. Hệ thống sẽ dùng dịch vụ AI trực tuyến.';

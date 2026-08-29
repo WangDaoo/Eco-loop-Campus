@@ -2225,21 +2225,36 @@ a.eg-priority-item:focus-visible {
   min-height: 240px;
   display: grid;
   place-items: center;
-  gap: 8px;
+  gap: 10px;
   text-align: center;
 }
 
-.eg-qr-box div {
-  width: 180px;
-  height: 180px;
+.eg-qr-preview {
+  width: 204px;
+  height: 204px;
   display: grid;
   place-items: center;
-  border: 10px solid #111827;
-  border-radius: var(--eg-radius);
-  background: repeating-linear-gradient(45deg, #ffffff 0 12px, #111827 12px 18px);
-  color: #ffffff;
+  border: 1px solid var(--eg-border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10);
+}
+
+.eg-qr-preview svg {
+  display: block;
+  max-width: 180px;
+  max-height: 180px;
+}
+
+.eg-qr-code-text {
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: var(--eg-primary);
+  font-size: 13px;
   font-weight: 900;
-  text-shadow: 0 1px 3px #000000;
+  overflow-wrap: anywhere;
 }
 
 .eg-qr-box code {

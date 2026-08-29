@@ -11,8 +11,9 @@ import { RecyclingSubmission, WasteType } from '../types';
 import { colors, radius } from '../theme/colors';
 import { predictionService, suggestWasteTypeFromClass } from '../services/predictionService';
 import { getSubmissionExpiryInfo } from '../services/submissionExpiry';
+import { getWasteTypeDisplayName, getWasteUnitDisplayLabel } from '../services/submissionPresentation';
 import { buildSubmitAiSuggestion, SubmitAiSuggestion } from './submitAiFlow';
-import { buildSubmissionQrPayload, extractStationQrCode } from '../services/qrPayload';
+import { buildSubmissionQrPayload, extractStationQrCandidates } from '../services/qrPayload';
 import { launchImageLibraryWithFallback } from '../services/imagePickerFallback';
 
 const feedbackTypes = [
@@ -104,12 +105,11 @@ export default function SubmitScreen() {
   };
 
   const findStationFromQr = (payload: string) => {
-    const qrCode = extractStationQrCode(payload);
-    const normalized = qrCode.trim().toUpperCase();
+    const candidates = extractStationQrCandidates(payload);
     return stations.find(station =>
       [station.qrCode, station.id, station.name]
         .filter(Boolean)
-        .some(value => String(value).trim().toUpperCase() === normalized)
+        .some(value => candidates.includes(String(value).trim().toUpperCase()))
     );
   };
 
@@ -343,8 +343,8 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
                   style={[styles.chip, isActive && styles.chipActive]}
                   onPress={() => setWasteTypeId(waste.id)}
                 >
-                  <Text style={[styles.chipTitle, isActive && styles.chipTextActive]} numberOfLines={2}>{waste.name}</Text>
-                  <Text style={[styles.chipMeta, isActive && styles.chipTextActive]}>{waste.pointPerUnit} Ecopoint/{waste.unit}</Text>
+                  <Text style={[styles.chipTitle, isActive && styles.chipTextActive]} numberOfLines={2}>{getWasteTypeDisplayName(wasteTypes, waste.id)}</Text>
+                  <Text style={[styles.chipMeta, isActive && styles.chipTextActive]}>{waste.pointPerUnit} Ecopoint/{getWasteUnitDisplayLabel(waste.unit)}</Text>
                 </Pressable>
               );
             })}
@@ -357,7 +357,7 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
                keyboardType="decimal-pad"
                style={styles.input}
              />
-             <Text style={styles.unitText}>{selectedWaste?.unit ?? 'kg'}</Text>
+             <Text style={styles.unitText}>{selectedWaste ? getWasteUnitDisplayLabel(selectedWaste.unit) : 'kg'}</Text>
           </View>
 
           <View style={styles.summaryBox}>

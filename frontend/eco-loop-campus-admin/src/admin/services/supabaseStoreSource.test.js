@@ -18,3 +18,12 @@ test("DashboardPage does not expose runtime demo seeding or source fallback pill
   expect(dashboardSource).not.toMatch(/sourceText/);
   expect(dashboardSource).not.toMatch(/eg-source-pill/);
 });
+
+test("avatar preset upload fails clearly when Supabase Storage policy blocks admin uploads", () => {
+  const uploadStart = source.indexOf("export async function uploadAvatarPresetImage");
+  const uploadEnd = source.indexOf("export async function setPredictionStatus");
+  const uploadSource = source.slice(uploadStart, uploadEnd);
+  expect(uploadSource).toMatch(/storage\.from\(AVATAR_PRESET_BUCKET\)/);
+  expect(uploadSource).toMatch(/Storage avatar chưa mở quyền upload cho admin/);
+  expect(uploadSource).not.toMatch(/fileToDataUrl|storageFallback|data:image/);
+});

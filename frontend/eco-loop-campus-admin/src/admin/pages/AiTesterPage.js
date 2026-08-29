@@ -9,6 +9,7 @@ import { listBins, savePredictionRecord, uploadPredictionImage } from "../servic
 const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000";
 const AI_QUEUE_POLL_MS = 1000;
 const AI_QUEUE_TIMEOUT_MS = 45000;
+const BACKEND_HEALTH_MESSAGE = "Backend AI public chưa kết nối hoặc tunnel đã hết hạn";
 const formatPercent = value => `${Math.round(Number(value || 0) * 100)}%`;
 const IMAGE_FILE_EXTENSIONS = /\.(avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i;
 const predictionHeaders = { headers: { "Content-Type": "multipart/form-data" } };
@@ -25,6 +26,26 @@ const queueUnsupported = error => {
 };
 
 const queueFull = error => error?.response?.status === 429;
+
+const isBackendConnectionError = error => !error?.response || ["ERR_NETWORK", "ECONNABORTED"].includes(error?.code);
+
+const checkBackendHealth = async () => {
+  try {
+    await axios.get(`${API_URL}/predict/queue`);
+  } catch (error) {
+    const status = error?.response?.status;
+    if (status === 404 || status === 405) {
+      try {
+        await axios.get(`${API_URL}/`);
+        return;
+      } catch {
+        throw new Error(BACKEND_HEALTH_MESSAGE);
+      }
+    }
+    if (isBackendConnectionError(error)) throw new Error(BACKEND_HEALTH_MESSAGE);
+    throw new Error(BACKEND_HEALTH_MESSAGE);
+  }
+};
 
 export default function AiTesterPage() {
   const location = useLocation();
@@ -61,7 +82,7 @@ export default function AiTesterPage() {
     try {
       const postDirectPrediction = async () => {
         const response = await axios.post(`${API_URL}/predict`, formData, predictionHeaders);
-        if (!response) throw new Error("Không gọi được backend /predict");
+        if (!response) throw new Error(BACKEND_HEALTH_MESSAGE);
         return response.data || {};
       };
       const pollQueuedPrediction = async jobId => {
@@ -93,6 +114,7 @@ export default function AiTesterPage() {
         }
       };
 
+      await checkBackendHealth();
       const prediction = await predictWithQueue();
       const className = typeof prediction.class === "string" ? prediction.class.trim() : "";
       if (prediction.error) {
@@ -134,8 +156,8 @@ export default function AiTesterPage() {
       setResult(null);
       setToastTone("danger");
       const message = error?.message || "";
-      const naturalMessages = ["Hệ thống AI", "AI xử lý", "Model", "Prediction failed", "Image processing failed", "Không gọi được backend /predict"];
-      setToast(naturalMessages.some(item => message.includes(item)) ? message : "Không gọi được backend /predict");
+      const naturalMessages = ["Backend AI", "Hệ thống AI", "AI xử lý", "Model", "Prediction failed", "Image processing failed"];
+      setToast(naturalMessages.some(item => message.includes(item)) ? message : BACKEND_HEALTH_MESSAGE);
     } finally {
       setLoading(false);
     }

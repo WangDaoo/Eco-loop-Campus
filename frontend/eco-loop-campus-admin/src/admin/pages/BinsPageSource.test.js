@@ -16,3 +16,9 @@ test('BinsPage uses generated Eco-loop station QR payloads instead of free-form 
   expect(source).not.toMatch(/<label>Mã QR<input/);
   expect(source).not.toMatch(/`QR-\$\{id\}`/);
 });
+
+test('BinsPage QR modal uses specific QR classes so station code text is not drawn as a fake QR block', () => {
+  expect(source).toMatch(/className="eg-qr-preview"/);
+  expect(source).toMatch(/className="eg-qr-code-text"/);
+  expect(source).not.toMatch(/<div>\{selectedQr\.qrCode\}<\/div>/);
+});

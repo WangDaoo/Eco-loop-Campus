@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { AppState } from 'react-native';
 import {
   AvatarPreset,
   BinStation,
@@ -66,7 +67,7 @@ type AppContextValue = {
   avatarOptions: AvatarPreset[];
   dutyStationId: string;
   signIn: (role: UserProfile['role'], email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string, role: UserProfile['role']) => Promise<void>;
+  signUp: (name: string, email: string, password: string, role: UserProfile['role']) => Promise<UserProfile | undefined>;
   signOut: () => Promise<void>;
   updateAvatar: (avatarKey: string) => Promise<void>;
   updatePassword: (email: string, currentPassword: string, newPassword: string) => Promise<void>;
@@ -395,6 +396,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [currentUser.id, currentUser.role, dutyStationId, isAuthenticated, remoteStore]);
 
+  useEffect(() => {
+    if (!remoteStore || !isAuthenticated || !currentUser.id) return undefined;
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') void hydrateRemoteData(currentUser);
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [currentUser, hydrateRemoteData, isAuthenticated, remoteStore]);
+
   const points = useMemo(
     () => resolveWalletPoints({ profilePoints: currentUser.points, pointTransactions, syncSource }),
     [currentUser.points, pointTransactions, syncSource]
@@ -418,17 +429,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!remoteStore) throw new Error('Supabase chưa được cấu hình. Không thể đăng ký.');
       const user = await remoteStore.signUp(name, email, password, role);
+      if ((user as UserProfile & { requiresEmailConfirmation?: boolean }).requiresEmailConfirmation) {
+        setCurrentUser(user);
+        setIsAuthenticated(false);
+        setSyncSource('supabase');
+        setSyncError('Tài khoản đã được tạo. Vui lòng xác nhận email hoặc đăng nhập lại khi tài khoản sẵn sàng.');
+        return user;
+      }
       if (user.status !== 'active') {
         setCurrentUser(user);
         setIsAuthenticated(false);
         setSyncSource('supabase');
         setSyncError('Tài khoản tình nguyện viên đang chờ admin phê duyệt.');
         await remoteStore.signOut();
-        return;
+        return user;
       }
       setCurrentUser(user);
       setIsAuthenticated(true);
       await hydrateRemoteData(user);
+      return user;
     } finally {
       setIsLoading(false);
     }

@@ -45,6 +45,41 @@ alter table public.users drop constraint if exists users_status_check;
 alter table public.users add constraint users_status_check
   check (lower(trim(status)) in ('active', 'locked', 'pending', 'rejected'));
 
+create or replace function public.handle_new_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  requested_role text := lower(trim(coalesce(new.raw_user_meta_data ->> 'role', 'student')));
+  profile_role text := case when requested_role = 'volunteer' then 'volunteer' else 'student' end;
+  profile_name text := nullif(trim(coalesce(new.raw_user_meta_data ->> 'name', split_part(coalesce(new.email, ''), '@', 1))), '');
+begin
+  insert into public.users (id, name, email, role, "group", points, status)
+  values (
+    new.id::text,
+    coalesce(profile_name, 'Nguoi dung Eco-loop'),
+    coalesce(new.email, ''),
+    profile_role,
+    case when profile_role = 'volunteer' then 'Tinh nguyen vien Eco-loop' else 'Sinh vien Eco-loop' end,
+    0,
+    case when profile_role = 'volunteer' then 'pending' else 'active' end
+  )
+  on conflict (id) do update
+  set
+    name = coalesce(nullif(public.users.name, ''), excluded.name),
+    email = excluded.email;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_auth_user();
+
 create table if not exists public.bins (
   id text primary key,
   name text not null,
@@ -326,6 +361,7 @@ drop policy if exists "admin delete prediction images" on storage.objects;
 drop policy if exists "admin upload avatar preset images" on storage.objects;
 drop policy if exists "admin update avatar preset images" on storage.objects;
 drop policy if exists "admin delete avatar preset images" on storage.objects;
+drop policy if exists "public read avatar preset images" on storage.objects;
 
 create policy "admin upload prediction images" on storage.objects
   for insert to authenticated
@@ -356,6 +392,10 @@ create policy "admin update avatar preset images" on storage.objects
 create policy "admin delete avatar preset images" on storage.objects
   for delete to authenticated
   using (bucket_id = 'avatar-presets' and public.is_admin());
+
+create policy "public read avatar preset images" on storage.objects
+  for select to public
+  using (bucket_id = 'avatar-presets');
 
 -- Eco-loop Campus mobile workflow extension
 create table if not exists public.waste_types (

@@ -7,9 +7,14 @@ function normalizeToken(value: string) {
   return value.trim().toUpperCase();
 }
 
-function readStringField(value: Record<string, unknown>, keys: string[]) {
-  const result = keys.map(key => value[key]).find(item => typeof item === 'string');
-  return typeof result === 'string' ? result : '';
+function readStringFields(value: Record<string, unknown>, keys: string[]) {
+  return keys
+    .map(key => value[key])
+    .filter((item): item is string => typeof item === 'string' && Boolean(item.trim()));
+}
+
+function uniqueNormalized(values: string[]) {
+  return Array.from(new Set(values.map(normalizeToken).filter(Boolean)));
 }
 
 function slug(value: string) {
@@ -77,31 +82,30 @@ export function buildSubmissionQrPayload(submission: SubmissionQrInput) {
 }
 
 export function extractStationQrCode(payload: string) {
+  return extractStationQrCandidates(payload)[0] ?? '';
+}
+
+export function extractStationQrCandidates(payload: string) {
   const raw = payload.trim();
-  if (!raw) return '';
+  if (!raw) return [];
 
   try {
     const json = JSON.parse(raw) as Record<string, unknown>;
-    const code = readStringField(json, ['qrCode', 'qr_code', 'stationQr', 'station_qr', 'stationId', 'station_id', 'binId', 'bin_id']);
-    if (code) return normalizeToken(code);
+    const codes = readStringFields(json, ['qrCode', 'qr_code', 'stationQr', 'station_qr', 'stationId', 'station_id', 'binId', 'bin_id']);
+    if (codes.length) return uniqueNormalized(codes);
   } catch {
     // QR trạm có thể là mã thuần hoặc deep link, không phải JSON.
   }
 
   try {
     const url = new URL(raw);
-    const code =
-      url.searchParams.get('station') ??
-      url.searchParams.get('stationId') ??
-      url.searchParams.get('station_id') ??
-      url.searchParams.get('qrCode') ??
-      url.searchParams.get('qr_code') ??
-      url.searchParams.get('binId') ??
-      url.searchParams.get('bin_id');
-    if (code) return normalizeToken(code);
+    const codes = ['station', 'stationId', 'station_id', 'qrCode', 'qr_code', 'binId', 'bin_id']
+      .map(key => url.searchParams.get(key))
+      .filter((item): item is string => typeof item === 'string' && Boolean(item.trim()));
+    if (codes.length) return uniqueNormalized(codes);
   } catch {
     // Không phải URL hợp lệ, dùng chuỗi gốc.
   }
 
-  return normalizeToken(raw);
+  return uniqueNormalized([raw]);
 }

@@ -24,15 +24,6 @@ function roleLabel(value) {
   return ROLE_OPTIONS.find(option => option.value === code)?.label || value || "Không rõ";
 }
 
-function nextUserId(users, role) {
-  const prefix = ROLE_OPTIONS.find(option => option.value === roleCode(role))?.prefix || "SV";
-  const maxNumber = users.reduce((max, user) => {
-    const match = String(user.id || "").match(new RegExp(`^${prefix}(\\d+)$`, "i"));
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0);
-  return `${prefix}${String(maxNumber + 1).padStart(3, "0")}`;
-}
-
 function pointValue(value) {
   const points = Number(value);
   return Number.isFinite(points) ? points : 0;
@@ -104,12 +95,6 @@ export default function UsersPage() {
     return matchesQuery && matchesRole && matchesStatus && matchesGroup;
   }), [groupFilter, query, role, status, users]);
 
-  const openAddModal = () => {
-    setEditingUser(null);
-    setForm(emptyForm);
-    setModalOpen(true);
-  };
-
   const openEditModal = user => {
     setEditingUser(user);
     setForm({
@@ -167,27 +152,22 @@ export default function UsersPage() {
       showToast("Email đã tồn tại trong danh sách người dùng", "danger");
       return;
     }
-    const nextUser = editingUser
-      ? {
-        ...editingUser,
-        ...normalizedForm,
-        id: editingUser.id,
-        points: pointValue(editingUser.points),
-        status: statusCode(editingUser.status),
-      }
-      : {
-        ...normalizedForm,
-        id: nextUserId(users, normalizedForm.role),
-        points: 0,
-        status: "active",
-      };
+    if (!editingUser) {
+      showToast("Không tạo hồ sơ thủ công trên web. Người dùng cần đăng ký trong app hoặc được tạo qua Supabase Auth.", "danger");
+      return;
+    }
+    const nextUser = {
+      ...editingUser,
+      ...normalizedForm,
+      id: editingUser.id,
+      points: pointValue(editingUser.points),
+      status: statusCode(editingUser.status),
+    };
     const response = await saveUser(nextUser);
-    setUsers(current => editingUser
-      ? current.map(user => user.id === response.data.id ? response.data : user)
-      : [response.data, ...current.filter(user => user.id !== response.data.id)]);
+    setUsers(current => current.map(user => user.id === response.data.id ? response.data : user));
     setError(response.error);
     closeModal();
-    showToast(editingUser ? "Đã cập nhật người dùng" : "Đã thêm người dùng");
+    showToast("Đã cập nhật người dùng");
   };
 
   const columns = [
@@ -226,9 +206,6 @@ export default function UsersPage() {
         <div>
           <span>Tài khoản và nhóm học tập</span>
           <h1>Người dùng / Lớp / Khoa</h1>
-        </div>
-        <div className="eg-button-row">
-          <button type="button" className="eg-primary-btn" onClick={openAddModal}>Thêm người dùng</button>
         </div>
       </div>
 
@@ -269,13 +246,13 @@ export default function UsersPage() {
         <DataTable columns={columns} rows={filteredUsers} emptyText="Chưa có người dùng." />
       </section>
 
-      <Modal open={modalOpen} title={editingUser ? "Sửa người dùng" : "Thêm người dùng"} onClose={closeModal}>
+      <Modal open={modalOpen} title="Sửa người dùng" onClose={closeModal}>
         <form className="eg-form" onSubmit={saveUserForm}>
           <label>Họ tên<input required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} /></label>
           <label>Email<input required type="email" value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} /></label>
           <label>Vai trò<select value={form.role} onChange={event => setForm({ ...form, role: event.target.value })}>{ROLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label>Lớp / Khoa<input value={form.group} onChange={event => setForm({ ...form, group: event.target.value })} /></label>
-          <button type="submit" className="eg-primary-btn">{editingUser ? "Lưu thay đổi" : "Lưu người dùng"}</button>
+          <button type="submit" className="eg-primary-btn">Lưu thay đổi</button>
         </form>
       </Modal>
       <Toast message={toast} tone={toastTone} onClose={() => setToast("")} />

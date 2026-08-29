@@ -23,7 +23,13 @@ export default function RegisterScreen({ navigation }: Props) {
   const handleSubmit = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) return;
     try {
-      await signUp(name.trim(), email.trim(), password, role);
+      const created = await signUp(name.trim(), email.trim(), password, role);
+      if ((created as any)?.requiresEmailConfirmation) {
+        Alert.alert('Đã tạo tài khoản', 'Vui lòng xác nhận email hoặc đăng nhập lại khi tài khoản sẵn sàng.', [
+          { text: 'Đăng nhập', onPress: () => navigation.navigate('Login') }
+        ]);
+        return;
+      }
       if (role === 'volunteer') {
         Alert.alert('Đã gửi yêu cầu', 'Tài khoản tình nguyện viên sẽ dùng được sau khi admin phê duyệt.', [
           { text: 'Đăng nhập', onPress: () => navigation.navigate('Login') }

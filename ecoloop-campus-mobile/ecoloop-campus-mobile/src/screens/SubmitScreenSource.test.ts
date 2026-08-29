@@ -16,7 +16,7 @@ test('SubmitScreen keeps a live square station QR camera ready for students', ()
   assert.match(source, /CameraView/);
   assert.match(source, /useCameraPermissions/);
   assert.match(source, /useIsFocused/);
-  assert.match(source, /extractStationQrCode/);
+  assert.match(source, /extractStationQrCandidates/);
   assert.match(source, /onBarcodeScanned/);
   assert.match(source, /ratio="1:1"/);
   assert.match(source, /useWindowDimensions/);
@@ -49,6 +49,14 @@ test('SubmitScreen retries image library with legacy picker when Android PhotoPi
   assert.doesNotMatch(source, /ImagePicker\.launchImageLibraryAsync\(\{ mediaTypes: ImagePicker\.MediaTypeOptions\.Images, quality: 0\.75 \}\)/);
 });
 
+test('SubmitScreen keeps station QR selection camera-only without an image QR button', () => {
+  assert.match(source, /extractStationQrCandidates\(payload\)/);
+  assert.doesNotMatch(source, /expo-barcode-scanner/);
+  assert.doesNotMatch(source, /scanFromURLAsync/);
+  assert.doesNotMatch(source, /handleStationQrImagePick/);
+  assert.doesNotMatch(source, /Chọn ảnh QR trạm/);
+});
+
 test('SubmitScreen keeps QR submission flow and readable Vietnamese copy', () => {
   assert.doesNotMatch(source, mojibakePattern);
   assert.match(source, /Tạo mã QR giao dịch dùng một lần/);
@@ -68,4 +76,13 @@ test('SubmitScreen explains QR expiry with remaining time instead of a bare cloc
 test('SubmitScreen QR card uses natural Vietnamese confirmation copy', () => {
   assert.match(source, /Điểm được cộng sau khi lượt gửi rác được xác nhận\./);
   assert.doesNotMatch(source, /Điểm vẫn cần volunteer xác nhận/);
+});
+
+test('SubmitScreen renders localized waste type names and units from presentation helpers', () => {
+  assert.match(source, /getWasteTypeDisplayName/);
+  assert.match(source, /getWasteUnitDisplayLabel/);
+  assert.match(source, /getWasteTypeDisplayName\(wasteTypes,\s*waste\.id\)/);
+  assert.match(source, /Ecopoint\/\{getWasteUnitDisplayLabel\(waste\.unit\)\}/);
+  assert.doesNotMatch(source, /\{waste\.name\}<\/Text>/);
+  assert.doesNotMatch(source, /Ecopoint\/\{waste\.unit\}/);
 });

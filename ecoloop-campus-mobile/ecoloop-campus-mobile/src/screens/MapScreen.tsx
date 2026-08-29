@@ -26,10 +26,20 @@ export default function MapScreen() {
   const { stations } = useAppContext();
   const [selected, setSelected] = useState<BinStation | null>(null);
   const [focusRequestId, setFocusRequestId] = useState(0);
+  const [mapGestureActive, setMapGestureActive] = useState(false);
 
   function selectStation(station: BinStation, focusMap = false) {
     setSelected(station);
     if (focusMap && hasMapPosition(station)) setFocusRequestId(value => value + 1);
+  }
+
+  function beginMapGestureCapture() {
+    setMapGestureActive(true);
+    return false;
+  }
+
+  function endMapGesture() {
+    setMapGestureActive(false);
   }
 
   useEffect(() => {
@@ -51,7 +61,8 @@ export default function MapScreen() {
       noPadding
       style={styles.safe}
       contentContainerStyle={styles.pageContent}
-      bottomClearance={DEFAULT_BOTTOM_CLEARANCE + 28}
+      bottomClearance={DEFAULT_BOTTOM_CLEARANCE + 96}
+      scrollEnabled={!mapGestureActive}
     >
       {/* Header */}
       <View style={styles.header}>
@@ -59,12 +70,20 @@ export default function MapScreen() {
       </View>
 
       {/* Bản đồ Leaflet offline, cùng cơ chế pan/zoom/focus như web admin. */}
-      <View style={styles.mapCard}>
+      <View
+        style={styles.mapCard}
+        onStartShouldSetResponderCapture={beginMapGestureCapture}
+        onMoveShouldSetResponderCapture={beginMapGestureCapture}
+        onTouchStart={beginMapGestureCapture}
+        onTouchEnd={endMapGesture}
+        onTouchCancel={endMapGesture}
+      >
         <CampusLeafletMap
           stations={stations}
           selectedStationId={selected?.id}
           focusRequestId={focusRequestId}
           onSelect={station => selectStation(station)}
+          onGestureActiveChange={setMapGestureActive}
           style={styles.map}
         />
       </View>

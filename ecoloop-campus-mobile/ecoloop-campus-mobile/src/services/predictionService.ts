@@ -1,5 +1,6 @@
 import { WasteType } from '../types';
 import { AiRuntimeMode, createAiRuntime, LocalAiEngine } from './aiRuntime';
+import { localAiService } from './localAiService';
 
 export type PickedImage = {
   uri: string;
@@ -170,7 +171,7 @@ export function createPredictionService({
   return createAiRuntime({ mode: aiMode, localEngine, remoteEngine });
 }
 
-export const predictionService = createPredictionService();
+export const predictionService = createPredictionService({ localEngine: localAiService });
 
 const aiClassDisplayNames: Record<string, string> = {
   battery: 'Pin / rác nguy hại',

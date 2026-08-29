@@ -789,7 +789,7 @@ export async function uploadAvatarPresetImage(file, presetKey = "avatar") {
     if (!publicUrl) throw new Error("Avatar image URL unavailable");
     return result({ imageName, imageUrl: publicUrl, storagePath: path }, SUPABASE);
   } catch (error) {
-    return result(null, SUPABASE, error);
+    return result(null, SUPABASE, new Error("Storage avatar chưa mở quyền upload cho admin", { cause: error }));
   }
 }
 

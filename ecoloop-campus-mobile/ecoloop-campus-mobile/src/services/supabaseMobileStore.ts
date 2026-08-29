@@ -48,7 +48,7 @@ type SupabaseError = { message?: string } | null | undefined;
 type SupabaseLike = {
   auth: {
     signInWithPassword(input: { email: string; password: string }): Promise<{ data: { user?: { id: string; email?: string | null } | null }; error: SupabaseError }>;
-    signUp(input: { email: string; password: string; options?: { data?: Row } }): Promise<{ data: { user?: { id: string; email?: string | null } | null }; error: SupabaseError }>;
+    signUp(input: { email: string; password: string; options?: { data?: Row } }): Promise<{ data: { user?: { id: string; email?: string | null } | null; session?: { user: { id: string; email?: string | null } } | null }; error: SupabaseError }>;
     updateUser(input: { password?: string }): Promise<{ data: { user?: { id: string; email?: string | null } | null }; error: SupabaseError }>;
     signOut(): Promise<{ error: SupabaseError }>;
     getSession(): Promise<{ data: { session?: { user: { id: string; email?: string | null } } | null }; error: SupabaseError }>;
@@ -415,6 +415,10 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
         points: 0,
         status: role === 'volunteer' ? 'pending' : 'active'
       };
+      if (!authResult.data.session) {
+        await client.auth.signOut();
+        return { ...profile, requiresEmailConfirmation: true } as UserProfile & { requiresEmailConfirmation: boolean };
+      }
       const row = await insertRow(client, 'users', toUserRegistrationRow(profile));
       return mapUserRow(row);
     },

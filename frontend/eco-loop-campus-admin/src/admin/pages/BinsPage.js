@@ -271,8 +271,10 @@ export default function BinsPage() {
       <Modal open={Boolean(selectedQr)} title="Mã QR trạm" onClose={() => setSelectedQr(null)}>
         {selectedQr && (
           <div className="eg-qr-box">
-            <QRCodeSVG value={buildStationQrPayload(selectedQr)} size={180} level="M" includeMargin />
-            <div>{selectedQr.qrCode}</div>
+            <div className="eg-qr-preview" aria-label={`Mã QR trạm ${selectedQr.id}`}>
+              <QRCodeSVG value={buildStationQrPayload(selectedQr)} size={180} level="M" includeMargin />
+            </div>
+            <strong className="eg-qr-code-text">{selectedQr.qrCode}</strong>
             <p>{selectedQr.name}</p>
             <span>{selectedQr.location}</span>
             <code>{buildStationQrPayload(selectedQr)}</code>

@@ -25,3 +25,10 @@ test('CampusLeafletMap focuses the selected station from mobile list taps', () =
   assert.match(source, /window\.focusStation/);
   assert.match(source, /selectedStationId/);
 });
+
+test('CampusLeafletMap reports touch ownership so parent page does not scroll while panning the map', () => {
+  assert.match(source, /onGestureActiveChange\?: \(active: boolean\) => void/);
+  assert.match(source, /onTouchStart=\{\(\) => onGestureActiveChange\?\.\(true\)\}/);
+  assert.match(source, /onTouchEnd=\{endMapGesture\}/);
+  assert.match(source, /onTouchCancel=\{endMapGesture\}/);
+});

@@ -77,7 +77,7 @@ export function buildCampusMapHtml(stations: BinStation[], selectedStationId?: s
 <style>
 ${LEAFLET_CSS}
 *{box-sizing:border-box;margin:0;padding:0}
-html,body,#map{width:100%;height:100%;background:#f0f9f4;font-family:-apple-system,sans-serif}
+html,body,#map{width:100%;height:100%;background:#f0f9f4;font-family:-apple-system,sans-serif;touch-action:none;overscroll-behavior:contain}
 .eg-pin{
   width:38px;height:38px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;
@@ -121,6 +121,9 @@ var stations = ${stationData};
 var selectedStationId = ${selectedStationJson};
 var STATION_FOCUS_ZOOM = ${STATION_FOCUS_ZOOM};
 var markerById = {};
+function postMapGesture(active){
+  try{window.ReactNativeWebView.postMessage(JSON.stringify({type:active?"MAP_GESTURE_START":"MAP_GESTURE_END"}));}catch(e){}
+}
 
 var frameGeoJSON = ${JSON.stringify(FRAME_GEOJSON)};
 var buildingsGeoJSON = ${JSON.stringify(BUILDINGS_GEOJSON)};
@@ -148,6 +151,14 @@ var map=L.map("map",{
   // Màu nền thay cho tile layer
   backgroundColor:"#f0f9f4",
 });
+map.on("dragstart zoomstart",function(){postMapGesture(true);});
+map.on("dragend zoomend touchend touchcancel",function(){postMapGesture(false);});
+var mapEl=document.getElementById("map");
+if(mapEl){
+  mapEl.addEventListener("touchstart",function(){postMapGesture(true);},{passive:true});
+  mapEl.addEventListener("touchend",function(){postMapGesture(false);},{passive:true});
+  mapEl.addEventListener("touchcancel",function(){postMapGesture(false);},{passive:true});
+}
 
 // Không dùng tile layer – nền trắng xanh campus style
 var layerGroup=L.featureGroup().addTo(map);

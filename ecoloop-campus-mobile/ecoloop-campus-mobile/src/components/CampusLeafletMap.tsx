@@ -9,6 +9,7 @@ type Props = {
   selectedStationId?: string;
   focusRequestId?: number;
   onSelect?: (station: BinStation) => void;
+  onGestureActiveChange?: (active: boolean) => void;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -17,6 +18,7 @@ export function CampusLeafletMap({
   selectedStationId,
   focusRequestId = 0,
   onSelect,
+  onGestureActiveChange,
   style,
 }: Props) {
   const webViewRef = useRef<WebView>(null);
@@ -34,6 +36,14 @@ export function CampusLeafletMap({
   function handleMessage(event: WebViewMessageEvent) {
     try {
       const message = JSON.parse(event.nativeEvent.data) as { type?: string; stationId?: string };
+      if (message.type === 'MAP_GESTURE_START') {
+        onGestureActiveChange?.(true);
+        return;
+      }
+      if (message.type === 'MAP_GESTURE_END') {
+        onGestureActiveChange?.(false);
+        return;
+      }
       if (message.type !== 'SELECT_STATION' || !message.stationId) return;
       const station = stations.find(station => station.id === message.stationId);
       if (station) onSelect?.(station);
@@ -42,8 +52,17 @@ export function CampusLeafletMap({
     }
   }
 
+  function endMapGesture() {
+    onGestureActiveChange?.(false);
+  }
+
   return (
-    <View style={[styles.shell, style]}>
+    <View
+      style={[styles.shell, style]}
+      onTouchStart={() => onGestureActiveChange?.(true)}
+      onTouchEnd={endMapGesture}
+      onTouchCancel={endMapGesture}
+    >
       <WebView
         ref={webViewRef}
         originWhitelist={['*']}
@@ -55,6 +74,9 @@ export function CampusLeafletMap({
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
         onMessage={handleMessage}
+        onTouchStart={() => onGestureActiveChange?.(true)}
+        onTouchEnd={endMapGesture}
+        onTouchCancel={endMapGesture}
         style={styles.webview}
       />
     </View>

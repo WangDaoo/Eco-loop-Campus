@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 
 const navGroups = [
   { label: "Vận hành", paths: ["/dashboard", "/scans", "/bins", "/ai-test"] },
-  { label: "Dữ liệu", paths: ["/users", "/ecopoints", "/reports", "/feedback"] },
+  { label: "Dữ liệu", paths: ["/users", "/avatars", "/ecopoints", "/reports", "/feedback"] },
   { label: "Hệ thống", paths: ["/model"] },
 ];
 

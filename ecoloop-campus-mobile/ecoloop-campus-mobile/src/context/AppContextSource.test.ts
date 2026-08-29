@@ -87,3 +87,10 @@ test('AppProvider surfaces Supabase mutation errors instead of falling back to l
   assert.match(source, /remoteStore\.createSubmission[\s\S]*failRemoteMutation\(error\);/);
   assert.match(source, /remoteStore\.requestReward[\s\S]*failRemoteMutation\(error\);/);
 });
+
+test('AppProvider refreshes Supabase data when the mobile app returns to foreground', () => {
+  assert.match(source, /AppState/);
+  assert.match(source, /addEventListener\('change'/);
+  assert.match(source, /nextState === 'active'/);
+  assert.match(source, /hydrateRemoteData\(currentUser\)/);
+});

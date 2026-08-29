@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { WasteType } from '../types';
-import { getSubmissionStatusLabel, getSubmissionStatusTone, getWasteTypeDisplayName } from './submissionPresentation';
+import { getSubmissionStatusLabel, getSubmissionStatusTone, getWasteTypeDisplayName, getWasteUnitDisplayLabel } from './submissionPresentation';
 
 const wasteTypes: WasteType[] = [
   { id: 'plastic-pet', name: 'Nhựa PET', unit: 'kg', pointPerUnit: 10, recycleMethod: '', status: 'active' }
@@ -30,4 +30,24 @@ test('maps recycling submission statuses to UI tones', () => {
 test('maps legacy waste type ids to current Vietnamese labels', () => {
   assert.equal(getWasteTypeDisplayName(wasteTypes, 'plastic-bottle'), 'Nhựa PET');
   assert.equal(getWasteTypeDisplayName(wasteTypes, 'plastic-pet'), 'Nhựa PET');
+});
+
+test('normalizes common unaccented waste type names from Supabase for mobile display', () => {
+  const liveRows: WasteType[] = [
+    { id: 'plastic-bottle', name: 'Chai nhua', unit: 'item', pointPerUnit: 10, recycleMethod: '', status: 'active' },
+    { id: 'paper', name: 'Giay sach', unit: 'kg', pointPerUnit: 40, recycleMethod: '', status: 'active' },
+    { id: 'metal-can', name: 'Lon kim loai', unit: 'item', pointPerUnit: 12, recycleMethod: '', status: 'active' },
+    { id: 'organic', name: 'Rac huu co', unit: 'kg', pointPerUnit: 20, recycleMethod: '', status: 'active' }
+  ];
+
+  assert.equal(getWasteTypeDisplayName(liveRows, 'plastic-bottle'), 'Chai nhựa');
+  assert.equal(getWasteTypeDisplayName(liveRows, 'paper'), 'Giấy sạch');
+  assert.equal(getWasteTypeDisplayName(liveRows, 'metal-can'), 'Lon kim loại');
+  assert.equal(getWasteTypeDisplayName(liveRows, 'organic'), 'Rác hữu cơ');
+});
+
+test('localizes waste units for mobile cards', () => {
+  assert.equal(getWasteUnitDisplayLabel('item'), 'cái');
+  assert.equal(getWasteUnitDisplayLabel('kg'), 'kg');
+  assert.equal(getWasteUnitDisplayLabel('g'), 'g');
 });

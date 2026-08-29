@@ -41,3 +41,11 @@ test('campusMapHtml hides the default Leaflet attribution label in mobile app', 
   assert.match(source, /attributionControl:false/);
   assert.match(source, /\.leaflet-control-attribution\{display:none!important\}/);
 });
+
+test('campusMapHtml tells React Native when Leaflet owns touch gestures', () => {
+  assert.match(source, /touch-action:none/);
+  assert.match(source, /MAP_GESTURE_START/);
+  assert.match(source, /MAP_GESTURE_END/);
+  assert.match(source, /map\.on\("dragstart zoomstart"/);
+  assert.match(source, /map\.on\("dragend zoomend touchend touchcancel"/);
+});

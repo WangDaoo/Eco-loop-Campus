@@ -9,7 +9,7 @@ test('Supabase schema defines mobile operating tables without public demo seed r
 
   assert.match(schema, /latitude double precision/i);
   assert.match(schema, /longitude double precision/i);
-  assert.doesNotMatch(schema, /insert into public\.(users|avatar_presets|settings|bins|waste_types|rewards|missions)\b/i);
+  assert.doesNotMatch(schema, /insert into public\.(avatar_presets|settings|bins|waste_types|rewards|missions)\b/i);
   assert.doesNotMatch(schema, /student@school\.edu\.vn/);
   assert.doesNotMatch(schema, /volunteer@school\.edu\.vn/);
   assert.doesNotMatch(schema, /STATION-E1|QR-A1-RECYCLE|ECO-SUB-001/i);

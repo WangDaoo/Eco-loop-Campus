@@ -22,3 +22,13 @@ test("Sidebar renders links safely when an item icon is missing", () => {
 
   expect(screen.getByRole("link", { name: /tong quan/i })).toHaveAttribute("href", "/dashboard");
 });
+
+test("Sidebar shows avatar management when the route is available", () => {
+  render(
+    <MemoryRouter>
+      <Sidebar items={[{ path: "/users", label: "Nguoi dung" }, { path: "/avatars", label: "Avatar" }]} />
+    </MemoryRouter>
+  );
+
+  expect(screen.getByRole("link", { name: /avatar/i })).toHaveAttribute("href", "/avatars");
+});

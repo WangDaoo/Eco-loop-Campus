@@ -1,7 +1,7 @@
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { loadTensorflowModel, TensorflowModel } from 'react-native-fast-tflite';
 import { convertToRGB } from 'react-native-image-to-rgb';
-import { PickedImage, PredictionResult } from './predictionService';
+import type { PickedImage, PredictionResult } from './predictionService';
 import { MODEL_INPUT_SIZE, parseTfliteClassification, rgbBytesToFloatTensor } from './localAiCore';
 
 export { parseTfliteClassification, rgbBytesToFloatTensor } from './localAiCore';

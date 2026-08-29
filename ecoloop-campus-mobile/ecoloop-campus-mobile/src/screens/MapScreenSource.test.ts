@@ -25,16 +25,21 @@ test('MapScreen does not render fallback coordinates for every missing station m
   assert.doesNotMatch(source, /station\.longitude \?\? 106\.6822/);
 });
 
-test('MapScreen keeps map and station cards in one page scroll so cards are not clipped into white strips', () => {
+test('MapScreen keeps the map card inside the page scroll flow', () => {
   assert.match(source, /<Screen\s+scroll[\s\S]*contentContainerStyle=\{styles\.pageContent\}/);
-  assert.doesNotMatch(source, /<ScrollView[\s\S]*styles\.scrollArea/);
-  assert.doesNotMatch(source, /scrollArea:/);
+  assert.doesNotMatch(source, /<ScrollView[\s\S]*style=\{styles\.stationScroll\}/);
+  assert.doesNotMatch(source, /stationScroll:/);
 });
 
 test('MapScreen keeps the map compact enough that station cards do not peek behind the tab bar', () => {
   assert.match(source, /const MAP_CARD_HEIGHT = 280;/);
   assert.match(source, /height:\s*MAP_CARD_HEIGHT/);
   assert.doesNotMatch(source, /height:\s*340/);
+});
+
+test('MapScreen gives station lists extra bottom room above the floating tab bar', () => {
+  assert.match(source, /bottomClearance=\{DEFAULT_BOTTOM_CLEARANCE \+ 96\}/);
+  assert.doesNotMatch(source, /bottomClearance=\{DEFAULT_BOTTOM_CLEARANCE \+ 28\}/);
 });
 
 test('MapScreen keeps selected station synced with realtime bin updates', () => {
@@ -64,4 +69,13 @@ test('MapScreen asks the Leaflet map to focus when a station row is selected', (
   assert.match(source, /selectedStationId=\{selected\?\.id\}/);
   assert.match(source, /focusRequestId=\{focusRequestId\}/);
   assert.match(source, /onPress=\{\(\) => selectStation\(s, true\)\}/);
+});
+
+test('MapScreen locks page scrolling only while a touch starts inside the map card', () => {
+  assert.match(source, /const \[mapGestureActive, setMapGestureActive\] = useState\(false\)/);
+  assert.match(source, /scrollEnabled=\{!mapGestureActive\}/);
+  assert.match(source, /onStartShouldSetResponderCapture=\{beginMapGestureCapture\}/);
+  assert.match(source, /onTouchEnd=\{endMapGesture\}/);
+  assert.match(source, /onTouchCancel=\{endMapGesture\}/);
+  assert.match(source, /onGestureActiveChange=\{setMapGestureActive\}/);
 });

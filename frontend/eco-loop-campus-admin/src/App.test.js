@@ -201,6 +201,7 @@ beforeEach(() => {
   mockStorageFrom.mockReturnValue({ upload: mockStorageUpload, getPublicUrl: mockStorageGetPublicUrl });
   mockStorageUpload.mockResolvedValue({ data: { path: "ai-reviews/2026-08-02/paper.jpg" }, error: null });
   mockStorageGetPublicUrl.mockReturnValue({ data: { publicUrl: "https://school.supabase.co/storage/v1/object/public/prediction-images/ai-reviews/2026-08-02/paper.jpg" } });
+  require("axios").get.mockResolvedValue({ data: { queued: 0, processing: 0, done: 0, failed: 0 } });
 });
 
 test("uses CRA Supabase publishable key env", () => {
@@ -1083,48 +1084,46 @@ test("users page filters Supabase role codes with Vietnamese role labels", async
   expect(within(usersTable).queryByText("Nguyễn Minh Anh")).not.toBeInTheDocument();
 });
 
-test("users page rejects duplicate email before saving", async () => {
+test("users page does not expose manual user creation from admin", async () => {
   window.location.hash = "#/users";
 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /thêm người dùng/i }));
-  fireEvent.change(screen.getByLabelText(/họ tên/i), { target: { value: "Sinh viên trùng email" } });
-  fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "minhanh@school.edu.vn" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu người dùng/i }));
-
-  expect(await screen.findByText(/email đã tồn tại/i)).toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveClass("tone-danger");
-  expect(mockSupabaseUpsert).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: /thêm người dùng/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: /thêm người dùng/i })).not.toBeInTheDocument();
 });
 
-test("users page rejects blank required user fields after trimming", async () => {
+test("users page rejects blank required user fields when editing", async () => {
   window.location.hash = "#/users";
 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /thêm người dùng/i }));
-  fireEvent.change(screen.getByLabelText(/họ tên/i), { target: { value: "   " } });
-  fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "new-user@school.edu.vn" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu người dùng/i }));
+  const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
+  fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
+
+  const dialog = await screen.findByRole("dialog", { name: /sửa người dùng/i });
+  fireEvent.change(within(dialog).getByLabelText(/họ tên/i), { target: { value: "   " } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu thay đổi/i }));
 
   expect(await screen.findByText(/nhập họ tên và email/i)).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveClass("tone-danger");
   expect(mockSupabaseUpsert).not.toHaveBeenCalled();
 });
 
-test("users page rejects invalid email format before saving", async () => {
+test("users page rejects invalid email format when editing", async () => {
   window.location.hash = "#/users";
 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /thêm người dùng/i }));
-  fireEvent.change(screen.getByLabelText(/họ tên/i), { target: { value: "Sinh viên email lỗi" } });
-  fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "not-an-email" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu người dùng/i }));
+  const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
+  fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
+
+  const dialog = await screen.findByRole("dialog", { name: /sửa người dùng/i });
+  fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: "not-an-email" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu thay đổi/i }));
 
   expect(await screen.findByText(/email không hợp lệ/i)).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveClass("tone-danger");
@@ -1227,26 +1226,19 @@ test("users page normalizes dirty class or faculty group labels", async () => {
   expect(within(usersTable).queryByText("Sinh viên nhóm sạch")).not.toBeInTheDocument();
 });
 
-test("users page generates the next unused student id when creating users", async () => {
-  mockTables.users = [
-    { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
-    { id: "SV003", name: "Sinh viên đã có", email: "existing@school.edu.vn", role: "student", group: "CNTT K18", points: 12, status: "active" },
-  ];
+test("users page only edits existing user profiles from the table", async () => {
   window.location.hash = "#/users";
 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /thêm người dùng/i }));
-  fireEvent.change(screen.getByLabelText(/họ tên/i), { target: { value: "Sinh viên mới" } });
-  fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "new@school.edu.vn" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu người dùng/i }));
+  expect(screen.queryByRole("button", { name: /thêm người dùng/i })).not.toBeInTheDocument();
+  const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
+  fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
 
-  await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
-    id: "SV004",
-    name: "Sinh viên mới",
-    email: "new@school.edu.vn",
-  })));
+  const dialog = await screen.findByRole("dialog", { name: /sửa người dùng/i });
+  expect(within(dialog).queryByRole("button", { name: /lưu người dùng/i })).not.toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: /lưu thay đổi/i })).toBeInTheDocument();
 });
 
 test.skip("users create failure saves the new user to local fallback", async () => {
@@ -1361,10 +1353,11 @@ test("users page resets toast tone after a successful status update", async () =
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /thêm người dùng/i }));
-  fireEvent.change(screen.getByLabelText(/họ tên/i), { target: { value: "Sinh viên lỗi" } });
-  fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "bad-email" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu người dùng/i }));
+  const initialStudentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
+  fireEvent.click(within(initialStudentRow).getByRole("button", { name: /sửa sv001/i }));
+  const dialog = await screen.findByRole("dialog", { name: /sửa người dùng/i });
+  fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: "bad-email" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu thay đổi/i }));
 
   expect(await screen.findByText(/email không hợp lệ/i)).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveClass("tone-danger");
@@ -2369,7 +2362,9 @@ test.skip("falls back to localStorage when Supabase is unavailable", async () =>
 test("AI tester writes predictions to Supabase after backend returns a result", async () => {
   const axios = require("axios");
   axios.post.mockResolvedValueOnce({ data: { job_id: "job-paper", status: "queued", position: 1, poll_url: "/predict/jobs/job-paper" } });
-  axios.get.mockResolvedValueOnce({ data: { job_id: "job-paper", status: "done", class: "paper", confidence: 0.88 } });
+  axios.get
+    .mockResolvedValueOnce({ data: { queued: 0, processing: 0, done: 0, failed: 0 } })
+    .mockResolvedValueOnce({ data: { job_id: "job-paper", status: "done", class: "paper", confidence: 0.88 } });
   window.location.hash = "#/ai-test";
 
   render(<App />);
@@ -2383,6 +2378,7 @@ test("AI tester writes predictions to Supabase after backend returns a result", 
     expect.any(FormData),
     { headers: { "Content-Type": "multipart/form-data" } }
   ));
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith("http://127.0.0.1:8000/predict/queue"));
   await waitFor(() => expect(axios.get).toHaveBeenCalledWith("http://127.0.0.1:8000/predict/jobs/job-paper"));
   await waitFor(() => expect(screen.getByText(/giấy/i)).toBeInTheDocument());
   expect(mockStorageFrom).toHaveBeenCalledWith("prediction-images");
@@ -2737,7 +2733,7 @@ test("AI tester shows request failures without saving a prediction", async () =>
   fireEvent.change(await screen.findByLabelText(/chọn ảnh kiểm thử/i), { target: { files: [file] } });
   fireEvent.click(screen.getByRole("button", { name: /nhận diện thử/i }));
 
-  expect(await screen.findByText(/Không gọi được backend \/predict/i)).toBeInTheDocument();
+  expect(await screen.findByText(/Backend AI public chưa kết nối hoặc tunnel đã hết hạn/i)).toBeInTheDocument();
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ status: "pending" }));
 });
 test("AI tester reads QR binId and saves predictions against that station", async () => {

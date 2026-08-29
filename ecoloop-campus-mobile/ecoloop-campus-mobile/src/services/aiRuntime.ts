@@ -1,4 +1,4 @@
-﻿import { PickedImage, PredictionResult } from './predictionService';
+import type { PickedImage, PredictionResult } from './predictionService';
 
 export type AiRuntimeMode = 'remote' | 'local-first';
 

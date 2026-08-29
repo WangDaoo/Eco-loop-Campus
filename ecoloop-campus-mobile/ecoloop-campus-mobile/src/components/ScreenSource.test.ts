@@ -15,3 +15,16 @@ test('Screen respects real device safe areas and floating tab clearance', () => 
   assert.doesNotMatch(source, /DEFAULT_BOTTOM_CLEARANCE\s*=\s*32/);
   assert.doesNotMatch(source, /paddingBottom:\s*220/);
 });
+
+test('Screen keeps computed tab clearance after caller content styles', () => {
+  assert.match(
+    source,
+    /contentContainerStyle=\{\[styles\.scrollContent,\s*contentContainerStyle,\s*\{ paddingBottom: bottomPadding \}\]\}/
+  );
+});
+
+test('Screen lets gesture-heavy children temporarily disable page scrolling', () => {
+  assert.match(source, /scrollEnabled\?: boolean/);
+  assert.match(source, /scrollEnabled = true/);
+  assert.match(source, /<ScrollView[\s\S]*scrollEnabled=\{scrollEnabled\}/);
+});

@@ -1,4 +1,4 @@
-import { PredictionResult } from './predictionService';
+import type { PredictionResult } from './predictionService';
 
 export const MODEL_INPUT_SIZE = 224;
 

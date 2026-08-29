@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildStationQrCode, buildStationQrPayload, buildSubmissionQrPayload, extractStationQrCode, extractSubmissionQrToken } from './qrPayload';
+import { buildStationQrCode, buildStationQrPayload, buildSubmissionQrPayload, extractStationQrCandidates, extractStationQrCode, extractSubmissionQrToken } from './qrPayload';
 
 test('extractSubmissionQrToken accepts a plain Eco-loop v1 token and legacy tokens', () => {
   assert.equal(extractSubmissionQrToken(' ecl-sub-20260812112233-123456 '), 'ECL-SUB-20260812112233-123456');
@@ -40,4 +40,15 @@ test('station QR helpers build and read Eco-loop station payload v1', () => {
   assert.equal(extractStationQrCode(payload), 'ECL-ST-STATION-E1');
   assert.equal(extractStationQrCode(' station-e1 '), 'STATION-E1');
   assert.equal(extractStationQrCode('ecoloop://station/select?station=station-caf'), 'STATION-CAF');
+});
+
+test('station QR candidates include station id when the stored QR code is out of sync', () => {
+  const payload = JSON.stringify({
+    type: 'eco-loop-station',
+    version: 1,
+    stationId: 'station-e1',
+    qrCode: 'ECL-ST-OLD-E1'
+  });
+
+  assert.deepEqual(extractStationQrCandidates(payload), ['ECL-ST-OLD-E1', 'STATION-E1']);
 });

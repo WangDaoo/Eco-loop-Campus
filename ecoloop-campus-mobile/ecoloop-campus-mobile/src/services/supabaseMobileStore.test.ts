@@ -14,7 +14,8 @@ function makeFakeSupabase(
   seed: Tables,
   authUser = { id: 'student-1', email: 'student@school.edu.vn' },
   errorTables: Record<string, string> = {},
-  rpcHandlers: Record<string, (params: Row) => Row | Promise<Row>> = {}
+  rpcHandlers: Record<string, (params: Row) => Row | Promise<Row>> = {},
+  hasSignupSession = true
 ) {
   const tables: Tables = clone(seed);
   const calls: Row[] = [];
@@ -122,7 +123,7 @@ function makeFakeSupabase(
       },
       async signUp(input: { email: string; password: string; options?: { data?: Row } }) {
         calls.push({ action: 'signUp', email: input.email, password: input.password });
-        return { data: { user: authUser }, error: null };
+        return { data: { user: authUser, session: hasSignupSession ? { user: authUser } : null }, error: null };
       },
       async updateUser(input: { password?: string }) {
         calls.push({ action: 'updateUser', password: input.password });
@@ -247,6 +248,19 @@ test('Supabase mobile store creates registration profile without optional avatar
   assert.equal(fake.tables.users[0].role, 'student');
   assert.equal(Object.hasOwn(fake.tables.users[0], 'avatar_key'), false);
   assert.equal(Object.hasOwn(fake.tables.users[0], 'avatar_url'), false);
+});
+
+test('Supabase mobile store does not insert a profile when signup requires email confirmation', async () => {
+  const authUser = { id: 'new-student-confirm', email: 'new.student.confirm@school.edu.vn' };
+  const fake = makeFakeSupabase({ ...baseTables, users: [] }, authUser, {}, {}, false);
+  const store = createSupabaseMobileStore(fake as any);
+
+  const profile = await store.signUp('Nguyen Van Moi', authUser.email, 'secret-123', 'student');
+
+  assert.equal(profile.id, authUser.id);
+  assert.equal((profile as any).requiresEmailConfirmation, true);
+  assert.equal(fake.tables.users.length, 0);
+  assert.equal(fake.calls.some((call: Row) => call.action === 'insert' && call.table === 'users'), false);
 });
 
 test('Supabase mobile store verifies the current password before updating Auth password', async () => {
