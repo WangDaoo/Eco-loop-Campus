@@ -22,6 +22,7 @@ import {
 } from '../types';
 import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
 import { missionIdsForFeedback, missionIdsForSubmission } from '../services/missionAutomation';
+import { createBackendAvatarService } from '../services/backendAvatarService';
 import { createSupabaseMobileStore } from '../services/supabaseMobileStore';
 import { resolveWalletPoints } from '../services/walletPoints';
 import {
@@ -33,7 +34,6 @@ import {
   mapPredictionRow,
   mapProofImageRow,
   mapQrScanLogRow,
-  mapAvatarPresetRow,
   mapRewardRow,
   mapRewardRedemptionRow,
   mapUserMissionRow,
@@ -140,12 +140,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [avatarOptions, setAvatarOptions] = useState<AvatarPreset[]>([]);
   const [dutyStationId, setDutyStationId] = useState('');
   const remoteStore = useMemo(() => (isSupabaseConfigured && supabase ? createSupabaseMobileStore(supabase) : null), []);
+  const backendAvatarService = useMemo(() => createBackendAvatarService(), []);
 
   const failRemoteMutation = (error: unknown): never => {
     const message = messageOf(error);
     setSyncError(message);
     throw error instanceof Error ? error : new Error(message);
   };
+
+  const refreshBackendAvatars = useCallback(async () => {
+    try {
+      const backendAvatarOptions = await backendAvatarService.listAvatarPresets();
+      setAvatarOptions(backendAvatarOptions);
+      return backendAvatarOptions;
+    } catch (error) {
+      setAvatarOptions([]);
+      setSyncError(current => current || messageOf(error));
+      return [];
+    }
+  }, [backendAvatarService]);
 
   const hydrateRemoteData = useCallback(
     async (profile: UserProfile) => {
@@ -163,7 +176,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSubmissions(state.submissions);
         setPointTransactions(state.pointTransactions);
         setFeedbacks(state.feedbacks);
-        setAvatarOptions(state.avatarOptions);
+        await refreshBackendAvatars();
         setMissions(state.missions);
         setRewards(state.rewards);
         setRewardRedemptions(state.rewardRedemptions);
@@ -189,7 +202,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSyncError(messageOf(error));
       }
     },
-    [remoteStore]
+    [refreshBackendAvatars, remoteStore]
   );
 
   useEffect(() => {
@@ -297,16 +310,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           })
         );
       },
-      avatar_presets: payload => {
-        setAvatarOptions(items => {
-          const oldKey = String(payload.old?.key ?? payload.old?.id ?? '');
-          if (payload.eventType === 'DELETE') return oldKey ? items.filter(item => item.key !== oldKey) : items;
-          if (!payload.new) return items;
-          const nextOption = mapAvatarPresetRow(payload.new);
-          const nextItems = [nextOption, ...items.filter(item => item.key !== nextOption.key)];
-          return nextItems.filter(option => option.status === 'active');
-        });
-      },
       missions: payload => {
         const mapped = payload.new ? mapMissionRow(payload.new) : undefined;
         setMissions(items => {
@@ -395,6 +398,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     });
   }, [currentUser.id, currentUser.role, dutyStationId, isAuthenticated, remoteStore]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    const timer = setInterval(() => {
+      void refreshBackendAvatars();
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [isAuthenticated, refreshBackendAvatars]);
 
   useEffect(() => {
     if (!remoteStore || !isAuthenticated || !currentUser.id) return undefined;

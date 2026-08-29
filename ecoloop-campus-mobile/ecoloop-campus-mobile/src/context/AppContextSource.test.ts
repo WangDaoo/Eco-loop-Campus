@@ -60,8 +60,10 @@ test('AppProvider removes explicit local preview login and mock runtime mode', (
 });
 test('AppProvider exposes avatar updates and keeps current user plus leaderboard users in sync', () => {
   assert.match(source, /avatarOptions: AvatarPreset\[\]/);
-  assert.match(source, /setAvatarOptions\(state\.avatarOptions\)/);
-  assert.match(source, /avatar_presets:\s*payload\s*=>/);
+  assert.match(source, /backendAvatarService/);
+  assert.match(source, /refreshBackendAvatars/);
+  assert.match(source, /setAvatarOptions\(backendAvatarOptions\)/);
+  assert.doesNotMatch(source, /avatar_presets:\s*payload\s*=>/);
   assert.match(source, /updateAvatar: \(avatarKey: string\) => Promise<void>/);
   assert.match(source, /remoteStore\.updateAvatar/);
   assert.match(source, /avatarKey/);
