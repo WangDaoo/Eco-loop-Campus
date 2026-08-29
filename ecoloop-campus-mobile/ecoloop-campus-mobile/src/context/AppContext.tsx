@@ -20,31 +20,12 @@ import {
   UserProfile,
   WasteType
 } from '../types';
-import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
 import { missionIdsForFeedback, missionIdsForSubmission } from '../services/missionAutomation';
-import { createBackendAvatarService } from '../services/backendAvatarService';
-import { createSupabaseMobileStore } from '../services/supabaseMobileStore';
+import { createBackendMobileStore } from '../services/backendMobileStore';
 import { resolveWalletPoints } from '../services/walletPoints';
-import {
-  applyRealtimeChange,
-  mapBinRow,
-  mapFeedbackRow,
-  mapMissionRow,
-  mapPointHistoryRow,
-  mapPredictionRow,
-  mapProofImageRow,
-  mapQrScanLogRow,
-  mapRewardRow,
-  mapRewardRedemptionRow,
-  mapUserMissionRow,
-  mergeMissionProgress,
-  mapSubmissionRow,
-  mapUserRow,
-  mapWasteTypeRow
-} from '../services/supabaseAdapters';
 import { resolveRemoteHydrationState } from './remoteHydration';
 
-type SyncSource = 'supabase';
+type SyncSource = 'backend';
 
 type AppContextValue = {
   currentUser: UserProfile;
@@ -86,6 +67,7 @@ type AppContextValue = {
 };
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
+const POLL_INTERVAL_MS = 5000;
 
 const EMPTY_USER: UserProfile = {
   id: '',
@@ -125,7 +107,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [syncSource, setSyncSource] = useState<SyncSource>('supabase');
+  const [syncSource, setSyncSource] = useState<SyncSource>('backend');
   const [syncError, setSyncError] = useState('');
   const [aiPredictions, setAiPredictions] = useState<PredictionRecord[]>([]);
   const [submissions, setSubmissions] = useState<RecyclingSubmission[]>([]);
@@ -139,8 +121,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [avatarOptions, setAvatarOptions] = useState<AvatarPreset[]>([]);
   const [dutyStationId, setDutyStationId] = useState('');
-  const remoteStore = useMemo(() => (isSupabaseConfigured && supabase ? createSupabaseMobileStore(supabase) : null), []);
-  const backendAvatarService = useMemo(() => createBackendAvatarService(), []);
+  const remoteStore = useMemo(() => createBackendMobileStore(), []);
 
   const failRemoteMutation = (error: unknown): never => {
     const message = messageOf(error);
@@ -148,21 +129,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     throw error instanceof Error ? error : new Error(message);
   };
 
-  const refreshBackendAvatars = useCallback(async () => {
-    try {
-      const backendAvatarOptions = await backendAvatarService.listAvatarPresets();
-      setAvatarOptions(backendAvatarOptions);
-      return backendAvatarOptions;
-    } catch (error) {
-      setAvatarOptions([]);
-      setSyncError(current => current || messageOf(error));
-      return [];
-    }
-  }, [backendAvatarService]);
-
   const hydrateRemoteData = useCallback(
     async (profile: UserProfile) => {
-      if (!remoteStore) return;
       try {
         const schemaHealth = await remoteStore.checkSchema();
         if (!schemaHealth.ok) throw new Error(schemaHealth.message);
@@ -176,12 +144,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSubmissions(state.submissions);
         setPointTransactions(state.pointTransactions);
         setFeedbacks(state.feedbacks);
-        await refreshBackendAvatars();
+        setAvatarOptions(state.avatarOptions);
         setMissions(state.missions);
         setRewards(state.rewards);
         setRewardRedemptions(state.rewardRedemptions);
         setQrScanLogs(state.qrScanLogs);
-        setDutyStationId(state.dutyStationId);
+        setDutyStationId(current => current || state.dutyStationId);
         setSyncSource(state.syncSource);
         setSyncError(state.syncError);
       } catch (error) {
@@ -198,17 +166,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setRewardRedemptions([]);
         setQrScanLogs([]);
         setDutyStationId('');
-        setSyncSource('supabase');
+        setSyncSource('backend');
         setSyncError(messageOf(error));
       }
     },
-    [refreshBackendAvatars, remoteStore]
+    [remoteStore]
   );
 
   useEffect(() => {
     let active = true;
     async function loadSession() {
-      if (!remoteStore) return;
       setIsLoading(true);
       try {
         const profile = await remoteStore.loadSessionProfile();
@@ -235,187 +202,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [hydrateRemoteData, remoteStore]);
 
   useEffect(() => {
-    if (!remoteStore || !isAuthenticated || !remoteStore.subscribeRealtime) return undefined;
-    return remoteStore.subscribeRealtime({
-      users: payload => {
-        const row = payload.new ?? payload.old;
-        if (!row?.id) return;
-        if (payload.eventType !== 'DELETE' && row.id === currentUser.id) setCurrentUser(mapUserRow(row));
-        setUsers(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: payload.new ? mapUserRow(payload.new) : undefined,
-            old: payload.old ? ({ id: String(payload.old.id) } as UserProfile) : undefined
-          })
-        );
-      },
-      bins: payload => {
-        setStations(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: payload.new ? mapBinRow(payload.new) : undefined,
-            old: payload.old ? ({ id: String(payload.old.id) } as BinStation) : undefined
-          })
-        );
-      },
-      waste_types: payload => {
-        setWasteTypes(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: payload.new ? mapWasteTypeRow(payload.new) : undefined,
-            old: payload.old ? ({ id: String(payload.old.id) } as WasteType) : undefined
-          })
-        );
-      },
-      predictions: payload => {
-        const mapped = payload.new ? mapPredictionRow(payload.new) : undefined;
-        if (mapped && currentUser.role === 'student' && mapped.userId !== currentUser.id) return;
-        setAiPredictions(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: mapped,
-            old: payload.old ? ({ id: String(payload.old.id) } as PredictionRecord) : undefined
-          })
-        );
-      },
-      recycling_submissions: payload => {
-        if (!payload.new && !payload.old) return;
-        const mapped = payload.new ? mapSubmissionRow(payload.new) : undefined;
-        if (mapped && currentUser.role === 'student' && mapped.userId !== currentUser.id) return;
-        setSubmissions(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: mapped,
-            old: payload.old ? ({ id: String(payload.old.id) } as RecyclingSubmission) : undefined
-          })
-        );
-      },
-      point_history: payload => {
-        const mapped = payload.new ? mapPointHistoryRow(payload.new) : undefined;
-        if (mapped && currentUser.role === 'student' && mapped.userId !== currentUser.id) return;
-        setPointTransactions(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: mapped,
-            old: payload.old ? ({ id: String(payload.old.id) } as EcoPointTransaction) : undefined
-          })
-        );
-      },
-      feedback: payload => {
-        setFeedbacks(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: payload.new ? mapFeedbackRow(payload.new) : undefined,
-            old: payload.old ? ({ id: String(payload.old.id) } as Feedback) : undefined
-          })
-        );
-      },
-      missions: payload => {
-        const mapped = payload.new ? mapMissionRow(payload.new) : undefined;
-        setMissions(items => {
-          const existing = mapped ? items.find(item => item.id === mapped.id) : undefined;
-          const nextMission = mapped && existing
-            ? {
-                ...mapped,
-                current: existing.current,
-                completed: existing.completed,
-                status: existing.completed ? 'completed' as const : mapped.status,
-                actionLabel: existing.completed ? 'Xong' : mapped.actionLabel
-              }
-            : mapped;
-          return applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: nextMission,
-            old: payload.old ? ({ id: String(payload.old.id) } as Mission) : undefined
-          });
-        });
-      },
-      user_missions: payload => {
-        const row = payload.new ?? payload.old;
-        const userId = String(row?.user_id ?? row?.userId ?? '');
-        const missionId = String(row?.mission_id ?? row?.missionId ?? '');
-        if (!missionId || userId !== currentUser.id) return;
-
-        if (payload.eventType === 'DELETE') {
-          setMissions(items =>
-            items.map(item =>
-              item.id === missionId
-                ? {
-                    ...item,
-                    current: 0,
-                    completed: false,
-                    status: item.status === 'completed' ? 'active' : item.status,
-                    actionLabel: item.actionLabel === 'Xong' ? 'Tiep tuc' : item.actionLabel
-                  }
-                : item
-            )
-          );
-          return;
-        }
-
-        if (!payload.new) return;
-        const progress = mapUserMissionRow(payload.new);
-        setMissions(items => mergeMissionProgress(items, [progress], currentUser.id));
-      },      rewards: payload => {
-        setRewards(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: payload.new ? mapRewardRow(payload.new) : undefined,
-            old: payload.old ? ({ id: String(payload.old.id) } as Reward) : undefined
-          })
-        );
-      },
-      reward_redemptions: payload => {
-        const mapped = payload.new ? mapRewardRedemptionRow(payload.new) : undefined;
-        if (mapped && currentUser.role === 'student' && mapped.userId !== currentUser.id) return;
-        setRewardRedemptions(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: mapped,
-            old: payload.old ? ({ id: String(payload.old.id) } as RewardRedemption) : undefined
-          })
-        );
-      },      qr_scan_logs: payload => {
-        const mapped = payload.new ? mapQrScanLogRow(payload.new) : undefined;
-        if (mapped && currentUser.role === 'student') return;
-        if (mapped && currentUser.role === 'volunteer' && mapped.scannedBy !== currentUser.id && mapped.stationId !== dutyStationId) return;
-        setQrScanLogs(items =>
-          applyRealtimeChange(items, {
-            eventType: payload.eventType,
-            new: mapped,
-            old: payload.old ? ({ id: String(payload.old.id) } as QRScanLog) : undefined
-          })
-        );
-      },      proof_images: payload => {
-        if (payload.eventType === 'DELETE') {
-          const submissionId = String(payload.old?.submission_id ?? payload.old?.submissionId ?? '');
-          setSubmissions(items => applyProofImage(items, undefined, submissionId));
-          return;
-        }
-        if (!payload.new) return;
-        const row = payload.new;
-        setSubmissions(items => applyProofImage(items, mapProofImageRow(row)));
-      }
-    });
-  }, [currentUser.id, currentUser.role, dutyStationId, isAuthenticated, remoteStore]);
-
-  useEffect(() => {
-    if (!isAuthenticated) return undefined;
+    if (!isAuthenticated || !currentUser.id) return undefined;
     const timer = setInterval(() => {
-      void refreshBackendAvatars();
-    }, 10000);
+      void hydrateRemoteData(currentUser);
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [isAuthenticated, refreshBackendAvatars]);
+  }, [currentUser, hydrateRemoteData, isAuthenticated]);
 
   useEffect(() => {
-    if (!remoteStore || !isAuthenticated || !currentUser.id) return undefined;
+    if (!isAuthenticated || !currentUser.id) return undefined;
     const subscription = AppState.addEventListener('change', nextState => {
       if (nextState === 'active') void hydrateRemoteData(currentUser);
     });
     return () => {
       subscription.remove();
     };
-  }, [currentUser, hydrateRemoteData, isAuthenticated, remoteStore]);
+  }, [currentUser, hydrateRemoteData, isAuthenticated]);
 
   const points = useMemo(
     () => resolveWalletPoints({ profilePoints: currentUser.points, pointTransactions, syncSource }),
@@ -425,7 +227,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (role: UserProfile['role'], email: string, password: string) => {
     setIsLoading(true);
     try {
-      if (!remoteStore) throw new Error('Supabase chưa được cấu hình. Không thể đăng nhập.');
       const user = await remoteStore.signIn(role, email, password);
       setCurrentUser(user);
       setIsAuthenticated(true);
@@ -438,19 +239,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (name: string, email: string, password: string, role: UserProfile['role']) => {
     setIsLoading(true);
     try {
-      if (!remoteStore) throw new Error('Supabase chưa được cấu hình. Không thể đăng ký.');
       const user = await remoteStore.signUp(name, email, password, role);
-      if ((user as UserProfile & { requiresEmailConfirmation?: boolean }).requiresEmailConfirmation) {
-        setCurrentUser(user);
-        setIsAuthenticated(false);
-        setSyncSource('supabase');
-        setSyncError('Tài khoản đã được tạo. Vui lòng xác nhận email hoặc đăng nhập lại khi tài khoản sẵn sàng.');
-        return user;
-      }
       if (user.status !== 'active') {
         setCurrentUser(user);
         setIsAuthenticated(false);
-        setSyncSource('supabase');
+        setSyncSource('backend');
         setSyncError('Tài khoản tình nguyện viên đang chờ admin phê duyệt.');
         await remoteStore.signOut();
         return user;
@@ -467,7 +260,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     setIsLoading(true);
     try {
-      if (remoteStore) await remoteStore.signOut();
+      await remoteStore.signOut();
       setIsAuthenticated(false);
       setCurrentUser(EMPTY_USER);
       setUsers([]);
@@ -483,7 +276,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setStations([]);
       setWasteTypes([]);
       setDutyStationId('');
-      setSyncSource('supabase');
+      setSyncSource('backend');
       setSyncError('');
     } finally {
       setIsLoading(false);
@@ -492,7 +285,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const updateAvatar = async (avatarKey: string) => {
     try {
-      if (!remoteStore || !isAuthenticated) throw new Error('Cần đăng nhập Supabase để đổi avatar.');
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để đổi avatar.');
       const nextUser = await remoteStore.updateAvatar(currentUser.id, avatarKey);
       setCurrentUser(nextUser);
       setUsers(items => items.map(item => (item.id === nextUser.id ? nextUser : item)));
@@ -504,7 +297,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updatePassword = async (email: string, currentPassword: string, newPassword: string) => {
     setIsLoading(true);
     try {
-      if (!remoteStore || !isAuthenticated) throw new Error('Đổi mật khẩu cần đăng nhập bằng tài khoản Eco-loop Campus.');
+      if (!isAuthenticated) throw new Error('Đổi mật khẩu cần đăng nhập bằng tài khoản Eco-loop Campus.');
       await remoteStore.updatePassword(email, currentPassword, newPassword);
     } finally {
       setIsLoading(false);
@@ -514,7 +307,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const requestReward = async (reward: Reward) => {
     if (points < reward.costPoints) return false;
     try {
-      if (!remoteStore || !isAuthenticated) return false;
+      if (!isAuthenticated) return false;
       const redemption = await remoteStore.requestReward(currentUser.id, reward);
       setRewardRedemptions(items => [redemption, ...items.filter(item => item.id !== redemption.id)]);
       return true;
@@ -525,9 +318,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const handleMissionAction = async (id: string) => {
     try {
-      if (!remoteStore || !isAuthenticated) return;
+      if (!isAuthenticated) return;
       const mission = await remoteStore.advanceMission(currentUser.id, id, missions);
       setMissions(items => [mission, ...items.filter(item => item.id !== mission.id)]);
+      void createMissionRewardPoint(currentUser.id, mission);
     } catch (error) {
       failRemoteMutation(error);
     }
@@ -545,7 +339,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const saveAiPrediction = async (input: SavePredictionInput) => {
     try {
-      if (!remoteStore || !isAuthenticated) return undefined;
+      if (!isAuthenticated) return undefined;
       const prediction = await remoteStore.saveAiPrediction(currentUser.id, input);
       setAiPredictions(items => [prediction, ...items.filter(item => item.id !== prediction.id)]);
       return prediction;
@@ -556,7 +350,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const createSubmission = async (input: CreateSubmissionInput) => {
     try {
-      if (!remoteStore || !isAuthenticated) throw new Error('Cần đăng nhập Supabase để tạo QR giao dịch.');
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để tạo QR giao dịch.');
       const submission = await remoteStore.createSubmission(currentUser.id, input, wasteTypes);
       setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
       await advanceMissionsForAction(missionIdsForSubmission(submission));
@@ -570,7 +364,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!input.message.trim()) return undefined;
 
     try {
-      if (!remoteStore || !isAuthenticated) throw new Error('Cần đăng nhập Supabase để gửi phản hồi.');
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để gửi phản hồi.');
       const feedback = await remoteStore.submitFeedback(currentUser, input);
       setFeedbacks(items => [feedback, ...items.filter(item => item.id !== feedback.id)]);
       await advanceMissionsForAction(missionIdsForFeedback());
@@ -588,7 +382,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const markSubmissionScanned = async (qrToken: string): Promise<QRScanOutcome> => {
     try {
-      if (!remoteStore || !isAuthenticated) throw new Error('Cần đăng nhập Supabase để quét QR giao dịch.');
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để quét QR giao dịch.');
       const outcome = await remoteStore.markSubmissionScanned(qrToken, currentUser.id, dutyStationId);
       if (outcome.submission) setSubmissions(items => [outcome.submission!, ...items.filter(item => item.id !== outcome.submission!.id)]);
       return outcome;
@@ -603,7 +397,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const wasteType = wasteTypes.find(item => item.id === submission?.wasteTypeId);
       if (!submission || !wasteType) return;
 
-      if (!remoteStore || !isAuthenticated) throw new Error('Cần đăng nhập Supabase để xác nhận QR.');
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để xác nhận QR.');
       const result = await remoteStore.confirmSubmission(submissionId, actualQuantity, currentUser.id, volunteerNote, wasteTypes);
       setSubmissions(items => [result.submission, ...items.filter(item => item.id !== result.submission.id)]);
       setPointTransactions(items => [result.point, ...items.filter(item => item.id !== result.point.id)]);
@@ -614,7 +408,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const rejectSubmission = async (submissionId: string, volunteerNote?: string) => {
     try {
-      if (!remoteStore || !isAuthenticated) throw new Error('Cần đăng nhập Supabase để từ chối QR.');
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để từ chối QR.');
       const submission = await remoteStore.rejectSubmission(submissionId, currentUser.id, volunteerNote);
       setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
     } catch (error) {
@@ -624,7 +418,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const requestReview = async (submissionId: string, volunteerNote?: string) => {
     try {
-      if (!remoteStore || !isAuthenticated) throw new Error('Cần đăng nhập Supabase để yêu cầu kiểm tra lại.');
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để yêu cầu kiểm tra lại.');
       const submission = await remoteStore.requestReview(submissionId, currentUser.id, volunteerNote);
       setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
     } catch (error) {
@@ -634,7 +428,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const attachProofImage = async (submissionId: string, input: CreateProofImageInput) => {
     try {
-      if (!remoteStore || !isAuthenticated) throw new Error('Cần đăng nhập Supabase để lưu ảnh minh chứng.');
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để lưu ảnh minh chứng.');
       const proofImage = await remoteStore.attachProofImage(submissionId, input);
       let updatedSubmission: RecyclingSubmission | undefined;
       setSubmissions(items => {

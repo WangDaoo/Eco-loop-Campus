@@ -1,4 +1,4 @@
-type SyncSource = 'supabase';
+type SyncSource = 'backend';
 type SyncTone = 'success' | 'warning';
 
 export type SyncStatusCopy = {
@@ -18,7 +18,7 @@ export function getSyncStatusCopy(syncSource: SyncSource, syncError: string): Sy
 
   return {
     title: 'Đang đồng bộ',
-    detail: 'Dữ liệu đang đồng bộ trực tiếp.',
+    detail: 'Dữ liệu đang đồng bộ từ backend PostgreSQL.',
     tone: 'success'
   };
 }

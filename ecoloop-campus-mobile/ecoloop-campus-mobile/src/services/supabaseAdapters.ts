@@ -411,16 +411,18 @@ export function mapQrScanLogRow(row: Row): QRScanLog {
 export function mapMissionRow(row: Row): Mission {
   const target = Math.max(1, number(row.target, 1));
   const status = missionStatus(row.status);
+  const current = Math.min(target, Math.max(0, number(row.current)));
+  const completed = Boolean(row.completed) || status === 'completed' || current >= target;
   return {
     id: text(row.id),
     title: text(row.title, 'Nhiem vu xanh'),
     description: text(row.description),
-    current: 0,
+    current,
     target,
     rewardPoints: number(row.rewardPoints ?? row.reward_points),
-    actionLabel: text(row.actionLabel ?? row.action_label, 'Tiep tuc'),
-    completed: status === 'completed',
-    status
+    actionLabel: completed ? 'Xong' : text(row.actionLabel ?? row.action_label, 'Tiep tuc'),
+    completed,
+    status: completed ? 'completed' : status
   };
 }
 

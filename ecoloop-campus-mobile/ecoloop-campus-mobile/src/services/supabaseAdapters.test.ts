@@ -266,6 +266,36 @@ test('maps mission catalog and merges student mission progress', () => {
   const completed = mapUserMissionRow({ id: 'p2', user_id: 'student-1', mission_id: 'submit-3', current: 3, completed: true, status: 'completed' });
   assert.equal(mergeMissionProgress([mission], [completed], 'student-1')[0].actionLabel, 'Xong');
 });
+
+test('maps backend mission rows with current progress already merged', () => {
+  const mission = mapMissionRow({
+    id: 'submit-3',
+    title: 'Gui rac tai che 3 lan',
+    target: 3,
+    rewardPoints: 100,
+    actionLabel: 'Tiep tuc',
+    current: 2,
+    completed: false,
+    status: 'active'
+  });
+
+  assert.equal(mission.current, 2);
+  assert.equal(mission.completed, false);
+  assert.equal(mission.actionLabel, 'Tiep tuc');
+
+  const completed = mapMissionRow({
+    id: 'submit-3',
+    title: 'Gui rac tai che 3 lan',
+    target: 3,
+    current: 3,
+    completed: true,
+    status: 'completed',
+    actionLabel: 'Xong'
+  });
+  assert.equal(completed.current, 3);
+  assert.equal(completed.completed, true);
+  assert.equal(completed.actionLabel, 'Xong');
+});
 test('maps QR scan logs for volunteer anti-fraud history', () => {
   assert.deepEqual(
     mapQrScanLogRow({

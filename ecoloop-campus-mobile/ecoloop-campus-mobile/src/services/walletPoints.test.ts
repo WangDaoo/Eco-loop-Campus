@@ -9,6 +9,6 @@ const transactions: EcoPointTransaction[] = [
   { id: 'pending-1', userId: 'student-1', points: 999, type: 'earn', status: 'pending', description: 'Pending', createdAt: new Date() }
 ];
 
-test('Supabase wallet uses authoritative users.points without double-counting point history', () => {
-  assert.equal(resolveWalletPoints({ profilePoints: 120, pointTransactions: transactions, syncSource: 'supabase' }), 120);
+test('PostgreSQL wallet uses authoritative users.points without double-counting point history', () => {
+  assert.equal(resolveWalletPoints({ profilePoints: 120, pointTransactions: transactions, syncSource: 'backend' }), 120);
 });

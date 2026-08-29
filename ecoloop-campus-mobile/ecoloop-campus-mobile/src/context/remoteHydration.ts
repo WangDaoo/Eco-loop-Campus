@@ -1,8 +1,8 @@
 import { AvatarPreset, BinStation, EcoPointTransaction, Feedback, Mission, PredictionRecord, RecyclingSubmission, Reward, QRScanLog, RewardRedemption, UserProfile, WasteType } from '../types';
-import { MobileInitialData, OperatingReadiness } from '../services/supabaseMobileStore';
+import { MobileInitialData, OperatingReadiness } from '../services/backendMobileStore';
 
 type RemoteHydrationState = {
-  syncSource: 'supabase';
+  syncSource: 'backend';
   syncError: string;
   users: UserProfile[];
   stations: BinStation[];
@@ -21,8 +21,8 @@ type RemoteHydrationState = {
 
 export function resolveRemoteHydrationState(data: MobileInitialData, readiness: OperatingReadiness): RemoteHydrationState {
   return {
-    syncSource: 'supabase',
-    syncError: readiness.ok ? '' : `Chưa có đủ dữ liệu trạm hoặc loại rác để vận hành (${readiness.missing.join(', ')}). Vui lòng đồng bộ dữ liệu trước khi tiếp tục.`,
+    syncSource: 'backend',
+    syncError: readiness.ok ? '' : `Backend PostgreSQL chưa có đủ dữ liệu trạm hoặc loại rác để vận hành (${readiness.missing.join(', ')}). Vui lòng tạo dữ liệu quản lý trước khi tiếp tục.`,
     users: data.users,
     stations: data.stations,
     wasteTypes: data.wasteTypes,

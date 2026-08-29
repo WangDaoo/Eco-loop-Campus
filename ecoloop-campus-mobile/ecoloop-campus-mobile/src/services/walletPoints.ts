@@ -3,7 +3,7 @@ import { EcoPointTransaction } from '../types';
 type ResolveWalletPointsInput = {
   profilePoints: number;
   pointTransactions: EcoPointTransaction[];
-  syncSource: 'supabase';
+  syncSource: 'backend';
 };
 
 export function resolveWalletPoints({ profilePoints, pointTransactions, syncSource }: ResolveWalletPointsInput) {

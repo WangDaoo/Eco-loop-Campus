@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolveRemoteHydrationState } from './remoteHydration';
-import { MobileInitialData } from '../services/supabaseMobileStore';
+import { MobileInitialData } from '../services/backendMobileStore';
 
 const baseData: MobileInitialData = {
   users: [{ id: 'user-real', name: 'Real user', points: 99 } as any],
@@ -19,10 +19,10 @@ const baseData: MobileInitialData = {
   avatarOptions: []
 };
 
-test('remote hydration keeps Supabase only when station and waste type data are ready', () => {
+test('remote hydration keeps backend PostgreSQL active when station and waste type data are ready', () => {
   const state = resolveRemoteHydrationState(baseData, { ok: true, missing: [] });
 
-  assert.equal(state.syncSource, 'supabase');
+  assert.equal(state.syncSource, 'backend');
   assert.equal(state.syncError, '');
   assert.equal(state.users[0].id, 'user-real');
   assert.equal(state.stations[0].id, 'station-real');
@@ -34,10 +34,10 @@ test('remote hydration keeps Supabase only when station and waste type data are 
   assert.equal((state as any).qrScanLogs[0].id, 'scan-real');
 });
 
-test('remote hydration falls back to mock data when operating data is incomplete', () => {
+test('remote hydration reports incomplete backend operating data without mock fallback', () => {
   const state = resolveRemoteHydrationState({ ...baseData, stations: [] }, { ok: false, missing: ['bins'] });
 
-  assert.equal(state.syncSource, 'supabase');
+  assert.equal(state.syncSource, 'backend');
   assert.match(state.syncError, /bins/);
   assert.deepEqual(state.stations, []);
   assert.deepEqual(state.wasteTypes, baseData.wasteTypes);

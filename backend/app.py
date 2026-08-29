@@ -727,6 +727,18 @@ ADMIN_RESOURCES = {
     },
 }
 
+POINT_HISTORY_CONFIG = {
+    "table": "point_history",
+    "columns": ["id", "prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "created_at", "admin_note", "source", "description", "status"],
+    "order": "timestamp desc",
+}
+
+USER_MISSIONS_CONFIG = {
+    "table": "user_missions",
+    "columns": ["id", "user_id", "mission_id", "current", "completed", "status", "updated_at"],
+    "order": "updated_at desc",
+}
+
 def admin_resource_config(resource):
     config = ADMIN_RESOURCES.get(resource)
     if not config:
@@ -756,14 +768,20 @@ def admin_row_to_json(columns, row):
 def select_admin_columns(config):
     return ", ".join(quote_identifier(column) for column in config["columns"])
 
-def list_admin_resource(resource):
-    config = admin_resource_config(resource)
+def list_rows_from_config(config, where_sql="", params=()):
     database_url = require_database_url()
-    query = f"select {select_admin_columns(config)} from {quote_identifier(config['table'])} order by {config['order']}"
+    query = f"select {select_admin_columns(config)} from {quote_identifier(config['table'])}"
+    if where_sql:
+        query += f" where {where_sql}"
+    query += f" order by {config['order']}"
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
-            cursor.execute(query)
+            cursor.execute(query, params)
             return [admin_row_to_json(config["columns"], row) for row in cursor.fetchall()]
+
+def list_admin_resource(resource):
+    config = admin_resource_config(resource)
+    return list_rows_from_config(config)
 
 def generated_admin_id(payload):
     base = payload.get("id") or payload.get("key") or payload.get("name") or payload.get("title") or payload.get("label") or "item"
@@ -830,6 +848,248 @@ def admin_save_resource(resource: str, payload: dict, authorization: str | None 
 def admin_delete_resource(resource: str, item_id: str, authorization: str | None = Header(default=None)):
     require_admin_user(authorization)
     return delete_admin_resource(resource, item_id)
+
+def mission_with_progress(mission, progress):
+    if not progress:
+        return mission
+    current = int(progress.get("current") or 0)
+    target = max(1, int(mission.get("target") or 1))
+    completed = bool(progress.get("completed")) or current >= target
+    return {
+        **mission,
+        "current": min(target, current),
+        "completed": completed,
+        "status": "completed" if completed else mission.get("status", "active"),
+        "actionLabel": "Xong" if completed else mission.get("actionLabel", "Tiếp tục"),
+    }
+
+def load_mobile_initial_data(user):
+    progress_rows = list_rows_from_config(USER_MISSIONS_CONFIG, "user_id = %s", (user["id"],))
+    progress_by_mission = {row["missionId"]: row for row in progress_rows}
+    missions = [
+        mission_with_progress(mission, progress_by_mission.get(mission["id"]))
+        for mission in list_rows_from_config(ADMIN_RESOURCES["missions"])
+    ]
+    return {
+        "users": list_rows_from_config(ADMIN_RESOURCES["users"]),
+        "stations": list_rows_from_config(ADMIN_RESOURCES["bins"]),
+        "wasteTypes": list_rows_from_config(ADMIN_RESOURCES["waste-types"]),
+        "predictions": list_rows_from_config(ADMIN_RESOURCES["predictions"]),
+        "submissions": list_rows_from_config(ADMIN_RESOURCES["recycling-submissions"]),
+        "pointTransactions": list_rows_from_config(POINT_HISTORY_CONFIG),
+        "feedbacks": list_rows_from_config(ADMIN_RESOURCES["feedback"]),
+        "missions": missions,
+        "rewards": list_rows_from_config(ADMIN_RESOURCES["rewards"]),
+        "rewardRedemptions": list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"]),
+        "proofImages": list_rows_from_config(ADMIN_RESOURCES["proof-images"]),
+        "qrScanLogs": list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"]),
+        "avatarOptions": list_avatar_presets(),
+    }
+
+def update_mobile_user_avatar(user_id, avatar_key):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select key, image_url from avatar_presets where key = %s", (avatar_key,))
+            avatar = cursor.fetchone()
+            if not avatar:
+                raise HTTPException(status_code=404, detail="Không tìm thấy avatar")
+            cursor.execute(
+                """
+                update users
+                set avatar_key = %s, avatar_url = %s, updated_at = now()
+                where id = %s
+                returning id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                """,
+                (avatar[0], avatar[1], user_id),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+    return to_user_profile(row)
+
+def prediction_bin_group(class_name, fallback="Khác"):
+    groups = {
+        "battery": "Nguy hại",
+        "biological": "Hữu cơ",
+        "cardboard": "Tái chế",
+        "glass": "Tái chế",
+        "metal": "Tái chế",
+        "paper": "Tái chế",
+        "plastic": "Tái chế",
+        "clothes": "Tái sử dụng",
+        "shoes": "Tái sử dụng",
+        "trash": "Rác thường",
+    }
+    return groups.get(str(class_name or "").strip().lower(), fallback)
+
+def save_mobile_prediction(user, payload):
+    prediction_id = str(payload.get("id") or f"pred-{uuid.uuid4()}")
+    class_name = str(payload.get("className") or payload.get("class") or "").strip().lower()
+    if not class_name:
+        raise HTTPException(status_code=400, detail="Thiếu kết quả phân loại")
+    confidence = max(0, min(1, float(payload.get("confidence") or 0)))
+    source = str(payload.get("source") or "upload").strip().lower()
+    if source not in {"upload", "camera", "mobile"}:
+        source = "upload"
+    bin_group = str(payload.get("binGroup") or payload.get("bin_group") or prediction_bin_group(class_name)).strip()
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                insert into predictions (id, class, confidence, source, bin_group, status, user_id, bin_id, image_name, image_url, thumbnail_url)
+                values (%s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s)
+                returning id, class, confidence, source, timestamp, bin_group, status, user_id, bin_id, image_name, image_url, thumbnail_url
+                """,
+                (
+                    prediction_id,
+                    class_name,
+                    confidence,
+                    source,
+                    bin_group,
+                    user["id"],
+                    payload.get("binId") or payload.get("bin_id"),
+                    payload.get("imageName") or payload.get("image_name"),
+                    payload.get("imageUrl") or payload.get("imageUri") or payload.get("image_url"),
+                    payload.get("thumbnailUrl") or payload.get("thumbnail_url"),
+                ),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    return admin_row_to_json(ADMIN_RESOURCES["predictions"]["columns"], row)
+
+def save_mobile_feedback(user, payload):
+    category = str(payload.get("type") or payload.get("category") or "other").strip()
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Thiếu nội dung phản hồi")
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                insert into feedback (id, user_id, user_name, category, message, status, priority, bin_id)
+                values (%s, %s, %s, %s, %s, 'unread', 'medium', %s)
+                returning id, user_id, user_name, category, message, status, priority, bin_id, admin_note, resolved_at, timestamp, created_at
+                """,
+                (str(uuid.uuid4()), user["id"], user.get("name") or "Eco-loop user", category, message, payload.get("stationId") or payload.get("binId")),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    return admin_row_to_json(ADMIN_RESOURCES["feedback"]["columns"], row)
+
+def advance_mobile_mission(user_id, mission_id):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select id, title, description, target, reward_points, action_label, status, created_at, updated_at
+                from missions
+                where id = %s and status = 'active'
+                for update
+                """,
+                (mission_id,),
+            )
+            mission_row = cursor.fetchone()
+            if not mission_row:
+                raise HTTPException(status_code=404, detail="Không tìm thấy nhiệm vụ")
+            mission = admin_row_to_json(ADMIN_RESOURCES["missions"]["columns"], mission_row)
+            target = max(1, int(mission["target"] or 1))
+            cursor.execute(
+                """
+                insert into user_missions (user_id, mission_id, current, completed, status)
+                values (%s, %s, 1, false, 'active')
+                on conflict (user_id, mission_id) do update
+                set current = least(%s, user_missions.current + 1),
+                    updated_at = now()
+                returning id, user_id, mission_id, current, completed, status, updated_at
+                """,
+                (user_id, mission_id, target),
+            )
+            progress = admin_row_to_json(USER_MISSIONS_CONFIG["columns"], cursor.fetchone())
+            completed_now = int(progress["current"] or 0) >= target
+            if completed_now and not progress.get("completed"):
+                cursor.execute(
+                    """
+                    update user_missions
+                    set completed = true, status = 'completed', updated_at = now()
+                    where user_id = %s and mission_id = %s
+                    returning id, user_id, mission_id, current, completed, status, updated_at
+                    """,
+                    (user_id, mission_id),
+                )
+                progress = admin_row_to_json(USER_MISSIONS_CONFIG["columns"], cursor.fetchone())
+                reward_points = int(mission.get("rewardPoints") or 0)
+                if reward_points > 0:
+                    cursor.execute("update users set points = points + %s, updated_at = now() where id = %s", (reward_points, user_id))
+                    cursor.execute(
+                        """
+                        insert into point_history (user_id, class, bin_group, action, points, source, description, status)
+                        values (%s, 'mission', 'Nhiệm vụ', %s, %s, 'mission_reward', %s, 'confirmed')
+                        """,
+                        (user_id, mission.get("title") or "Hoàn thành nhiệm vụ", reward_points, f"Hoàn thành nhiệm vụ {mission.get('title') or mission_id}"),
+                    )
+        connection.commit()
+    return mission_with_progress(mission, progress)
+
+def request_mobile_reward(user_id, reward_id):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select title, cost_points from rewards where id = %s and status = 'active'", (reward_id,))
+            reward = cursor.fetchone()
+            if not reward:
+                raise HTTPException(status_code=404, detail="Không tìm thấy phần thưởng")
+            cursor.execute("select points from users where id = %s for update", (user_id,))
+            user_points = cursor.fetchone()
+            if not user_points:
+                raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+            if int(user_points[0] or 0) < int(reward[1] or 0):
+                raise HTTPException(status_code=400, detail="Không đủ Ecopoint để đổi phần thưởng")
+            cursor.execute(
+                """
+                insert into reward_redemptions (id, user_id, reward_id, reward_label, cost_points, status)
+                values (%s, %s, %s, %s, %s, 'pending')
+                returning id, user_id, reward_id, reward_label, cost_points, status, requested_at, reviewed_at, admin_note
+                """,
+                (str(uuid.uuid4()), user_id, reward_id, reward[0], reward[1]),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    return admin_row_to_json(ADMIN_RESOURCES["reward-redemptions"]["columns"], row)
+
+@app.get("/api/mobile/initial-data")
+def mobile_initial_data(authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student", "volunteer", "admin"})
+    return load_mobile_initial_data(user)
+
+@app.patch("/api/mobile/users/me/avatar")
+def mobile_update_avatar(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student", "volunteer", "admin"})
+    return {"user": update_mobile_user_avatar(user["id"], payload.get("avatarKey") or payload.get("avatar_key"))}
+
+@app.post("/api/mobile/predictions", status_code=201)
+def mobile_save_prediction(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student", "volunteer", "admin"})
+    return {"data": save_mobile_prediction(user, payload)}
+
+@app.post("/api/mobile/feedback", status_code=201)
+def mobile_save_feedback(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student", "volunteer", "admin"})
+    return {"data": save_mobile_feedback(user, payload)}
+
+@app.post("/api/mobile/missions/{mission_id}/advance")
+def mobile_advance_mission(mission_id: str, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student"})
+    return {"data": advance_mobile_mission(user["id"], mission_id)}
+
+@app.post("/api/mobile/reward-redemptions", status_code=201)
+def mobile_request_reward(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student"})
+    return {"data": request_mobile_reward(user["id"], payload.get("rewardId") or payload.get("reward_id"))}
 
 
 def normalize_json_result(value):
