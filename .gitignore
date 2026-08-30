@@ -19,11 +19,15 @@ coverage/
 .env
 .env.*
 !.env.example
+!.env.docker.example
 
 .VSCodeCounter/
+.codex_tmp/
 logs/
 .runtime/
+outputs/
 scripts/tools/
+frontend/eco-loop-campus-admin/public/downloads/*.apk
 
 start-dev.bat
 start.md

@@ -1,4 +1,6 @@
 import io
+from pathlib import Path
+import tempfile
 import time
 import unittest
 
@@ -166,6 +168,60 @@ class AppEndpointTests(unittest.TestCase):
         self.assertEqual(captured["file_name"], "eco.png")
         self.assertEqual(captured["content_type"], "image/png")
         self.assertEqual(captured["content"], b"png-bytes")
+
+    def test_delete_avatar_preset_removes_database_row_and_uploaded_file(self):
+        original_database_path = app.RUNTIME_DATABASE_URL_PATH
+        original_connect = app.psycopg.connect
+        original_avatar_dir = app.AVATAR_UPLOADS_DIR
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "avatars"
+            image_path = root / "leaf" / "old.png"
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"avatar")
+            app.AVATAR_UPLOADS_DIR = root
+            app.RUNTIME_DATABASE_URL_PATH = Path(temp_dir) / "DATABASE_URL.txt"
+            app.RUNTIME_DATABASE_URL_PATH.write_text("postgresql://test", encoding="utf-8")
+
+            class FakeCursor:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc, tb):
+                    return False
+
+                def execute(self, sql, params):
+                    self.sql = sql
+                    self.params = params
+
+                def fetchone(self):
+                    return ("leaf", "/uploads/avatars/leaf/old.png")
+
+            class FakeConnection:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc, tb):
+                    return False
+
+                def cursor(self):
+                    return FakeCursor()
+
+                def commit(self):
+                    self.committed = True
+
+            app.psycopg.connect = lambda database_url: FakeConnection()
+
+            try:
+                response = app.delete_avatar_preset("leaf")
+                file_exists_after_delete = image_path.exists()
+            finally:
+                app.psycopg.connect = original_connect
+                app.RUNTIME_DATABASE_URL_PATH = original_database_path
+                app.AVATAR_UPLOADS_DIR = original_avatar_dir
+
+            self.assertEqual(response, {"ok": True})
+            self.assertFalse(file_exists_after_delete)
 
     def test_parse_cors_origins_defaults_to_wildcard(self):
         self.assertEqual(app.parse_cors_origins(""), ["*"])

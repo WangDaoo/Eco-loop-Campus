@@ -117,6 +117,11 @@ function normalizeAvatar(row: Row, baseUrl: string) {
   return { ...mapped, imageUrl: buildBackendAssetUrl(mapped.imageUrl, baseUrl) };
 }
 
+function normalizeUser(row: Row, baseUrl: string) {
+  const mapped = mapUserRow(row);
+  return { ...mapped, avatarUrl: buildBackendAssetUrl(mapped.avatarUrl, baseUrl) };
+}
+
 function readiness(data: Pick<MobileInitialData, 'stations' | 'wasteTypes'>): OperatingReadiness {
   const missing: string[] = [];
   if (data.stations.length === 0) missing.push('bins');
@@ -215,7 +220,7 @@ export function createBackendMobileStore({
     async signIn(role, email, password) {
       const payload = await request('/api/auth/login', { method: 'POST', body: { email: email.trim(), password } });
       await setToken(String(payload.token ?? ''));
-      const user = mapUserRow(payload.user ?? {});
+      const user = normalizeUser(payload.user ?? {}, endpointBaseUrl);
       if (user.status === 'pending') throw new Error('Tài khoản tình nguyện viên đang chờ admin phê duyệt.');
       if (user.status !== 'active') throw new Error('Tài khoản không được phép đăng nhập');
       if (user.role !== role) throw new Error('Tài khoản này không thuộc vai trò đang chọn');
@@ -224,7 +229,7 @@ export function createBackendMobileStore({
 
     async signUp(name, email, password, role) {
       const payload = await request('/api/auth/register', { method: 'POST', body: { name: name.trim(), email: email.trim(), password, role } });
-      return mapUserRow(payload.user ?? {});
+      return normalizeUser(payload.user ?? {}, endpointBaseUrl);
     },
 
     async updatePassword(_email, currentPassword, newPassword) {
@@ -244,7 +249,7 @@ export function createBackendMobileStore({
     async loadSessionProfile() {
       if (!(await getToken())) return undefined;
       const payload = await request('/api/auth/me');
-      return mapUserRow(payload.user ?? {});
+      return normalizeUser(payload.user ?? {}, endpointBaseUrl);
     },
 
     async loadInitialData(profile) {
@@ -259,7 +264,7 @@ export function createBackendMobileStore({
       const rewardRedemptions = (payload.rewardRedemptions ?? []).map((row: Row) => mapRewardRedemptionRow(row));
       const qrScanLogs = (payload.qrScanLogs ?? []).map((row: Row) => mapQrScanLogRow(row));
       return {
-        users: (payload.users ?? []).map((row: Row) => mapUserRow(row)),
+        users: (payload.users ?? []).map((row: Row) => normalizeUser(row, endpointBaseUrl)),
         stations: (payload.stations ?? []).map((row: Row) => mapBinRow(row)),
         wasteTypes: (payload.wasteTypes ?? []).map((row: Row) => mapWasteTypeRow(row)),
         predictions: profile.role === 'student' ? predictions.filter((item: PredictionRecord) => item.userId === profile.id) : predictions,
@@ -277,7 +282,7 @@ export function createBackendMobileStore({
 
     async updateAvatar(_userId, avatarKey) {
       const payload = await request('/api/mobile/users/me/avatar', { method: 'PATCH', body: { avatarKey } });
-      return mapUserRow(payload.user ?? payload.data ?? {});
+      return normalizeUser(payload.user ?? payload.data ?? {}, endpointBaseUrl);
     },
 
     async createSubmission(_userId, input) {

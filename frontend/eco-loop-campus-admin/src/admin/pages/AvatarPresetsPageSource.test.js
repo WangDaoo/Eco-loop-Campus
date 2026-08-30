@@ -26,9 +26,21 @@ test('AvatarPresetsPage keeps avatar management to code, name, and image upload 
   expect(source).not.toMatch(/--avatar-bg|--avatar-tile|--avatar-accent|--avatar-face/);
 });
 
-test('AvatarPresetsPage removes the old inline edit workflow from the avatar list', () => {
-  expect(source).not.toMatch(/editPreset/);
-  expect(source).not.toMatch(/Thao tác/);
-  expect(source).not.toMatch(/Sửa avatar/);
-  expect(source).not.toMatch(/>Sửa</);
+test('AvatarPresetsPage lets admins replace an existing avatar image without restoring old fields', () => {
+  expect(source).toMatch(/editingKey/);
+  expect(source).toMatch(/openEditForm/);
+  expect(source).toMatch(/Sửa ảnh/);
+  expect(source).toMatch(/Chọn ảnh mới trước khi lưu/);
+  expect(source).toMatch(/disabled=\{Boolean\(editingKey\)/);
+  expect(source).not.toMatch(/URL ảnh/);
+  expect(source).not.toMatch(/Thứ tự/);
+  expect(source).not.toMatch(/Trạng thái/);
+  expect(source).not.toMatch(/Màu nền|Màu khung|Màu nhấn|Màu nét mặt/);
+});
+
+test('AvatarPresetsPage lets admins delete an avatar preset from the backend', () => {
+  expect(source).toMatch(/deleteAvatarPreset/);
+  expect(source).toMatch(/Xoá/);
+  expect(source).toMatch(/window\.confirm/);
+  expect(source).toMatch(/Đã xoá avatar/);
 });

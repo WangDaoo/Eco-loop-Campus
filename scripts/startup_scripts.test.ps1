@@ -14,6 +14,7 @@ function Assert-Contains([string] $content, [string] $needle, [string] $message)
 
 $backendBat = Read-RepoFile 'start_backend.bat'
 $frontendBat = Read-RepoFile 'start_frontend.bat'
+$serverSetupBat = Read-RepoFile 'setup_server_full.bat'
 $laptopBat = Read-RepoFile 'scripts\start_laptop_server.bat'
 $gitignore = Read-RepoFile '.gitignore'
 
@@ -28,6 +29,14 @@ Assert-Contains $frontendBat 'api_public_url.txt' 'start_frontend.bat must read 
 Assert-Contains $frontendBat 'web_public_url.txt' 'start_frontend.bat must write the web public URL.'
 Assert-Contains $frontendBat 'npm run build' 'start_frontend.bat must build the production web before serving public.'
 Assert-Contains $frontendBat 'serve_cra_build.js' 'start_frontend.bat must serve the production build.'
+
+Assert-Contains $serverSetupBat 'Docker.DockerDesktop' 'setup_server_full.bat must be able to install Docker Desktop via winget.'
+Assert-Contains $serverSetupBat '.env.docker.example' 'setup_server_full.bat must create Docker env from the committed template.'
+Assert-Contains $serverSetupBat 'docker compose --env-file "%ENV_FILE%" up -d --build' 'setup_server_full.bat must start the full stack in detached server mode.'
+Assert-Contains $serverSetupBat 'New-NetFirewallRule' 'setup_server_full.bat must open backend/web firewall ports when run as admin.'
+Assert-Contains $serverSetupBat 'docker_bootstrap_admin.ps1' 'setup_server_full.bat must bootstrap the backend admin account.'
+Assert-Contains $serverSetupBat '/api/health/db' 'setup_server_full.bat must verify backend database health.'
+Assert-Contains $serverSetupBat 'Get-NetIPAddress' 'setup_server_full.bat must print LAN IPs for mobile/web clients.'
 
 Assert-Contains $laptopBat 'start_backend.bat' 'start_laptop_server.bat must launch the public backend script.'
 Assert-Contains $laptopBat 'api_public_url.txt' 'start_laptop_server.bat must wait for API public URL before web startup.'

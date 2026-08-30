@@ -1,5 +1,6 @@
 import {
   buildBackendAssetUrl,
+  deleteAvatarPreset,
   listAvatarPresets,
   saveAvatarPreset,
 } from "./backendAvatarStore";
@@ -75,5 +76,20 @@ describe("backendAvatarStore", () => {
   test("buildBackendAssetUrl leaves absolute image URLs unchanged", () => {
     expect(buildBackendAssetUrl("https://cdn.example/avatar.png")).toBe("https://cdn.example/avatar.png");
     expect(buildBackendAssetUrl("")).toBe("");
+  });
+
+  test("deletes avatar presets through the backend API", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+
+    const response = await deleteAvatarPreset("mam-xanh");
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/avatar-presets/mam-xanh",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(response).toEqual({ data: { ok: true }, source: "backend", error: null });
   });
 });

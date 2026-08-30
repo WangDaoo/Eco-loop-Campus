@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import app
@@ -128,6 +129,42 @@ def test_volunteer_confirms_recycling_submission(client, monkeypatch):
     assert response.status_code == 200
     assert response.json()["data"]["points"] == 5
 
+
+def test_postgres_business_error_maps_to_client_error(monkeypatch):
+    if app.psycopg is None:
+        pytest.skip("psycopg is not installed")
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, query, args):
+            raise app.psycopg.errors.RaiseException("PROOF_IMAGE_REQUIRED")
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(app, "require_database_url", lambda: "postgresql://example", raising=False)
+    monkeypatch.setattr(app.psycopg, "connect", lambda database_url: FakeConnection(), raising=False)
+
+    with pytest.raises(HTTPException) as error:
+        app.call_postgres_json_function("confirm_recycling_submission", ["sub-1", "volunteer-1", 1, ""])
+
+    assert error.value.status_code == 400
+    assert error.value.detail == "PROOF_IMAGE_REQUIRED"
 
 def test_volunteer_rejects_and_requests_review(client, monkeypatch):
     patch_current_user(monkeypatch, "volunteer")

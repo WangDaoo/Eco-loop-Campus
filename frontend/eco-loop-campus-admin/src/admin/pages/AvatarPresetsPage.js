@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import DataTable from "../components/DataTable";
 import Toast from "../components/Toast";
-import { listAvatarPresets, saveAvatarPreset } from "../services/backendAvatarStore";
+import { deleteAvatarPreset, listAvatarPresets, saveAvatarPreset } from "../services/backendAvatarStore";
 
 const initialForm = {
   key: "",
@@ -26,6 +26,8 @@ export default function AvatarPresetsPage() {
   const [toast, setToast] = useState("");
   const [toastTone, setToastTone] = useState("success");
   const [selectedFile, setSelectedFile] = useState(null);
+  const [editingKey, setEditingKey] = useState("");
+  const [deletingKey, setDeletingKey] = useState("");
 
   const showToast = (message, tone = "success") => {
     setToastTone(tone);
@@ -53,6 +55,17 @@ export default function AvatarPresetsPage() {
   const resetForm = () => {
     setForm(initialForm);
     setSelectedFile(null);
+    setEditingKey("");
+  };
+
+  const openEditForm = row => {
+    setEditingKey(row.key);
+    setSelectedFile(null);
+    setForm({
+      key: row.key || "",
+      label: row.label || "",
+      imageUrl: row.imageUrl || "",
+    });
   };
 
   const handleFile = event => {
@@ -73,7 +86,7 @@ export default function AvatarPresetsPage() {
       return;
     }
     if (!selectedFile) {
-      showToast("Chọn ảnh trước khi lưu", "danger");
+      showToast(editingKey ? "Chọn ảnh mới trước khi lưu" : "Chọn ảnh trước khi lưu", "danger");
       return;
     }
     setSaving(true);
@@ -87,7 +100,25 @@ export default function AvatarPresetsPage() {
     setItems(current => [response.data, ...current.filter(item => item.key !== response.data.key)].sort((a, b) => a.label.localeCompare(b.label, "vi")));
     setForm(initialForm);
     setSelectedFile(null);
-    showToast("Đã lưu avatar");
+    setEditingKey("");
+    showToast(editingKey ? "Đã cập nhật ảnh avatar" : "Đã lưu avatar");
+  };
+
+  const deletePreset = async row => {
+    if (!row?.key) return;
+    const confirmed = window.confirm(`Xoá avatar "${row.label || row.key}"?`);
+    if (!confirmed) return;
+    setDeletingKey(row.key);
+    const response = await deleteAvatarPreset(row.key);
+    setDeletingKey("");
+    setError(response.error);
+    if (response.error) {
+      showToast(response.error.message || "Chưa xoá được avatar", "danger");
+      return;
+    }
+    setItems(current => current.filter(item => item.key !== row.key));
+    if (editingKey === row.key) resetForm();
+    showToast("Đã xoá avatar");
   };
 
   const columns = [
@@ -95,6 +126,8 @@ export default function AvatarPresetsPage() {
     { key: "key", label: "Mã avatar" },
     { key: "label", label: "Tên avatar", render: row => <strong>{row.label}</strong> },
     { key: "imageUrl", label: "Ảnh", render: row => row.imageUrl ? <a href={row.imageUrl} target="_blank" rel="noreferrer">Mở ảnh</a> : <span className="eg-muted-block">Chưa có ảnh</span> },
+    { key: "edit", label: "", render: row => <button type="button" className="eg-small-btn" onClick={() => openEditForm(row)}>Sửa ảnh</button> },
+    { key: "delete", label: "", render: row => <button type="button" className="eg-small-btn danger" onClick={() => deletePreset(row)} disabled={deletingKey === row.key}>{deletingKey === row.key ? "Đang xoá..." : "Xoá"}</button> },
   ];
 
   return (
@@ -123,14 +156,14 @@ export default function AvatarPresetsPage() {
       </section>
 
       <section className="eg-card">
-        <div className="eg-card-head"><h2>Thêm avatar</h2></div>
+        <div className="eg-card-head"><h2>{editingKey ? "Sửa ảnh avatar" : "Thêm avatar"}</h2></div>
         <form className="eg-form eg-avatar-form" onSubmit={submitForm}>
           <div className="eg-avatar-form-preview">
             <AvatarPreview row={form} size="lg" />
           </div>
           <label>
             Mã avatar
-            <input required value={form.key} onChange={event => updateForm({ key: event.target.value })} placeholder="mam-xanh" />
+            <input required value={form.key} onChange={event => updateForm({ key: event.target.value })} placeholder="mam-xanh" disabled={Boolean(editingKey)} />
           </label>
           <label>
             Tên avatar
@@ -141,7 +174,7 @@ export default function AvatarPresetsPage() {
             <input type="file" accept="image/*" onChange={handleFile} disabled={saving} />
           </label>
           <div className="eg-form-actions">
-            <button type="submit" className="eg-primary-btn" disabled={saving}>{saving ? "Đang lưu..." : "Lưu avatar"}</button>
+            <button type="submit" className="eg-primary-btn" disabled={saving}>{saving ? "Đang lưu..." : editingKey ? "Cập nhật ảnh" : "Lưu avatar"}</button>
           </div>
         </form>
       </section>

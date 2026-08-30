@@ -9,6 +9,7 @@ import time
 import uuid
 import re
 import unicodedata
+from urllib.parse import unquote, urlparse
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -1100,14 +1101,35 @@ def normalize_json_result(value):
         return json.loads(value)
     return value
 
+POSTGRES_BUSINESS_ERROR_STATUS = {
+    "SUBMISSION_NOT_FOUND": 404,
+    "BIN_NOT_FOUND": 404,
+    "WASTE_TYPE_NOT_FOUND": 404,
+    "INVALID_STUDENT": 400,
+    "INVALID_VOLUNTEER": 400,
+    "INVALID_QUANTITY": 400,
+    "INVALID_SUBMISSION_STATUS": 400,
+    "PROOF_IMAGE_REQUIRED": 400,
+}
+
+def postgres_business_error_code(error):
+    message = str(error or "").strip().splitlines()[0] if str(error or "").strip() else ""
+    return message.strip()
+
 def call_postgres_json_function(function_name, args):
     database_url = require_database_url()
     placeholders = ", ".join(["%s"] * len(args))
-    with psycopg.connect(database_url) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(f"select {function_name}({placeholders})", args)
-            row = cursor.fetchone()
-        connection.commit()
+    try:
+        with psycopg.connect(database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(f"select {function_name}({placeholders})", args)
+                row = cursor.fetchone()
+            connection.commit()
+    except Exception as error:
+        error_code = postgres_business_error_code(error)
+        if error_code in POSTGRES_BUSINESS_ERROR_STATUS:
+            raise HTTPException(status_code=POSTGRES_BUSINESS_ERROR_STATUS[error_code], detail=error_code) from error
+        raise
     return normalize_json_result(row[0])
 
 def qr_payload_value(payload, camel_name, snake_name=None, default=None):
@@ -1345,18 +1367,45 @@ def save_avatar_preset(key, label, file_name, content_type, content):
     return to_avatar_preset(row)
 
 
+def delete_avatar_upload(image_url):
+    raw_path = unquote(urlparse(str(image_url or "")).path)
+    prefix = "/uploads/avatars/"
+    if not raw_path.startswith(prefix):
+        return
+
+    relative_path = raw_path[len(prefix):].replace("\\", "/")
+    parts = [part for part in relative_path.split("/") if part not in ("", ".", "..")]
+    if len(parts) < 2:
+        return
+
+    root = AVATAR_UPLOADS_DIR.resolve()
+    target = (root / Path(*parts)).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return
+
+    if target.is_file():
+        target.unlink()
+        try:
+            target.parent.rmdir()
+        except OSError:
+            pass
+
+
 def delete_avatar_preset(key):
     database_url = require_database_url()
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
-                "delete from avatar_presets where key = %s returning key",
+                "delete from avatar_presets where key = %s returning key, image_url",
                 (key,),
             )
             deleted = cursor.fetchone()
         connection.commit()
     if not deleted:
         raise HTTPException(status_code=404, detail="Không tìm thấy avatar")
+    delete_avatar_upload(deleted[1])
     return {"ok": True}
 
 

@@ -87,6 +87,46 @@ test('backend mobile store loads initial data from PostgreSQL backend payload', 
   assert.equal(data.avatarOptions[0].imageUrl, 'https://api.example.test/uploads/avatars/leaf.png');
 });
 
+test('backend mobile store normalizes relative user avatar URLs from PostgreSQL backend', async () => {
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage: memoryStorage(),
+    fetcher: async () => response({
+      users: [{ id: 'student-1', name: 'Sinh viên', email: 'student@school.edu.vn', role: 'student', status: 'active', points: 5, avatarKey: 'leaf', avatarUrl: '/uploads/avatars/leaf.png' }],
+      stations: [],
+      wasteTypes: [],
+      predictions: [],
+      submissions: [],
+      pointTransactions: [],
+      feedbacks: [],
+      missions: [],
+      rewards: [],
+      rewardRedemptions: [],
+      proofImages: [],
+      qrScanLogs: [],
+      avatarOptions: [{ key: 'leaf', label: 'Lá xanh', imageUrl: '/uploads/avatars/leaf.png' }],
+    }),
+  });
+
+  const data = await store.loadInitialData({ id: 'student-1', name: 'Sinh viên', email: 'student@school.edu.vn', role: 'student', group: '', points: 0, status: 'active' });
+
+  assert.equal(data.users[0].avatarUrl, 'https://api.example.test/uploads/avatars/leaf.png');
+});
+
+test('backend mobile store normalizes selected avatar URL after profile update', async () => {
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage: memoryStorage(),
+    fetcher: async () => response({
+      user: { id: 'student-1', name: 'Sinh viên', email: 'student@school.edu.vn', role: 'student', status: 'active', points: 5, avatarKey: 'leaf', avatarUrl: '/uploads/avatars/leaf.png' },
+    }),
+  });
+
+  const user = await store.updateAvatar('student-1', 'leaf');
+
+  assert.equal(user.avatarUrl, 'https://api.example.test/uploads/avatars/leaf.png');
+});
+
 test('backend mobile store creates scans and confirms QR submissions via backend transaction API', async () => {
   const calls: string[] = [];
   const store = createBackendMobileStore({
