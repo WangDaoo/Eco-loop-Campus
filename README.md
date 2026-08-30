@@ -1,178 +1,306 @@
-# Eco-loop Campus
+# Eco-loop Campus - Mô hình phân loại và tái chế rác thải trong trường học theo hướng kinh tế tuần hoàn
 
-Eco-loop Campus là hệ thống quản lý phân loại, thu gom và tái chế rác thải trong khuôn viên trường theo hướng kinh tế tuần hoàn. Dự án gồm web quản trị, backend FastAPI, PostgreSQL, AI phân loại rác và app mobile cho sinh viên/tình nguyện viên.
+Eco-loop Campus là hệ thống quản lý phân loại, thu gom và tái chế rác thải trong khuôn viên trường. Repository này chứa web quản trị, backend FastAPI, PostgreSQL, AI phân loại rác, Docker setup và app mobile Android cho sinh viên/tình nguyện viên.
 
-Luồng nghiệp vụ chính: admin cấu hình trạm và dữ liệu vận hành, sinh viên tạo giao dịch gửi rác bằng QR, tình nguyện viên quét QR và gửi ảnh minh chứng, hệ thống cộng Ecopoint sau khi xác nhận.
+Dự án dùng AI như một lớp hỗ trợ, không thay thế quy trình xác nhận thật. Luồng chính là sinh viên gửi rác tái chế, app tạo QR giao dịch, tình nguyện viên quét QR và gửi ảnh minh chứng, hệ thống ghi nhận Ecopoint sau khi xác nhận.
 
-![Status](https://img.shields.io/badge/Status-Active-success)
+![Project Status](https://img.shields.io/badge/Status-Active-success)
 ![Python](https://img.shields.io/badge/Python-3.10-blue)
+![React](https://img.shields.io/badge/React-Admin_Web-61DAFB)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791)
-![React](https://img.shields.io/badge/React-Admin_Web-61DAFB)
-![Expo](https://img.shields.io/badge/Expo-Mobile_App-000020)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-AI-orange)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
+![Expo](https://img.shields.io/badge/Expo-Mobile_App-000020)
+![TensorFlow](https://img.shields.io/badge/TensorFlow-2.13-orange)
 
-## Mục Lục
+---
 
-- [Kiến trúc hiện tại](#kiến-trúc-hiện-tại)
-- [Chức năng chính](#chức-năng-chính)
-- [Chạy nhanh bằng Docker](#chạy-nhanh-bằng-docker)
-- [Cài server laptop mới](#cài-server-laptop-mới)
-- [Chạy thủ công không Docker](#chạy-thủ-công-không-docker)
-- [Mobile APK](#mobile-apk)
-- [Public tunnel](#public-tunnel)
-- [Database](#database)
-- [API chính](#api-chính)
-- [Test và build](#test-và-build)
-- [Cấu trúc thư mục](#cấu-trúc-thư-mục)
+## Table of Contents
 
-## Kiến Trúc Hiện Tại
+- [Problem Statement](#problem-statement)
+- [Objectives](#objectives)
+- [System Architecture](#system-architecture)
+- [Technologies Used](#technologies-used)
+- [Features](#features)
+- [Deployment and Local URLs](#deployment-and-local-urls)
+- [Installation and Setup](#installation-and-setup)
+- [Public Setup with Cloudflare Tunnel](#public-setup-with-cloudflare-tunnel)
+- [Usage](#usage)
+- [Project Structure](#project-structure)
+- [AI Model and Waste Mapping](#ai-model-and-waste-mapping)
+- [PostgreSQL Data Model](#postgresql-data-model)
+- [Mobile App Direction](#mobile-app-direction)
+- [Future Scope](#future-scope)
+- [Testing](#testing)
+- [Credits and Acknowledgements](#credits-and-acknowledgements)
+
+---
+
+## Problem Statement
+
+Việc phân loại rác trong môi trường trường học dễ bị thiếu dữ liệu, thiếu xác nhận thật và khó tạo động lực lâu dài cho sinh viên. Nếu rác tái chế, rác hữu cơ, pin/nguy hại và rác còn lại bị trộn lẫn, nhà trường khó theo dõi hiệu quả thu gom, khó thống kê báo cáo và khó khuyến khích hành vi xanh.
+
+Eco-loop Campus giải quyết vấn đề bằng cách kết hợp:
+
+- Trạm/thùng rác có QR định danh rõ ràng.
+- App student để gửi rác, tạo QR giao dịch và theo dõi điểm.
+- App volunteer để quét QR, chụp ảnh minh chứng và xác nhận.
+- Web admin để quản lý người dùng, trạm, avatar, phần thưởng, nhiệm vụ, feedback và báo cáo.
+- PostgreSQL làm nguồn dữ liệu gốc.
+- FastAPI làm backend Auth/API/AI.
+- AI MobileNetV2 hỗ trợ gợi ý phân loại rác.
+
+Trọng tâm dự án không chỉ là nhận diện ảnh. Hệ thống cần vận hành được một vòng tuần hoàn trong trường: tạo dữ liệu đúng, xác nhận giao dịch thật, cộng điểm minh bạch, chặn gian lận QR và xuất báo cáo cho quản lý.
+
+---
+
+## Objectives
+
+1. **Campus Waste Operation Management**
+   Quản lý trạm/thùng rác, QR, người dùng, avatar, phản hồi, Ecopoint, phần thưởng, nhiệm vụ và báo cáo vận hành.
+
+2. **Student Recycling Workflow**
+   Cho phép sinh viên đăng ký/đăng nhập, tìm trạm, quét QR trạm, gửi rác, tạo QR giao dịch, nhận điểm sau khi được xác nhận và đổi thưởng.
+
+3. **Volunteer Verification Workflow**
+   Cho phép tình nguyện viên đăng ký ở trạng thái chờ duyệt, được admin duyệt, chọn trạm trực, quét QR giao dịch, gửi proof và xác nhận/từ chối/yêu cầu xem xét.
+
+4. **AI-Assisted Waste Classification**
+   Dùng MobileNetV2 phân loại 10 lớp rác và ánh xạ sang nhóm thùng phù hợp bằng tiếng Việt.
+
+5. **Ecopoint and Engagement**
+   Ghi nhận điểm, lịch sử điểm, bảng xếp hạng, nhiệm vụ xanh, yêu cầu đổi thưởng và trạng thái phần thưởng.
+
+6. **Portable Server Deployment**
+   Cho phép chuyển dự án sang laptop server bằng Docker Compose, chạy PostgreSQL + backend + web ổn định trong LAN.
+
+---
+
+## System Architecture
 
 ```mermaid
 flowchart LR
-  Web[React Admin Web] --> API[FastAPI Backend]
-  Mobile[Expo / React Native APK] --> API
-  API --> PG[(PostgreSQL)]
-  API --> Uploads[Local Uploads]
-  API --> AI[MobileNetV2 AI Model]
-  Web --> AIQueue[/predict/jobs]
-  Mobile --> AIQueue
+  StudentApp[Mobile App - Student] --> FastAPI[FastAPI Backend]
+  VolunteerApp[Mobile App - Volunteer] --> FastAPI
+  AdminWeb[React Admin Web] --> FastAPI
+
+  FastAPI --> PostgreSQL[(PostgreSQL Database)]
+  FastAPI --> Uploads[Local Uploads]
+  FastAPI --> Model[MobileNetV2 Waste Model]
+  FastAPI --> AIQueue[In-memory AI Queue]
+
+  PostgreSQL --> Reports[Reports]
+  PostgreSQL --> Points[Ecopoint]
+  PostgreSQL --> CampusMap[Campus Map and Bin Stations]
 ```
 
-| Thành phần | Vai trò |
+Current system boundaries:
+
+| Layer | Current responsibility |
 |---|---|
-| FastAPI backend | Auth, API nghiệp vụ, QR/Ecopoint transaction, upload, AI queue |
-| PostgreSQL | CSDL gốc của dự án |
-| React admin web | Dashboard, users, avatars, bins/map/QR, scans, rewards, missions, reports |
-| Mobile app | Student/volunteer flow: đăng ký, đăng nhập, QR, AI, map, rewards, profile |
-| Upload local | Avatar, proof image, prediction image qua `/uploads/...` |
-| Docker Compose | Chạy PostgreSQL + backend + web ổn định trên laptop server |
+| React admin web | Admin dashboard, CRUD screens, reports, map, avatar, AI testing |
+| FastAPI backend | Auth, admin API, mobile API, upload files, QR/Ecopoint transaction, AI queue |
+| PostgreSQL | Source of truth for users, bins, QR, submissions, points, rewards, missions, feedback |
+| Local uploads | Avatar presets, proof images, AI prediction images served through `/uploads/...` |
+| Mobile app | Student and volunteer workflows, backend polling, QR, map, AI suggestion |
+| Docker Compose | Runs PostgreSQL, FastAPI backend and web admin on a laptop server |
 
-Supabase không còn là runtime chính. Các thư mục SQL Supabase cũ chỉ giữ để tham khảo/migration/demo, không dùng để chạy hệ thống hiện tại.
+Supabase is no longer the runtime database/auth provider. Some Supabase SQL files remain only as legacy/demo/migration references.
 
-## Chức Năng Chính
+---
 
-### Admin Web
+## Technologies Used
 
-- Đăng nhập bằng backend Auth, role `admin`.
-- Dashboard KPI từ PostgreSQL.
-- Quản lý người dùng: xem, lọc, khóa/mở khóa, duyệt volunteer pending.
-- Quản lý avatar: mã avatar, tên avatar, upload ảnh, sửa/xóa avatar.
-- Quản lý trạm/thùng rác: QR chuẩn, trạng thái, sức chứa, vị trí bản đồ.
-- Quản lý AI scan, duyệt/từ chối prediction.
-- Quản lý Ecopoint, lịch sử điểm, phần thưởng, yêu cầu đổi thưởng.
-- Quản lý nhiệm vụ, feedback, báo cáo và xuất dữ liệu.
+| Component | Technology | Purpose |
+|---|---|---|
+| Backend | Python 3.10, FastAPI, Uvicorn | Auth, API, AI queue, uploads, QR/Ecopoint |
+| Database | PostgreSQL 17, psycopg | Operational data source of truth |
+| AI/ML | TensorFlow 2.13, Keras, MobileNetV2 | Waste classification |
+| Frontend | React CRA, JavaScript, React Router | Admin web application |
+| UI and charts | Chart.js, react-chartjs-2, Phosphor Icons | Dashboard, KPI, chart and icon system |
+| Map | Leaflet on web, WebView/SVG map support on mobile | Campus bin station map |
+| Mobile | Expo, React Native, Android APK | Student and volunteer app |
+| QR | JSON QR payload v1, react-native-qrcode-svg, qrcode.react | Station QR and submission QR |
+| Uploads | FastAPI multipart + local static files | Avatar, proof and prediction images |
+| Deployment | Docker Compose, Docker Desktop | Laptop server setup |
+| Testing | Pytest, Jest, React Testing Library, node:test, TypeScript | Backend, web and mobile verification |
 
-### Mobile Student
+---
 
-- Đăng ký tài khoản student, đăng nhập, đổi mật khẩu.
-- Xem điểm, nhiệm vụ, lịch sử, bảng xếp hạng.
-- Quét QR trạm để tự chọn đúng thùng rác.
-- Tạo QR giao dịch gửi rác.
-- Dùng AI gợi ý phân loại rác bằng tiếng Việt.
-- Xem bản đồ trạm, zoom/pan, chọn marker.
-- Chọn avatar do admin upload.
-- Gửi feedback.
+## Features
 
-### Mobile Volunteer
+### Admin Authentication
 
-- Đăng ký volunteer ở trạng thái pending.
-- Admin duyệt volunteer trên web.
-- Volunteer chọn trạm trực, quét QR giao dịch student.
-- Upload proof, confirm/reject/review.
-- Hệ thống chặn QR hết hạn, đã dùng, sai trạm, token sai.
+- Backend email/password login.
+- JWT bearer token stored by web/mobile clients.
+- Admin-only access using `users.role = admin` and `users.status = active`.
+- Student accounts register as active.
+- Volunteer accounts register as pending and require admin approval.
+- Password change requires the current password.
 
-### AI
+### Dashboard
 
-- Model chính: `backend/model/mobilenetv2_model.h5`.
-- Endpoint cũ: `POST /predict`.
-- Endpoint queue: `POST /predict/jobs`, `GET /predict/jobs/{job_id}`, `GET /predict/queue`.
-- Queue chạy in-memory, phù hợp demo/laptop server 8GB RAM.
+- KPI cards for scans, pending approvals, feedback, bin attention and Ecopoint.
+- Charts for scans, points, waste groups, feedback and bin status.
+- Dashboard data loads from PostgreSQL through FastAPI.
+- Polling keeps important pages refreshed without Supabase realtime.
 
-## Chạy Nhanh Bằng Docker
+### Scans and AI Review
 
-Yêu cầu:
+- List AI predictions from upload, camera or mobile.
+- Show class, confidence, bin group, user, bin and status.
+- Approve or reject scan records.
+- AI tester uses queue first: `POST /predict/jobs`, then polls `GET /predict/jobs/{job_id}`.
+- Fallback direct endpoint `POST /predict` remains available.
 
-- Docker Desktop for Windows.
-- WSL2 backend bật trong Docker Desktop.
-- Docker daemon đang chạy.
+### Users, Classes, and Departments
 
-Chạy từ thư mục gốc:
+- Manage students, volunteers, teachers and admins from PostgreSQL profiles.
+- Search and filter by role, class/group, points and status.
+- Lock/unlock users.
+- Approve pending volunteers.
+- Manual "add user" UI is intentionally removed; users register from app or are imported/bootstraped through backend scripts.
+
+### Bins and QR Stations
+
+- Manage station ID, name, bin group, location, building, floor, QR code, status and capacity.
+- Station QR uses Eco-loop JSON payload v1.
+- Admin map supports marker location editing.
+- Mobile map reads the same backend coordinates.
+- Stations missing `map_x/map_y` remain in lists but are not drawn as map markers.
+
+### Ecopoint
+
+- Configure point rules for waste groups.
+- View point history and user leaderboard.
+- Reward redemptions are stored in PostgreSQL.
+- Points are awarded through backend transaction/RPC-style logic, not directly by the client.
+- QR flow blocks expired, reused, wrong-station and invalid tokens.
+
+### Feedback
+
+- Students can submit feedback from the mobile app.
+- Admin can filter feedback by status, priority, station and query.
+- Admin can update status and notes.
+- Unresolved feedback appears in operational views.
+
+### Reports
+
+- Filter by date range, building and bin group.
+- Summarize scans, points, feedback and bin status.
+- Export report data from PostgreSQL-backed admin data.
+
+### AI Tester
+
+- Upload image or use camera in web admin.
+- Health-check backend before sending image.
+- Queue endpoint avoids timeout when many devices submit images.
+- Successful AI result can be saved as a `predictions` row.
+
+### Model Settings
+
+- Display MobileNetV2 model information.
+- Show 10 AI classes.
+- Configure confidence warning threshold.
+- AI class labels are shown in Vietnamese for users.
+
+### Avatar Presets
+
+- Admin manages avatar presets with only three fields: avatar code, avatar name and uploaded image.
+- Uploaded images are served from backend local uploads.
+- Mobile profile receives avatar presets from backend and lets students choose from admin-provided options.
+
+---
+
+## Deployment and Local URLs
+
+The project can run in three modes:
+
+- **Docker server mode** for a laptop that runs PostgreSQL + backend + web.
+- **Local developer mode** for separate backend/frontend commands.
+- **Public demo mode** through temporary Cloudflare quick tunnels.
+
+| Service | Local URL |
+|---|---|
+| Frontend admin | `http://127.0.0.1:3000/#/dashboard` |
+| Login page | `http://127.0.0.1:3000/#/login` |
+| Backend API | `http://127.0.0.1:8000` |
+| Backend docs | `http://127.0.0.1:8000/docs` |
+| DB health | `http://127.0.0.1:8000/api/health/db` |
+| AI predict endpoint | `http://127.0.0.1:8000/predict` |
+| AI queue endpoint | `http://127.0.0.1:8000/predict/jobs` |
+| AI queue health | `http://127.0.0.1:8000/predict/queue` |
+
+For Android Studio Emulator on the same laptop:
+
+```text
+http://10.0.2.2:8000
+```
+
+For real Android devices in the same Wi-Fi:
+
+```text
+http://<LAPTOP_SERVER_LAN_IP>:8000
+```
+
+---
+
+## Installation and Setup
+
+### Prerequisites
+
+- Git
+- Docker Desktop for server mode
+- Python 3.10 for non-Docker backend development
+- Node.js 18+ and npm for non-Docker web development
+- PostgreSQL 17 for non-Docker DB development
+- Android Studio for emulator/APK testing
+- Optional: Ollama with `llama3` for local chatbot responses
+
+### Docker Server Setup
+
+From the project root:
+
+```bat
+setup_server_full.bat
+```
+
+Run it as Administrator on the laptop server. It checks Docker, can install Docker Desktop through `winget` after confirmation, creates `.env.docker`, configures LAN API URL, opens firewall ports `3000` and `8000`, runs Docker Compose in the background and bootstraps the admin account.
+
+Default admin:
+
+```text
+admin@school.edu.vn / 123456
+```
+
+Override admin before setup:
+
+```bat
+set ADMIN_EMAIL=admin@example.com
+set ADMIN_NAME=Eco-loop Admin
+set ADMIN_PASSWORD=your-password
+setup_server_full.bat
+```
+
+### Docker Compose Setup
 
 ```bat
 start_docker.bat
 ```
 
-Lệnh này dùng:
+This uses:
 
 ```powershell
 docker compose --env-file .env.docker up --build
 ```
 
-URL local:
+The Docker stack includes:
 
-| Dịch vụ | URL |
-|---|---|
-| Web admin | `http://127.0.0.1:3000` |
-| Backend | `http://127.0.0.1:8000` |
-| API docs | `http://127.0.0.1:8000/docs` |
-| DB health | `http://127.0.0.1:8000/api/health/db` |
-| AI queue | `http://127.0.0.1:8000/predict/queue` |
-| PostgreSQL | `127.0.0.1:5432` |
+- `postgres`: PostgreSQL 17 with persistent volume `ecoloop_postgres_data`.
+- `backend`: FastAPI + TensorFlow + upload volume.
+- `web`: React build served by Nginx on port `3000`.
 
-## Cài Server Laptop Mới
-
-Nếu laptop mới dùng làm server backend/web cho toàn bộ hệ thống, chạy file này bằng **Run as administrator**:
-
-```bat
-setup_server_full.bat
-```
-
-File này sẽ:
-
-- Kiểm Docker Desktop.
-- Có thể cài Docker Desktop qua `winget` sau khi người chạy xác nhận.
-- Tạo `.env.docker` từ `.env.docker.example`.
-- Lấy IP LAN của laptop server.
-- Build web với `REACT_APP_API_URL=http://<IP-LAN>:8000`.
-- Mở firewall port `3000` và `8000` nếu có quyền admin.
-- Chạy PostgreSQL + backend + web bằng Docker Compose ở chế độ background.
-- Kiểm backend, DB health, AI queue, web.
-- Bootstrap admin mặc định.
-
-Admin mặc định:
-
-```text
-Email: admin@school.edu.vn
-Password: 123456
-```
-
-Đổi thông tin admin trước khi chạy:
-
-```bat
-set ADMIN_EMAIL=admin@example.com
-set ADMIN_NAME=Eco-loop Admin
-set ADMIN_PASSWORD=mat-khau-moi
-setup_server_full.bat
-```
-
-Sau khi setup xong, script sẽ in:
-
-```text
-Web LAN: http://<IP-LAN>:3000
-Backend LAN: http://<IP-LAN>:8000
-```
-
-App Android trong cùng Wi-Fi nên build với:
-
-```env
-EXPO_PUBLIC_API_URL=http://<IP-LAN>:8000
-```
-
-## Chạy Thủ Công Không Docker
-
-### Backend
+### Backend Setup
 
 ```powershell
 cd backend
@@ -182,13 +310,13 @@ pip install -r requirements.txt
 python -m uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Backend cần `DATABASE_URL` trỏ tới PostgreSQL. Launcher local có sẵn:
+Backend requires `DATABASE_URL` to point to PostgreSQL. The Windows launcher can prepare/check the local backend runtime:
 
 ```bat
 start_backend.bat
 ```
 
-### Frontend
+### Frontend Setup
 
 ```powershell
 cd frontend\eco-loop-campus-admin
@@ -196,67 +324,15 @@ npm install
 npm start
 ```
 
-Launcher build public/local:
-
-```bat
-start_frontend.bat
-```
-
-## Mobile APK
-
-Thư mục app:
-
-```text
-ecoloop-campus-mobile/ecoloop-campus-mobile
-```
-
-APK release:
-
-```text
-dist/ecoloop-campus-mobile-release.apk
-```
-
-Khi test bằng Android Studio Emulator và backend chạy trên cùng laptop:
+Frontend environment:
 
 ```env
-EXPO_PUBLIC_API_URL=http://10.0.2.2:8000
+REACT_APP_API_URL=http://127.0.0.1:8000
 ```
 
-Khi test bằng điện thoại thật cùng Wi-Fi với laptop server:
+### PostgreSQL Setup
 
-```env
-EXPO_PUBLIC_API_URL=http://<IP-LAN-LAPTOP-SERVER>:8000
-```
-
-Nếu đổi API URL, cần build lại APK.
-
-## Public Tunnel
-
-Quick tunnel Cloudflare chỉ phù hợp demo ngắn. URL `trycloudflare.com` có thể đổi sau mỗi lần restart, nên APK đã build với URL cũ sẽ không gọi được backend.
-
-Launcher hiện có:
-
-```bat
-start_backend.bat
-start_frontend.bat
-```
-
-Runtime URL được ghi vào:
-
-```text
-.runtime/api_public_url.txt
-.runtime/web_public_url.txt
-```
-
-Muốn dùng ổn định lâu dài, nên dùng một trong các cách:
-
-- Laptop server IP tĩnh trong LAN.
-- Domain thật trỏ về server.
-- Cloudflare named tunnel với domain cố định.
-
-## Database
-
-Schema PostgreSQL chính:
+Main schema:
 
 ```text
 backend/local_db/schema.sql
@@ -269,140 +345,169 @@ backend/local_db/bootstrap_admin.sql
 scripts/docker_bootstrap_admin.ps1
 ```
 
-Dữ liệu mẫu tách riêng, không chạy trong Docker production:
+The database starts blank after schema setup. Demo data is separated and is not loaded by Docker production mode.
 
-```text
-frontend/eco-loop-campus-admin/supabase/demo_seed.sql
+### Quick Start Scripts
+
+From project root:
+
+```bat
+setup_server_full.bat
+start_docker.bat
+start_backend.bat
+start_frontend.bat
 ```
 
-Import danh sách sinh viên lớp `12523W.4`:
+---
 
-```text
-backend/local_db/import_students_12523w4.py
+## Public Setup with Cloudflare Tunnel
+
+This setup is intended for short demos from another device or network. It exposes:
+
+- FastAPI backend through a public `https://*.trycloudflare.com` URL.
+- React admin web through another public `https://*.trycloudflare.com` URL.
+- Web build configured to call the public backend URL.
+
+Quick tunnel URLs are temporary. When a tunnel window is closed or restarted, the URL changes. APKs built with the old URL will not call the new backend.
+
+### What the scripts do automatically
+
+- Check and install common Windows runtime dependencies when possible.
+- Start FastAPI backend.
+- Start Cloudflare tunnel for backend.
+- Write `.runtime/api_public_url.txt`.
+- Build React admin web with the API public URL.
+- Start Cloudflare tunnel for web.
+- Write `.runtime/web_public_url.txt`.
+
+### One-command public startup
+
+```bat
+scripts\start_laptop_server.bat
 ```
 
-Các bảng chính:
+### Manual public startup
 
-| Bảng | Vai trò |
+```bat
+start_backend.bat
+start_frontend.bat
+```
+
+### Public API checks
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health/db
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/predict/queue
+```
+
+Then test the public URL:
+
+```powershell
+$api = Get-Content .runtime\api_public_url.txt
+Invoke-WebRequest -UseBasicParsing "$api/"
+Invoke-WebRequest -UseBasicParsing "$api/api/health/db"
+Invoke-WebRequest -UseBasicParsing "$api/predict/queue"
+```
+
+Expected backend root response:
+
+```json
+{"message":"Eco-loop Campus Backend Running"}
+```
+
+### Public web checks
+
+```powershell
+$web = Get-Content .runtime\web_public_url.txt
+Start-Process "$web/#/login"
+```
+
+Test these pages:
+
+- `#/dashboard`
+- `#/users`
+- `#/avatars`
+- `#/bins`
+- `#/scans`
+- `#/ai-test`
+- `#/ecopoints`
+- `#/feedback`
+- `#/reports`
+
+### Mobile APK and emulator setup for public API
+
+APK release path:
+
+```text
+dist/ecoloop-campus-mobile-release.apk
+```
+
+For Android Studio Emulator local backend:
+
+```env
+EXPO_PUBLIC_API_URL=http://10.0.2.2:8000
+```
+
+For real Android device in the same Wi-Fi:
+
+```env
+EXPO_PUBLIC_API_URL=http://<LAPTOP_SERVER_LAN_IP>:8000
+```
+
+For public tunnel:
+
+```env
+EXPO_PUBLIC_API_URL=<api-public-url>
+```
+
+Rebuild APK whenever `EXPO_PUBLIC_API_URL` changes.
+
+### Security notes
+
+- Do not commit `.env`, `.env.docker`, `.runtime`, logs or secrets.
+- Keep `AUTH_SECRET` private.
+- Do not expose PostgreSQL port `5432` to the public internet.
+- Use HTTPS/domain/named tunnel for long-running public demos.
+- Quick tunnel is not stable enough for a permanent APK API URL.
+
+### Troubleshooting public startup
+
+| Problem | Fix |
 |---|---|
-| `users` | Tài khoản, role, lớp/nhóm, điểm, avatar |
-| `avatar_presets` | Avatar do admin upload |
-| `bins` | Trạm/thùng rác, QR, vị trí bản đồ |
-| `waste_types` | Loại rác, đơn vị, điểm |
-| `predictions` | Lượt AI phân loại |
-| `point_rules` | Luật cộng điểm |
-| `point_history` | Lịch sử điểm |
-| `rewards` | Phần thưởng |
-| `reward_redemptions` | Yêu cầu đổi thưởng |
-| `missions` | Nhiệm vụ |
-| `user_missions` | Tiến độ nhiệm vụ |
-| `feedback` | Phản hồi |
-| `recycling_submissions` | Giao dịch QR student |
-| `qr_scan_logs` | Log volunteer quét QR |
-| `proof_images` | Ảnh minh chứng |
-| `settings` | Cấu hình model |
+| Web opens but AI fails | Start backend first, verify `/predict/queue`, rebuild/restart frontend with the correct API URL |
+| `.runtime\api_public_url.txt` missing | Backend tunnel is not ready or Cloudflare is blocked |
+| Docker command missing | Install Docker Desktop and enable WSL2 backend |
+| Backend cannot reach DB | Check `DATABASE_URL` and `/api/health/db` |
+| APK cannot call backend in emulator | Use `http://10.0.2.2:8000`, not `127.0.0.1` |
+| Real phone cannot call backend | Use laptop LAN IP and open Windows Firewall port `8000` |
+| Quick tunnel URL expired | Restart tunnel and rebuild APK if APK uses public URL |
 
-## API Chính
+---
 
-### Health
+## Usage
 
-```text
-GET /
-GET /api/health/db
-GET /predict/queue
-```
+1. Start the server with `setup_server_full.bat` or `start_docker.bat`.
+2. Open `http://127.0.0.1:3000/#/login`.
+3. Sign in with an admin account from the backend `users` table.
+4. Create operating data: avatar presets, bins/stations, waste types, rewards and missions.
+5. Student registers or logs in on the mobile app.
+6. Student scans a station QR and creates a recycling submission QR.
+7. Volunteer registers, waits for admin approval, logs in and selects duty station.
+8. Volunteer scans the student submission QR, uploads proof and confirms/rejects/reviews.
+9. Student receives points after confirmation.
+10. Admin checks submissions, scan logs, proof images, point history and reports on the web.
 
-### Auth
+---
 
-```text
-POST /api/auth/register
-POST /api/auth/login
-GET /api/auth/me
-POST /api/auth/change-password
-POST /api/auth/logout
-PATCH /api/users/{user_id}/status
-```
-
-### Admin
-
-```text
-GET /api/admin/{resource}
-POST /api/admin/{resource}
-DELETE /api/admin/{resource}/{item_id}
-GET /api/avatar-presets
-POST /api/avatar-presets
-DELETE /api/avatar-presets/{key}
-```
-
-### Mobile
-
-```text
-GET /api/mobile/initial-data
-PATCH /api/mobile/users/me/avatar
-POST /api/mobile/predictions
-POST /api/mobile/feedback
-POST /api/mobile/missions/{mission_id}/advance
-POST /api/mobile/reward-redemptions
-POST /api/mobile/recycling-submissions
-POST /api/mobile/recycling-submissions/scan
-POST /api/mobile/recycling-submissions/{submission_id}/proof
-POST /api/mobile/recycling-submissions/{submission_id}/confirm
-POST /api/mobile/recycling-submissions/{submission_id}/reject
-POST /api/mobile/recycling-submissions/{submission_id}/review
-```
-
-### AI
-
-```text
-POST /predict
-POST /predict/jobs
-GET /predict/jobs/{job_id}
-POST /chat
-```
-
-## Test Và Build
-
-Backend:
-
-```powershell
-backend\.venv\Scripts\python.exe -m pytest -q
-```
-
-Web:
-
-```powershell
-npm --prefix frontend\eco-loop-campus-admin test -- --watchAll=false --runInBand
-npm --prefix frontend\eco-loop-campus-admin run build
-```
-
-Mobile:
-
-```powershell
-npm --prefix ecoloop-campus-mobile\ecoloop-campus-mobile test
-npm --prefix ecoloop-campus-mobile\ecoloop-campus-mobile run typecheck
-```
-
-Startup/script checks:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\startup_scripts.test.ps1
-```
-
-Docker checks:
-
-```powershell
-docker compose --env-file .env.docker config
-docker compose --env-file .env.docker ps
-docker compose --env-file .env.docker logs -f backend
-```
-
-## Cấu Trúc Thư Mục
+## Project Structure
 
 ```text
 Eco-loop-Campus/
   backend/
     app.py
     Dockerfile
+    requirements.txt
     local_db/
       schema.sql
       bootstrap_admin.sql
@@ -416,13 +521,13 @@ Eco-loop-Campus/
     eco-loop-campus-admin/
       Dockerfile
       nginx.conf
-      src/admin/
       public/
+      src/admin/
       package.json
   ecoloop-campus-mobile/
     ecoloop-campus-mobile/
-      src/
       android/
+      src/
       package.json
   scripts/
     docker_bootstrap_admin.ps1
@@ -437,14 +542,211 @@ Eco-loop-Campus/
   start_docker.bat
   start_backend.bat
   start_frontend.bat
+  README.md
 ```
 
-## Ghi Chú Vận Hành
+---
 
-- Không commit `.env`, `.env.docker`, `.runtime`, logs, cache hoặc dữ liệu nhạy cảm.
-- PostgreSQL Docker dùng volume `ecoloop_postgres_data`; không chạy `down -v` nếu không muốn xóa DB.
-- Port public/LAN cần mở: web `3000`, backend `8000`.
-- Không mở PostgreSQL `5432` ra internet.
-- AI queue đang in-memory, job sẽ mất nếu backend restart.
-- Máy 8GB RAM nên giữ `AI_QUEUE_WORKERS=1`.
-- QR mới dùng payload JSON chuẩn Eco-loop; token cũ chỉ giữ để parser không crash khi gặp mã cũ.
+## AI Model and Waste Mapping
+
+Main model file:
+
+```text
+backend/model/mobilenetv2_model.h5
+```
+
+Additional model file kept for comparison/testing:
+
+```text
+backend/model/mobilenetv3_model.keras
+```
+
+Model facts:
+
+- Architecture: MobileNetV2 transfer learning.
+- Input size: `224x224` RGB image.
+- Output: 10-class softmax.
+- Backend endpoint normalizes result to `{ "class": string, "confidence": number }`.
+- Mobile shows Vietnamese labels for user-facing AI results.
+
+AI classes:
+
+```text
+battery, biological, cardboard, clothes, glass, metal, paper, plastic, shoes, trash
+```
+
+Mapping to school bin groups:
+
+| AI class | Vietnamese label | Bin group |
+|---|---|---|
+| `battery` | Pin | Pin / nguy hại |
+| `biological` | Rác hữu cơ | Hữu cơ |
+| `cardboard` | Bìa carton | Tái chế |
+| `clothes` | Quần áo | Còn lại |
+| `glass` | Thủy tinh | Tái chế |
+| `metal` | Kim loại | Tái chế |
+| `paper` | Giấy | Tái chế |
+| `plastic` | Nhựa | Tái chế |
+| `shoes` | Giày dép | Còn lại |
+| `trash` | Rác còn lại | Còn lại |
+
+Important rule: AI does not directly award points. Ecopoint is awarded after volunteer/admin verification.
+
+---
+
+## PostgreSQL Data Model
+
+Current main schema:
+
+```text
+backend/local_db/schema.sql
+```
+
+Current tables:
+
+| Table | Purpose |
+|---|---|
+| `users` | User profile, role, group/class, points, status, avatar |
+| `avatar_presets` | Admin-managed avatar code, name and image URL |
+| `bins` | Bin/station data, QR code, capacity, map coordinates |
+| `waste_types` | Waste category, unit and point-per-unit |
+| `predictions` | AI scan records and review status |
+| `point_rules` | Ecopoint rules by waste class/group |
+| `point_history` | Confirmed point transactions |
+| `feedback` | Student feedback and admin handling notes |
+| `settings` | Model threshold and metadata |
+| `rewards` | Reward catalog |
+| `missions` | Mission catalog |
+| `user_missions` | Student mission progress |
+| `reward_redemptions` | Reward redemption requests |
+| `recycling_submissions` | Student QR submission transactions |
+| `qr_scan_logs` | Volunteer QR scan result logs |
+| `proof_images` | Proof images for volunteer verification |
+
+Demo seed is separated from production schema:
+
+```text
+frontend/eco-loop-campus-admin/supabase/demo_seed.sql
+```
+
+Student roster import script:
+
+```text
+backend/local_db/import_students_12523w4.py
+```
+
+---
+
+## Mobile App Direction
+
+The mobile app already targets the Eco-loop Campus operation-first model and talks to the FastAPI backend.
+
+### Student App
+
+- Register/login through backend Auth.
+- View Ecopoint wallet, missions, rewards, leaderboard and history.
+- Scan station QR to select the correct bin automatically.
+- Create a one-time submission QR with expiry.
+- Use AI suggestion for waste classification.
+- View campus map with backend station coordinates.
+- Change avatar from admin-provided avatar presets.
+- Change password and submit feedback.
+
+### Volunteer App
+
+- Register as volunteer and wait for admin approval.
+- Login only after admin approval.
+- Select duty station.
+- Scan student submission QR.
+- Handle anti-fraud results: `SUCCESS`, `EXPIRED`, `ALREADY_USED`, `INVALID_TOKEN`, `WRONG_STATION`.
+- Upload proof image.
+- Confirm, reject or request review.
+- Review scan history and profile.
+
+### QR Anti-Fraud Rules
+
+- QR token must be one-time and time-limited.
+- QR token must not contain editable point/user data.
+- Submission QR payload uses Eco-loop JSON v1.
+- Every scan creates a log.
+- Client does not update `users.points` directly.
+- Point confirmation requires a valid scan and proof image.
+
+---
+
+## Future Scope
+
+- Replace quick tunnels with a fixed domain or Cloudflare named tunnel.
+- Add database backup/restore scripts for laptop server migration.
+- Add production HTTPS reverse proxy.
+- Add Redis/Celery if AI traffic exceeds the in-memory queue design.
+- Add richer admin audit logs.
+- Add batch recycling partner/sponsor management.
+- Add offline-friendly mobile queue for weak network locations.
+- Convert model to TensorFlow Lite if on-device inference becomes the primary path.
+
+---
+
+## Testing
+
+Backend:
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q
+```
+
+Frontend:
+
+```powershell
+npm --prefix frontend\eco-loop-campus-admin test -- --watchAll=false --runInBand
+npm --prefix frontend\eco-loop-campus-admin run build
+```
+
+Mobile:
+
+```powershell
+npm --prefix ecoloop-campus-mobile\ecoloop-campus-mobile test
+npm --prefix ecoloop-campus-mobile\ecoloop-campus-mobile run typecheck
+```
+
+Startup scripts:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\startup_scripts.test.ps1
+```
+
+Docker checks:
+
+```powershell
+docker compose --env-file .env.docker config
+docker compose --env-file .env.docker ps
+docker compose --env-file .env.docker logs -f backend
+```
+
+Manual E2E checklist:
+
+1. Admin logs in.
+2. Admin creates station, waste type, avatar, reward and mission.
+3. Student logs in and scans station QR.
+4. Student creates submission QR.
+5. Volunteer scans submission QR.
+6. Volunteer uploads proof and confirms.
+7. Student points increase.
+8. Web admin shows submission, proof, scan log and point history.
+
+---
+
+## Credits and Acknowledgements
+
+- **AI model:** MobileNetV2 waste classification.
+- **Backend:** FastAPI + PostgreSQL.
+- **Frontend:** React admin web.
+- **Mobile:** Expo / React Native Android app.
+- **Deployment:** Docker Compose laptop server.
+
+### Team Members
+
+- Phạm Thanh Hương (11425064)
+- Nguyễn Phương Thảo (11425159)
+- Đào Minh Quang (10123264)
+- Phan Văn Khánh (12523037)
