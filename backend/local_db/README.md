@@ -26,3 +26,9 @@ scripts\seed_utehy_demo_data.bat
 ```
 
 Demo accounts use temporary password `123456`. The script keeps `schema.sql` production-clean and does not truncate real tables.
+
+To remove only the demo rows created by the UTEHY seed script:
+
+```bat
+scripts\cleanup_utehy_demo_data.bat
+```

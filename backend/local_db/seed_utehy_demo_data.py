@@ -16,6 +16,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 TEMPORARY_PASSWORD = "123456"
 DEMO_PREFIX = "UTEHY_"
+UPLOADS_DIR = app.UPLOADS_DIR
 
 E2E_CLEANUP_SQL = r"""
 delete from point_history
@@ -41,6 +42,62 @@ delete from missions where id like 'E2E\_%' escape '\';
 
 DEMO_REFRESH_SQL = r"""
 delete from point_history where source = 'utehy_demo_seed';
+"""
+
+UTEHY_DEMO_CLEANUP_SQL = r"""
+delete from point_history
+where source = 'utehy_demo_seed'
+   or user_id in (select id from users where id like 'UTEHY\_%' escape '\' or email like '%@utehy.edu.vn')
+   or submission_id in (select id from recycling_submissions where id like 'UTEHY\_%' escape '\' or qr_token like 'ECL-SUB-UTEHY-%')
+   or prediction_id in (select id from predictions where id like 'UTEHY\_%' escape '\');
+delete from proof_images
+where id like 'UTEHY\_%' escape '\'
+   or image_url like '/uploads/proofs/utehy-%'
+   or submission_id in (select id from recycling_submissions where id like 'UTEHY\_%' escape '\');
+delete from qr_scan_logs
+where id like 'UTEHY\_%' escape '\'
+   or qr_token like 'ECL-SUB-UTEHY-%'
+   or scanned_by in (select id from users where id like 'UTEHY\_%' escape '\')
+   or station_id in (select id from bins where id like 'UTEHY\_%' escape '\');
+delete from user_missions
+where id like 'UTEHY\_%' escape '\'
+   or user_id in (select id from users where id like 'UTEHY\_%' escape '\')
+   or mission_id in (select id from missions where id like 'UTEHY\_%' escape '\');
+delete from reward_redemptions
+where id like 'UTEHY\_%' escape '\'
+   or user_id in (select id from users where id like 'UTEHY\_%' escape '\')
+   or reward_id in (select id from rewards where id like 'UTEHY\_%' escape '\');
+delete from feedback
+where id like 'UTEHY\_%' escape '\'
+   or user_id in (select id from users where id like 'UTEHY\_%' escape '\')
+   or bin_id in (select id from bins where id like 'UTEHY\_%' escape '\');
+delete from recycling_submissions
+where id like 'UTEHY\_%' escape '\'
+   or qr_token like 'ECL-SUB-UTEHY-%'
+   or user_id in (select id from users where id like 'UTEHY\_%' escape '\')
+   or bin_id in (select id from bins where id like 'UTEHY\_%' escape '\')
+   or waste_type_id in (select id from waste_types where id like 'UTEHY\_%' escape '\');
+delete from predictions
+where id like 'UTEHY\_%' escape '\'
+   or image_name like 'utehy-%'
+   or user_id in (select id from users where id like 'UTEHY\_%' escape '\')
+   or bin_id in (select id from bins where id like 'UTEHY\_%' escape '\');
+delete from rewards
+where id like 'UTEHY\_%' escape '\'
+   or category_id in (select id from reward_categories where id like 'UTEHY\_%' escape '\');
+delete from reward_categories where id like 'UTEHY\_%' escape '\';
+delete from point_rules where id like 'UTEHY\_%' escape '\';
+delete from missions where id like 'UTEHY\_%' escape '\';
+delete from users where id like 'UTEHY\_%' escape '\' or email like '%@utehy.edu.vn';
+delete from bins where id like 'UTEHY\_%' escape '\' or qr_code like 'ECL-ST-UTEHY-%';
+delete from waste_types where id like 'UTEHY\_%' escape '\';
+delete from avatar_presets where key like 'UTEHY\_%' escape '\' or image_url like '/uploads/avatars/utehy-%';
+update settings
+set threshold = 0.65,
+    model_name = 'MobileNetV2',
+    class_count = 10,
+    updated_at = now()
+where id = 'main' and model_name like '%UTEHY%';
 """
 
 UPSERT_SQL = """
@@ -381,6 +438,20 @@ def ensure_demo_upload_files():
     return len(files)
 
 
+def remove_demo_upload_files():
+    removed = 0
+    for folder_name in ["avatars", "predictions", "proofs"]:
+        folder = UPLOADS_DIR / folder_name
+        if not folder.exists():
+            continue
+        for path in folder.glob("utehy-*.svg"):
+            if not path.is_file():
+                continue
+            path.unlink()
+            removed += 1
+    return removed
+
+
 def _upsert_many(cursor, sql, records):
     for record in records:
         cursor.execute(sql, record)
@@ -514,6 +585,22 @@ def seed_database(database_url=None, dry_run=False):
 
     summary = {key: (1 if key == "settings" else len(value)) for key, value in dataset.items()}
     summary["upload_files"] = files_written
+    return summary
+
+
+def cleanup_demo_database(database_url=None, dry_run=False):
+    dataset = build_demo_dataset()
+    summary = {key: (1 if key == "settings" else len(value)) for key, value in dataset.items()}
+    if dry_run:
+        return summary
+
+    target_database_url = database_url or app.require_database_url()
+    with psycopg.connect(target_database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(UTEHY_DEMO_CLEANUP_SQL)
+        connection.commit()
+
+    summary["upload_files_removed"] = remove_demo_upload_files()
     return summary
 
 

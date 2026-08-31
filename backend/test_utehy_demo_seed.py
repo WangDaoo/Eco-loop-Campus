@@ -50,6 +50,36 @@ def test_utehy_demo_seed_cleanup_sql_targets_only_e2e_data():
     assert "truncate" not in lowered
     assert "delete from users;" not in lowered
 
+def test_utehy_demo_cleanup_sql_targets_only_seeded_data():
+    from local_db.seed_utehy_demo_data import UTEHY_DEMO_CLEANUP_SQL
+
+    lowered = UTEHY_DEMO_CLEANUP_SQL.lower()
+
+    assert "utehy\\_%" in lowered
+    assert "utehy_demo_seed" in lowered
+    assert "delete from users" in lowered
+    assert "delete from bins" in lowered
+    assert "delete from reward_categories" in lowered
+    assert "delete from rewards;" not in lowered
+    assert "delete from users;" not in lowered
+    assert "truncate" not in lowered
+
+def test_utehy_demo_cleanup_upload_files_uses_backend_upload_root(tmp_path, monkeypatch):
+    from local_db import seed_utehy_demo_data
+
+    assert hasattr(seed_utehy_demo_data, "UPLOADS_DIR")
+    monkeypatch.setattr(seed_utehy_demo_data, "UPLOADS_DIR", tmp_path)
+    avatar_dir = tmp_path / "avatars"
+    avatar_dir.mkdir()
+    demo_file = avatar_dir / "utehy-avatar-test.svg"
+    real_file = avatar_dir / "custom-avatar.svg"
+    demo_file.write_text("<svg />", encoding="utf-8")
+    real_file.write_text("<svg />", encoding="utf-8")
+
+    assert seed_utehy_demo_data.remove_demo_upload_files() == 1
+    assert not demo_file.exists()
+    assert real_file.exists()
+
 
 def test_utehy_demo_seed_upserts_instead_of_creating_duplicates():
     from local_db.seed_utehy_demo_data import UPSERT_SQL
