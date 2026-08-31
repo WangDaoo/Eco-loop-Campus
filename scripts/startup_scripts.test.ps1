@@ -139,6 +139,10 @@ Assert-Contains $ensureScript 'api.adoptium.net' 'ensure script must download JD
 Assert-Contains $ensureScript 'Test-JavaForAndroid' 'ensure script must validate Java without letting java -version stderr abort old PowerShell.'
 Assert-Contains $ensureScript '$javaPreference = $ErrorActionPreference' 'ensure script must preserve ErrorActionPreference around java -version.'
 Assert-Contains $ensureScript '$ErrorActionPreference = "Continue"' 'ensure script must allow java -version stderr on old PowerShell.'
+Assert-Contains $ensureScript 'Invoke-NativeCommandTolerant' 'ensure script must run noisy native tools through a stderr-tolerant helper on old PowerShell.'
+Assert-Contains $ensureScript 'Chap nhan Android SDK licenses that bai.' 'ensure script must check sdkmanager license exit code instead of failing on stderr warnings.'
+Assert-Contains $ensureScript 'Cai Android SDK packages that bai.' 'ensure script must check sdkmanager package install exit code instead of failing on stderr warnings.'
+Assert-Contains $ensureScript 'cmd /c "for /l %i in (1,1,40) do @echo y" | & $sdkManager --licenses' 'ensure script must still pipe license acceptance into sdkmanager.'
 Assert-Contains $ensureScript 'cloudflared-windows-amd64.exe' 'ensure script must download cloudflared for Windows x64.'
 
 $rngScripts = @(

@@ -112,6 +112,20 @@ function Test-Python310() {
     }
 }
 
+function Invoke-NativeCommandTolerant([string] $ErrorMessage, [scriptblock] $Command) {
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Command
+        if ($LASTEXITCODE -ne 0) {
+            throw $ErrorMessage
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
 function Ensure-Python310() {
     if (Test-Python310) {
         Write-Step "Python 3.10 da san sang: $(py -3.10 --version)"
@@ -398,12 +412,13 @@ function Ensure-AndroidSdk() {
     Write-Step "Android SDK: $androidSdkRoot"
 
     Write-Step 'Chap nhan Android SDK licenses...'
-    cmd /c "for /l %i in (1,1,40) do @echo y" | & $sdkManager --licenses --sdk_root="$androidSdkRoot" *> $null
+    Invoke-NativeCommandTolerant 'Chap nhan Android SDK licenses that bai.' {
+        cmd /c "for /l %i in (1,1,40) do @echo y" | & $sdkManager --licenses --sdk_root="$androidSdkRoot" *> $null
+    }
 
     Write-Step 'Dang cai Android SDK packages cho Eco-loop mobile...'
-    & $sdkManager --sdk_root="$androidSdkRoot" 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'cmdline-tools;latest'
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Cai Android SDK packages that bai.'
+    Invoke-NativeCommandTolerant 'Cai Android SDK packages that bai.' {
+        & $sdkManager --sdk_root="$androidSdkRoot" 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'cmdline-tools;latest'
     }
 }
 
