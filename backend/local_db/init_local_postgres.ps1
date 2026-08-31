@@ -28,6 +28,43 @@ function Get-SecureRandomBytes([int] $Count) {
     return $Bytes
 }
 
+function ConvertFrom-SecureStringToPlainText([Security.SecureString] $SecureValue) {
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+}
+
+function Read-PostgresSuperPassword() {
+    New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+
+    if (Test-Path -LiteralPath $PostgresPasswordPath) {
+        return (Get-Content -LiteralPath $PostgresPasswordPath -Raw).Trim()
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:SETUP_POSTGRES_PASSWORD)) {
+        $password = $env:SETUP_POSTGRES_PASSWORD.Trim()
+        Set-Content -LiteralPath $PostgresPasswordPath -Value $password -Encoding ASCII
+        Write-Host "[OK] postgres_password.txt da duoc tao tu SETUP_POSTGRES_PASSWORD."
+        return $password
+    }
+
+    Write-Host "[WARN] Thieu $PostgresPasswordPath."
+    Write-Host "[INFO] Neu PostgreSQL da cai san, nhap mat khau cua user postgres de script tao database Eco-loop."
+    $securePassword = Read-Host -Prompt "Nhap mat khau PostgreSQL user postgres" -AsSecureString
+    $password = (ConvertFrom-SecureStringToPlainText $securePassword).Trim()
+    if ([string]::IsNullOrWhiteSpace($password)) {
+        throw "Chua nhap mat khau PostgreSQL user postgres."
+    }
+
+    Set-Content -LiteralPath $PostgresPasswordPath -Value $password -Encoding ASCII
+    Write-Host "[OK] postgres_password.txt da duoc tao. Lan sau script se dung lai file nay."
+    return $password
+}
+
 function Find-PostgresBin() {
     if (-not [string]::IsNullOrWhiteSpace($PostgresBin)) {
         return $PostgresBin
@@ -67,10 +104,6 @@ if (-not (Test-Path -LiteralPath $Psql)) {
 
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
-if (-not (Test-Path -LiteralPath $PostgresPasswordPath)) {
-    throw "Thieu $PostgresPasswordPath. File nay duoc tao khi cai PostgreSQL lan dau."
-}
-
 if (Test-Path -LiteralPath $AppPasswordPath) {
     $AppPassword = (Get-Content -LiteralPath $AppPasswordPath -Raw).Trim()
 } else {
@@ -79,7 +112,7 @@ if (Test-Path -LiteralPath $AppPasswordPath) {
     Set-Content -LiteralPath $AppPasswordPath -Value $AppPassword -Encoding ASCII
 }
 
-$env:PGPASSWORD = (Get-Content -LiteralPath $PostgresPasswordPath -Raw).Trim()
+$env:PGPASSWORD = Read-PostgresSuperPassword
 $CreateRoleSql = @"
 DO `$`$
 BEGIN

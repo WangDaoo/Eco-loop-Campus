@@ -12,6 +12,12 @@ function Assert-Contains([string] $content, [string] $needle, [string] $message)
     }
 }
 
+function Assert-NotContains([string] $content, [string] $needle, [string] $message) {
+    if ($content.Contains($needle)) {
+        throw $message
+    }
+}
+
 $backendBat = Read-RepoFile 'start_backend.bat'
 $frontendBat = Read-RepoFile 'start_frontend.bat'
 $serverSetupBat = Read-RepoFile 'setup_server_full.bat'
@@ -19,6 +25,7 @@ $nativeBootstrapScript = Read-RepoFile 'scripts\bootstrap_local_admin.ps1'
 $publicReleaseBat = Read-RepoFile 'setup_public_release.bat'
 $laptopBat = Read-RepoFile 'scripts\start_laptop_server.bat'
 $portScript = Read-RepoFile 'scripts\release_ecoloop_port.ps1'
+$initPostgresScript = Read-RepoFile 'backend\local_db\init_local_postgres.ps1'
 $dockerCompose = Read-RepoFile 'docker-compose.yml'
 $dockerEnvExample = Read-RepoFile '.env.docker.example'
 $gitignore = Read-RepoFile '.gitignore'
@@ -105,7 +112,12 @@ Assert-Contains $ensureScript 'PostgreSQL 15' 'ensure script must install native
 Assert-Contains $ensureScript 'postgresql-15.19-1-windows-x64.exe' 'ensure script must use a stable native PostgreSQL installer fallback.'
 Assert-Contains $ensureScript 'postgres_password.txt' 'ensure script must save the PostgreSQL superuser password for init_local_postgres.ps1.'
 Assert-Contains $ensureScript '[int]($_.Name -replace' 'ensure script must sort PostgreSQL major version folders without System.Version parse errors.'
-Assert-Contains (Read-RepoFile 'backend\local_db\init_local_postgres.ps1') '[int]($_.Name -replace' 'init_local_postgres.ps1 must sort PostgreSQL major version folders without System.Version parse errors.'
+Assert-Contains $initPostgresScript '[int]($_.Name -replace' 'init_local_postgres.ps1 must sort PostgreSQL major version folders without System.Version parse errors.'
+Assert-Contains $initPostgresScript 'Read-PostgresSuperPassword' 'init_local_postgres.ps1 must recover when postgres_password.txt is missing on machines with existing PostgreSQL.'
+Assert-Contains $initPostgresScript 'SETUP_POSTGRES_PASSWORD' 'init_local_postgres.ps1 must accept SETUP_POSTGRES_PASSWORD for unattended setup.'
+Assert-Contains $initPostgresScript '-AsSecureString' 'init_local_postgres.ps1 must prompt securely for the existing postgres password when the runtime password file is missing.'
+Assert-Contains $initPostgresScript 'postgres_password.txt da duoc tao' 'init_local_postgres.ps1 must save the supplied PostgreSQL superuser password for future runs.'
+Assert-NotContains $initPostgresScript 'File nay duoc tao khi cai PostgreSQL lan dau' 'init_local_postgres.ps1 must not fail immediately when the PostgreSQL password file is missing.'
 Assert-Contains $ensureScript 'Docker.DockerDesktop' 'ensure script must be able to install Docker Desktop via winget.'
 Assert-Contains $ensureScript 'Docker Desktop Installer.exe' 'ensure script must download Docker Desktop directly when winget is unavailable.'
 Assert-Contains $ensureScript 'desktop.docker.com' 'ensure script must use Docker official direct installer fallback.'
