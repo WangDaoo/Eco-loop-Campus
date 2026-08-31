@@ -39,21 +39,31 @@ function ConvertFrom-SecureStringToPlainText([Security.SecureString] $SecureValu
 }
 
 function Invoke-ExternalChecked([string] $ErrorMessage, [scriptblock] $Command) {
-    & $Command
-    if ($LASTEXITCODE -ne 0) {
-        throw $ErrorMessage
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Command
+        if ($LASTEXITCODE -ne 0) {
+            throw $ErrorMessage
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
     }
 }
 
 function Test-PostgresSuperPassword([string] $Password) {
     $previousPassword = $env:PGPASSWORD
+    $previousPreference = $ErrorActionPreference
     $env:PGPASSWORD = $Password
+    $ErrorActionPreference = "Continue"
     try {
         & $Psql -h $HostName -p $Port -U postgres -d postgres -tAc "SELECT 1" > $null 2>&1
         return $LASTEXITCODE -eq 0
     }
     finally {
         $env:PGPASSWORD = $previousPassword
+        $ErrorActionPreference = $previousPreference
     }
 }
 
@@ -162,9 +172,8 @@ Invoke-ExternalChecked "Tao/cap nhat PostgreSQL role $AppUser that bai." {
     $CreateRoleSql | & $Psql -h $HostName -p $Port -U postgres -d postgres -v ON_ERROR_STOP=1
 }
 
-& $Psql -h $HostName -p $Port -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DatabaseName'" > "$env:TEMP\ecoloop_db_exists.txt"
-if ($LASTEXITCODE -ne 0) {
-    throw "Kiem tra database $DatabaseName that bai."
+Invoke-ExternalChecked "Kiem tra database $DatabaseName that bai." {
+    & $Psql -h $HostName -p $Port -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DatabaseName'" > "$env:TEMP\ecoloop_db_exists.txt"
 }
 $DbExistsOutput = Get-Content -LiteralPath "$env:TEMP\ecoloop_db_exists.txt" -ErrorAction SilentlyContinue
 $DbExists = ($DbExistsOutput | Select-Object -First 1)
