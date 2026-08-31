@@ -7,11 +7,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if ([string]::IsNullOrWhiteSpace($ProjectDir)) {
-    $ProjectDir = Resolve-Path (Join-Path $PSScriptRoot "..")
-} else {
-    $ProjectDir = Resolve-Path $ProjectDir
+function Normalize-ProjectDir([string] $Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    }
+
+    $cleanPath = ([string] $Value).Trim(' "')
+    $invalidChars = [System.IO.Path]::GetInvalidPathChars()
+    foreach ($char in $invalidChars) {
+        if ($cleanPath.IndexOf($char) -ge 0) {
+            throw "ProjectDir contains invalid path characters after cleanup: $cleanPath"
+        }
+    }
+
+    return (Resolve-Path -LiteralPath $cleanPath).Path
 }
+
+$ProjectDir = Normalize-ProjectDir $ProjectDir
 
 function Get-ListeningPids([int] $TargetPort) {
     try {

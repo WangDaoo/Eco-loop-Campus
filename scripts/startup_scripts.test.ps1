@@ -78,6 +78,9 @@ Assert-Contains $portScript 'serve_cra_build.js' 'release_ecoloop_port.ps1 must 
 Assert-Contains $portScript 'uvicorn app:app' 'release_ecoloop_port.ps1 must identify the project backend server.'
 Assert-Contains $portScript 'Stop-Process' 'release_ecoloop_port.ps1 must stop stale project processes.'
 Assert-Contains $portScript 'belongs to another process' 'release_ecoloop_port.ps1 must fail clearly when another application owns the port.'
+Assert-Contains $portScript 'Normalize-ProjectDir' 'release_ecoloop_port.ps1 must normalize project paths passed from .bat launchers.'
+Assert-Contains $portScript 'Trim('' "' 'release_ecoloop_port.ps1 must strip quotes that can be appended to trailing-backslash paths on old Windows.'
+Assert-Contains $portScript 'GetInvalidPathChars' 'release_ecoloop_port.ps1 must reject still-invalid project paths with a clear error.'
 
 $ensureScript = Read-RepoFile 'scripts\ensure_windows_runtime.ps1'
 Assert-Contains $ensureScript 'OpenJS.NodeJS.LTS' 'ensure script must be able to install Node.js LTS via winget.'
