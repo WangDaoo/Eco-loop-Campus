@@ -24,6 +24,7 @@ $serverSetupBat = Read-RepoFile 'setup_server_full.bat'
 $nativeBootstrapScript = Read-RepoFile 'scripts\bootstrap_local_admin.ps1'
 $publicReleaseBat = Read-RepoFile 'setup_public_release.bat'
 $laptopBat = Read-RepoFile 'scripts\start_laptop_server.bat'
+$cleanupUtehyDemoBat = Read-RepoFile 'scripts\cleanup_utehy_demo_data.bat'
 $portScript = Read-RepoFile 'scripts\release_ecoloop_port.ps1'
 $initPostgresScript = Read-RepoFile 'backend\local_db\init_local_postgres.ps1'
 $dockerCompose = Read-RepoFile 'docker-compose.yml'
@@ -90,6 +91,9 @@ Assert-Contains $laptopBat 'start_backend.bat' 'start_laptop_server.bat must lau
 Assert-Contains $laptopBat 'api_public_url.txt' 'start_laptop_server.bat must wait for API public URL before web startup.'
 Assert-Contains $laptopBat 'start_frontend.bat' 'start_laptop_server.bat must launch the public frontend script.'
 Assert-Contains $laptopBat 'http://127.0.0.1:3002' 'start_laptop_server.bat must print the new web port 3002.'
+
+Assert-Contains $cleanupUtehyDemoBat 'init_local_postgres.ps1' 'cleanup_utehy_demo_data.bat must apply the latest schema before deleting seeded rows.'
+Assert-Contains $cleanupUtehyDemoBat 'cleanup_utehy_demo_data.py' 'cleanup_utehy_demo_data.bat must run the UTEHY cleanup script.'
 
 Assert-Contains $dockerCompose '${WEB_PORT:-3002}:3000' 'docker-compose.yml must expose the web host port as 3002 by default.'
 Assert-Contains $dockerEnvExample 'WEB_PORT=3002' '.env.docker.example must default web to port 3002.'

@@ -17,6 +17,13 @@ if not exist ".runtime\DATABASE_URL.txt" (
   exit /b 1
 )
 
+echo [INFO] Kiem tra PostgreSQL local va apply schema moi nhat...
+powershell -NoProfile -ExecutionPolicy Bypass -File "backend\local_db\init_local_postgres.ps1"
+if errorlevel 1 (
+  echo [ERROR] PostgreSQL local chua san sang. Hay kiem tra mat khau postgres/native PostgreSQL.
+  exit /b 1
+)
+
 set "PYTHON_EXE=backend\.venv\Scripts\python.exe"
 if exist "%PYTHON_EXE%" (
   "%PYTHON_EXE%" "backend\local_db\cleanup_utehy_demo_data.py"
