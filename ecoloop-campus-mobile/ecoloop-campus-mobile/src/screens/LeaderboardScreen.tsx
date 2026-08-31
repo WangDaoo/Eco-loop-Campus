@@ -16,7 +16,7 @@ export default function LeaderboardScreen({ navigation }: Props) {
   const rows = selectLeaderboardUsers(users, 20);
 
   return (
-    <Screen>
+    <Screen scroll>
       <Text style={styles.back} onPress={() => navigation.goBack()}>Quay lại</Text>
       <Text style={styles.title}>Bảng xếp hạng</Text>
       {rows.length === 0 ? (
@@ -30,7 +30,7 @@ export default function LeaderboardScreen({ navigation }: Props) {
 
         return (
           <Card key={row.id} style={[styles.row, isCurrentUser && styles.currentUserRow]}>
-            <View style={[styles.rank, row.rank === 1 && styles.top]}><Text style={styles.rankText}>{row.rank}</Text></View>
+            <View style={[styles.rank, row.rank === 1 && styles.top, row.rank === 2 && styles.second, row.rank === 3 && styles.third]}><Text style={styles.rankText}>{row.rank}</Text></View>
             <View style={styles.avatarSlot}>
               <UserAvatar avatarKey={sourceUser?.avatarKey} avatarUrl={sourceUser?.avatarUrl} avatarOptions={avatarOptions} size={50} />
             </View>
@@ -57,6 +57,8 @@ const styles = StyleSheet.create({
   avatarSlot: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   rank: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.mint, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   top: { backgroundColor: colors.gold },
+  second: { backgroundColor: '#C0C0C0' },
+  third: { backgroundColor: '#CD7F32' },
   rankText: { color: colors.ink, fontWeight: '900', fontSize: 16 },
   name: { color: colors.ink, fontWeight: '900', fontSize: 15 },
   meta: { color: colors.muted, fontWeight: '700', fontSize: 12 },

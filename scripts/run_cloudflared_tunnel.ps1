@@ -8,10 +8,14 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $OutFile,
 
-    [string] $CloudflaredPath = (Join-Path $PSScriptRoot 'tools\cloudflared.exe')
+    [string] $CloudflaredPath = ''
 )
 
 $ErrorActionPreference = 'Continue'
+
+if ([string]::IsNullOrWhiteSpace($CloudflaredPath)) {
+    $CloudflaredPath = Join-Path $PSScriptRoot 'tools\cloudflared.exe'
+}
 
 if (-not (Test-Path -LiteralPath $CloudflaredPath)) {
     $command = Get-Command 'cloudflared.exe' -ErrorAction SilentlyContinue

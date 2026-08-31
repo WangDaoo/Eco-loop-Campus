@@ -3,8 +3,14 @@ chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "PROJECT_DIR=%~dp0"
+set "SCRIPTS_DIR=%PROJECT_DIR%scripts"
 set "ENV_FILE=%PROJECT_DIR%.env.docker"
 set "ENV_EXAMPLE=%PROJECT_DIR%.env.docker.example"
+set "DIST_DIR=%PROJECT_DIR%dist"
+set "MOBILE_DIR=%PROJECT_DIR%ecoloop-campus-mobile\ecoloop-campus-mobile"
+set "MOBILE_ENV=%MOBILE_DIR%\.env"
+set "MOBILE_ENV_EXAMPLE=%MOBILE_DIR%\.env.example"
+set "RELEASE_APK=%PROJECT_DIR%dist\ecoloop-campus-mobile-release.apk"
 set "ADMIN_EMAIL=%ADMIN_EMAIL%"
 set "ADMIN_NAME=%ADMIN_NAME%"
 set "ADMIN_PASSWORD=%ADMIN_PASSWORD%"
@@ -25,6 +31,15 @@ if not exist "%ENV_EXAMPLE%" (
     pause
     exit /b 1
 )
+
+if not exist "%MOBILE_DIR%\android\gradlew.bat" (
+    echo [ERROR] Khong tim thay Android Gradle wrapper:
+    echo %MOBILE_DIR%\android\gradlew.bat
+    pause
+    exit /b 1
+)
+
+if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
 
 echo [INFO] Eco-loop Campus full server setup
 echo [INFO] Project: %PROJECT_DIR%
@@ -90,11 +105,21 @@ if errorlevel 1 (
 
 :docker_ready
 
+echo [INFO] Kiem tra Node/npm/cloudflared cho web va build APK...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\ensure_windows_runtime.ps1" -Mode frontend
+if errorlevel 1 (
+    echo [ERROR] Runtime web/mobile chua san sang.
+    pause
+    exit /b 1
+)
+
 set "SERVER_IP=%SETUP_SERVER_IP%"
 if "%SERVER_IP%"=="" (
     for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.InterfaceOperationalStatus -eq 'Up' } | Select-Object -First 1 -ExpandProperty IPAddress"`) do set "SERVER_IP=%%I"
 )
 if "%SERVER_IP%"=="" set "SERVER_IP=127.0.0.1"
+set "MOBILE_API_URL=%SETUP_MOBILE_API_URL%"
+if "%MOBILE_API_URL%"=="" set "MOBILE_API_URL=http://%SERVER_IP%:8000"
 
 if not exist "%ENV_FILE%" (
     copy "%ENV_EXAMPLE%" "%ENV_FILE%" >nul
@@ -196,13 +221,123 @@ if errorlevel 1 (
     echo powershell -NoProfile -ExecutionPolicy Bypass -File scripts\docker_bootstrap_admin.ps1 -Email "%ADMIN_EMAIL%" -Name "%ADMIN_NAME%" -Password "%ADMIN_PASSWORD%"
 )
 
+echo [INFO] Ghi backend URL cho APK mobile: %MOBILE_API_URL%
+if not exist "%MOBILE_ENV%" (
+    if exist "%MOBILE_ENV_EXAMPLE%" (
+        copy "%MOBILE_ENV_EXAMPLE%" "%MOBILE_ENV%" >nul
+    ) else (
+        type nul > "%MOBILE_ENV%"
+    )
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$path = '%MOBILE_ENV%';" ^
+  "$api = '%MOBILE_API_URL%';" ^
+  "if (Test-Path -LiteralPath $path) { $text = Get-Content -LiteralPath $path -Raw } else { $text = '' }" ^
+  "if ($text -match '(?m)^EXPO_PUBLIC_API_URL=') { $text = [regex]::Replace($text, '(?m)^EXPO_PUBLIC_API_URL=.*$', ('EXPO_PUBLIC_API_URL=' + $api)) }" ^
+  "else { if ($text.Length -gt 0 -and -not $text.EndsWith(\"`n\")) { $text += \"`r`n\" }; $text += ('EXPO_PUBLIC_API_URL=' + $api + \"`r`n\") }" ^
+  "[IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))"
+if errorlevel 1 (
+    echo [ERROR] Khong ghi duoc EXPO_PUBLIC_API_URL vao mobile .env.
+    pause
+    exit /b 1
+)
+
+echo [INFO] Cai dependency mobile neu thieu...
+cd /d "%MOBILE_DIR%"
+if not exist "node_modules" (
+    call npm install
+    if errorlevel 1 (
+        echo [ERROR] npm install mobile that bai.
+        pause
+        exit /b 1
+    )
+)
+
+echo [INFO] Build APK release dau backend: %MOBILE_API_URL%
+set "BUILD_DRIVE="
+set "MAPPED_SUBST=0"
+for %%D in (Z Y X W V U T S R Q P O N M L K J I H G F) do (
+    if not exist "%%D:\" (
+        set "BUILD_DRIVE=%%D:"
+        goto server_build_drive_found
+    )
+)
+
+echo [ERROR] Khong tim thay o dia trong de subst build Android.
+pause
+exit /b 1
+
+:server_build_drive_found
+subst %BUILD_DRIVE% "%MOBILE_DIR%"
+if errorlevel 1 (
+    echo [ERROR] Khong tao duoc subst %BUILD_DRIVE% cho:
+    echo %MOBILE_DIR%
+    pause
+    exit /b 1
+)
+set "MAPPED_SUBST=1"
+
+set "EXPO_PUBLIC_API_URL=%MOBILE_API_URL%"
+cd /d "%BUILD_DRIVE%\android"
+call gradlew.bat :app:createBundleReleaseJsAndAssets --rerun-tasks
+if errorlevel 1 (
+    set "GRADLE_EXIT=!ERRORLEVEL!"
+    cd /d "%PROJECT_DIR%"
+    if "%MAPPED_SUBST%"=="1" subst %BUILD_DRIVE% /d
+    echo [ERROR] Build JS bundle release that bai.
+    pause
+    exit /b !GRADLE_EXIT!
+)
+call gradlew.bat assembleRelease
+set "GRADLE_EXIT=%ERRORLEVEL%"
+cd /d "%PROJECT_DIR%"
+if "%MAPPED_SUBST%"=="1" subst %BUILD_DRIVE% /d
+
+if not "%GRADLE_EXIT%"=="0" (
+    echo [ERROR] Build APK release that bai.
+    pause
+    exit /b %GRADLE_EXIT%
+)
+
+copy "%MOBILE_DIR%\android\app\build\outputs\apk\release\app-release.apk" "%RELEASE_APK%" >nul
+if errorlevel 1 (
+    echo [ERROR] Khong copy duoc APK release vao dist.
+    pause
+    exit /b 1
+)
+echo [OK] APK release da dau backend: %RELEASE_APK%
+
+where adb >nul 2>nul
+if errorlevel 1 (
+    if exist "%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe" (
+        set "ADB=%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe"
+    ) else (
+        set "ADB="
+    )
+) else (
+    set "ADB=adb"
+)
+
+if "%ADB%"=="" (
+    echo [WARN] Khong tim thay adb, bo qua buoc cai APK.
+) else (
+    for /f "skip=1 tokens=1,2" %%A in ('"%ADB%" devices') do (
+        if "%%B"=="device" (
+            echo [INFO] Dang cai APK vao %%A...
+            "%ADB%" -s %%A install --no-streaming -r "%RELEASE_APK%"
+        )
+    )
+)
+
 echo.
 echo [OK] Eco-loop Campus server da san sang.
 echo [URL] Web local: http://127.0.0.1:3000
 echo [URL] Backend local: http://127.0.0.1:8000
 echo [URL] Web LAN: http://%SERVER_IP%:3000
 echo [URL] Backend LAN: http://%SERVER_IP%:8000
-echo [APP] APK trong cung Wi-Fi nen build voi: EXPO_PUBLIC_API_URL=http://%SERVER_IP%:8000
+echo [APP] APK da build voi: EXPO_PUBLIC_API_URL=%MOBILE_API_URL%
+echo [APP] APK: %RELEASE_APK%
 echo [ADMIN] Email: %ADMIN_EMAIL%
 echo [ADMIN] Mat khau: %ADMIN_PASSWORD%
 echo.

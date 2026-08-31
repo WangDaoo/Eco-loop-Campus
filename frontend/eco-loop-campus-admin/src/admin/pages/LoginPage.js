@@ -9,8 +9,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function LoginPage() {
   const navigate = useNavigate();
   const { applyAuthUser } = useAdminAuth();
-  const [email, setEmail] = useState("admin@school.edu.vn");
-  const [password, setPassword] = useState("admin-demo");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -47,7 +47,6 @@ export default function LoginPage() {
       <form className="eg-login-card" onSubmit={submitLogin}>
         <span>Eco-loop Campus</span>
         <h1>Đăng nhập quản trị</h1>
-        <p>Dùng tài khoản backend PostgreSQL. Tài khoản phải có vai trò admin trong bảng users.</p>
         <label>Email<input value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" /></label>
         <label>Mật khẩu<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label>
         <button type="submit" className="eg-primary-btn" disabled={loading}>{loading ? "Đang đăng nhập" : "Đăng nhập"}</button>
