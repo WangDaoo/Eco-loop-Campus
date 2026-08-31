@@ -15,6 +15,19 @@ $SmokePath = Join-Path $PSScriptRoot "smoke_qr_flow.sql"
 $PostgresPasswordPath = Join-Path $RuntimeDir "postgres_password.txt"
 $AppPasswordPath = Join-Path $RuntimeDir "ecoloop_db_password.txt"
 $DatabaseUrlPath = Join-Path $RuntimeDir "DATABASE_URL.txt"
+
+function Get-SecureRandomBytes([int] $Count) {
+    $Bytes = New-Object byte[] $Count
+    $Rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $Rng.GetBytes($Bytes)
+    }
+    finally {
+        $Rng.Dispose()
+    }
+    return $Bytes
+}
+
 function Find-PostgresBin() {
     if (-not [string]::IsNullOrWhiteSpace($PostgresBin)) {
         return $PostgresBin
@@ -61,8 +74,7 @@ if (-not (Test-Path -LiteralPath $PostgresPasswordPath)) {
 if (Test-Path -LiteralPath $AppPasswordPath) {
     $AppPassword = (Get-Content -LiteralPath $AppPasswordPath -Raw).Trim()
 } else {
-    $Bytes = New-Object byte[] 18
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($Bytes)
+    $Bytes = Get-SecureRandomBytes 18
     $AppPassword = "EcoApp-" + [Convert]::ToBase64String($Bytes).Replace("+", "A").Replace("/", "B").TrimEnd("=")
     Set-Content -LiteralPath $AppPasswordPath -Value $AppPassword -Encoding ASCII
 }

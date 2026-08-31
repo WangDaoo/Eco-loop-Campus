@@ -41,8 +41,19 @@ function ConvertTo-Base64Url([byte[]]$Bytes) {
     return [Convert]::ToBase64String($Bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
 }
 
-$saltBytes = New-Object byte[] 16
-[Security.Cryptography.RandomNumberGenerator]::Fill($saltBytes)
+function Get-SecureRandomBytes([int] $Count) {
+    $Bytes = New-Object byte[] $Count
+    $Rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $Rng.GetBytes($Bytes)
+    }
+    finally {
+        $Rng.Dispose()
+    }
+    return $Bytes
+}
+
+$saltBytes = Get-SecureRandomBytes 16
 $Salt = -join ($saltBytes | ForEach-Object { $_.ToString("x2") })
 $Iterations = 120000
 $derive = [Security.Cryptography.Rfc2898DeriveBytes]::new(

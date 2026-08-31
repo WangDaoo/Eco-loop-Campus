@@ -93,6 +93,20 @@ Assert-Contains $ensureScript 'Temurin.17.JDK' 'ensure script must install JDK 1
 Assert-Contains $ensureScript 'api.adoptium.net' 'ensure script must download JDK 17 directly when winget is unavailable.'
 Assert-Contains $ensureScript 'cloudflared-windows-amd64.exe' 'ensure script must download cloudflared for Windows x64.'
 
+$rngScripts = @(
+    'scripts\ensure_windows_runtime.ps1',
+    'scripts\bootstrap_local_admin.ps1',
+    'backend\local_db\init_local_postgres.ps1',
+    'scripts\docker_bootstrap_admin.ps1'
+)
+foreach ($rngScript in $rngScripts) {
+    $content = Read-RepoFile $rngScript
+    if ($content.Contains('RandomNumberGenerator]::Fill')) {
+        throw "$rngScript must use RandomNumberGenerator.Create().GetBytes() for old Windows PowerShell/.NET compatibility."
+    }
+    Assert-Contains $content 'RandomNumberGenerator]::Create()' "$rngScript must use the old-compatible RandomNumberGenerator.Create() API."
+}
+
 $tunnelScript = Read-RepoFile 'scripts\run_cloudflared_tunnel.ps1'
 Assert-Contains $tunnelScript 'trycloudflare' 'tunnel script must parse quick tunnel public URLs.'
 Assert-Contains $tunnelScript 'OutFile' 'tunnel script must write the public URL to a file.'

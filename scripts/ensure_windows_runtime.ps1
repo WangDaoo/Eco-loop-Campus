@@ -41,6 +41,18 @@ function Update-PathFromMachine() {
     $env:Path = "$machinePath;$userPath"
 }
 
+function Get-SecureRandomBytes([int] $count) {
+    $bytes = New-Object byte[] $count
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+    return $bytes
+}
+
 function Install-WithWinget([string] $packageId, [string] $displayName) {
     if (-not (Test-CommandAvailable 'winget')) {
         throw "winget chua san sang. Hay cai $displayName thu cong roi chay lai."
@@ -228,8 +240,7 @@ function Get-OrCreatePostgresPassword() {
         return (Get-Content -LiteralPath $postgresPasswordPath -Raw).Trim()
     }
 
-    $bytes = New-Object byte[] 18
-    [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $bytes = Get-SecureRandomBytes 18
     $password = 'EcoPg-' + [Convert]::ToBase64String($bytes).Replace('+', 'A').Replace('/', 'B').TrimEnd('=')
     Set-Content -LiteralPath $postgresPasswordPath -Value $password -Encoding ASCII
     return $password
