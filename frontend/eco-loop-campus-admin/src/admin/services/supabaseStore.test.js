@@ -446,6 +446,8 @@ test("maps Supabase reward catalog snake_case into admin reward products", () =>
     title: "Cà phê căn tin",
     description: "Giảm 50% một ly bất kỳ",
     cost_points: "300",
+    category_id: "food",
+    category_name: "Ăn uống",
     status: "active",
     color: "#F6B83F",
   });
@@ -455,6 +457,8 @@ test("maps Supabase reward catalog snake_case into admin reward products", () =>
     title: "Cà phê căn tin",
     description: "Giảm 50% một ly bất kỳ",
     costPoints: 300,
+    categoryId: "food",
+    categoryName: "Ăn uống",
     status: "active",
     color: "#F6B83F",
   }));
@@ -467,6 +471,7 @@ test("maps admin reward products into Supabase reward catalog fields", () => {
     title: "Cà phê căn tin",
     description: "Giảm 50% một ly bất kỳ",
     costPoints: 300,
+    categoryId: "food",
     status: "active",
     color: "#F6B83F",
   });
@@ -476,10 +481,33 @@ test("maps admin reward products into Supabase reward catalog fields", () => {
     title: "Cà phê căn tin",
     description: "Giảm 50% một ly bất kỳ",
     cost_points: 300,
+    category_id: "food",
     status: "active",
     color: "#F6B83F",
   }));
   expect(payload.costPoints).toBeUndefined();
+});
+
+test("maps reward categories for admin catalog management", () => {
+  const category = __testing.fromRewardCategory({
+    id: "food",
+    name: "Ăn uống",
+    description: "Voucher căn tin",
+    status: "active",
+  });
+
+  expect(category).toEqual(expect.objectContaining({
+    id: "food",
+    name: "Ăn uống",
+    description: "Voucher căn tin",
+    status: "active",
+  }));
+  expect(__testing.toRewardCategory(category)).toEqual(expect.objectContaining({
+    id: "food",
+    name: "Ăn uống",
+    description: "Voucher căn tin",
+    status: "active",
+  }));
 });
 
 test("maps Supabase model settings snake_case and clamps invalid threshold", () => {

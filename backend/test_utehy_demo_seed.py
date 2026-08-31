@@ -10,6 +10,7 @@ def test_utehy_demo_seed_builds_realistic_records_for_admin_tables():
     assert len(dataset["bins"]) >= 8
     assert len(dataset["waste_types"]) >= 6
     assert len(dataset["avatar_presets"]) >= 6
+    assert len(dataset["reward_categories"]) >= 5
     assert len(dataset["rewards"]) >= 6
     assert len(dataset["missions"]) >= 5
     assert len(dataset["point_rules"]) >= 6
@@ -53,6 +54,6 @@ def test_utehy_demo_seed_cleanup_sql_targets_only_e2e_data():
 def test_utehy_demo_seed_upserts_instead_of_creating_duplicates():
     from local_db.seed_utehy_demo_data import UPSERT_SQL
 
-    for table in ["users", "bins", "waste_types", "avatar_presets", "rewards", "missions", "settings"]:
+    for table in ["users", "bins", "waste_types", "avatar_presets", "reward_categories", "rewards", "missions", "settings"]:
         assert table in UPSERT_SQL
     assert UPSERT_SQL.count("on conflict") >= 7

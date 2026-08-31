@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppButton } from '../components/AppButton';
@@ -16,8 +16,6 @@ function redemptionStatusLabel(status: RewardRedemption['status']) {
   };
   return labels[status];
 }
-
-const CATEGORIES = ['Tất cả', 'Theo tháng', 'Giải trí', 'Mua sắm', 'Đồ ăn'];
 
 type RewardIcon = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -40,6 +38,13 @@ export default function RewardsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVoucher, setSelectedVoucher] = useState<Reward | null>(null);
 
+  const categories = useMemo(() => {
+    const names = rewards
+      .map(reward => reward.categoryName?.trim())
+      .filter((name): name is string => Boolean(name));
+    return ['Tất cả', ...Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, 'vi'))];
+  }, [rewards]);
+
   const redeem = async (reward: Reward) => {
     const ok = await requestReward(reward);
     Alert.alert(
@@ -51,6 +56,7 @@ export default function RewardsScreen() {
 
   const filteredRewards = rewards.filter(reward => {
     if (searchQuery && !reward.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (activeCategory !== 'Tất cả' && reward.categoryName !== activeCategory) return false;
     return true;
   });
 
@@ -78,7 +84,7 @@ export default function RewardsScreen() {
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesContainer}>
-        {CATEGORIES.map(category => {
+        {categories.map(category => {
           const isActive = activeCategory === category;
           return (
             <Pressable
@@ -109,6 +115,7 @@ export default function RewardsScreen() {
                   </View>
                   <View style={styles.voucherInfo}>
                     <Text style={styles.voucherTitle} numberOfLines={2}>{reward.title}</Text>
+                    {!!reward.categoryName && <Text style={styles.voucherCategory} numberOfLines={1}>{reward.categoryName}</Text>}
                     <Text style={styles.voucherSub} numberOfLines={2}>{reward.description}</Text>
                     <View style={styles.voucherCostRow}>
                       <View style={styles.ecopointBadge}>
@@ -322,6 +329,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 14,
     lineHeight: 18,
+    marginBottom: 4,
+  },
+  voucherCategory: {
+    color: colors.green,
+    fontSize: 11,
+    fontWeight: '900',
     marginBottom: 4,
   },
   voucherSub: {

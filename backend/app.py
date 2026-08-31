@@ -613,6 +613,8 @@ CAMEL_ALIASES = {
     "point_per_unit": "pointPerUnit",
     "recycle_method": "recycleMethod",
     "cost_points": "costPoints",
+    "category_id": "categoryId",
+    "category_name": "categoryName",
     "reward_points": "rewardPoints",
     "action_label": "actionLabel",
     "class_keys": "classKeys",
@@ -669,9 +671,15 @@ ADMIN_RESOURCES = {
     },
     "rewards": {
         "table": "rewards",
-        "columns": ["id", "title", "description", "cost_points", "status", "color", "created_at", "updated_at"],
-        "writable": ["id", "title", "description", "cost_points", "status", "color"],
+        "columns": ["id", "title", "description", "category_id", "category_name", "cost_points", "status", "color", "created_at", "updated_at"],
+        "writable": ["id", "title", "description", "category_id", "category_name", "cost_points", "status", "color"],
         "order": "cost_points asc",
+    },
+    "reward-categories": {
+        "table": "reward_categories",
+        "columns": ["id", "name", "description", "status", "color", "created_at", "updated_at"],
+        "writable": ["id", "name", "description", "status", "color"],
+        "order": "name asc",
     },
     "missions": {
         "table": "missions",
@@ -828,6 +836,10 @@ def delete_admin_resource(resource, item_id):
     database_url = require_database_url()
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
+            if resource == "reward-categories":
+                cursor.execute("select count(*) from rewards where category_id = %s", (item_id,))
+                if int(cursor.fetchone()[0] or 0) > 0:
+                    raise HTTPException(status_code=409, detail="Danh mục đang có quà tặng")
             cursor.execute(
                 f"delete from {quote_identifier(config['table'])} where id = %s returning id",
                 (item_id,),
@@ -884,6 +896,7 @@ def load_mobile_initial_data(user):
         "feedbacks": list_rows_from_config(ADMIN_RESOURCES["feedback"]),
         "missions": missions,
         "rewards": list_rows_from_config(ADMIN_RESOURCES["rewards"]),
+        "rewardCategories": list_rows_from_config(ADMIN_RESOURCES["reward-categories"]),
         "rewardRedemptions": list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"]),
         "proofImages": list_rows_from_config(ADMIN_RESOURCES["proof-images"]),
         "qrScanLogs": list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"]),

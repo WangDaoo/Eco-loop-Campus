@@ -10,10 +10,13 @@ import {
   listPointRules,
   listRecyclingSubmissions,
   listRewards,
+  listRewardCategories,
   listRewardRedemptions,
   listUsers,
+  deleteRewardCategory,
   saveManualPointHistory,
   savePointRules,
+  saveRewardCategory,
   saveRewardProduct,
   saveRewardRedemption,
   updateRewardRedemption,
@@ -45,7 +48,8 @@ const REWARD_OPTIONS = [
 
 const initialManualForm = { userId: "", points: 10, action: "Nộp rác sự kiện xanh" };
 const initialRewardForm = { userId: "", rewardLabel: REWARD_OPTIONS[0].label };
-const initialRewardProductForm = { id: "", title: "", costPoints: 100, description: "", status: "active", color: "#2F8F5B" };
+const initialRewardCategoryForm = { id: "", name: "", description: "", status: "active", color: "#2F8F5B" };
+const initialRewardProductForm = { id: "", title: "", categoryId: "", categoryName: "", costPoints: 100, description: "", status: "active", color: "#2F8F5B" };
 
 const SUBMISSION_STATUS_LABELS = {
   CREATED: "Chờ tình nguyện viên",
@@ -73,9 +77,11 @@ export default function EcoPointsPage() {
   const [users, setUsers] = useState([]);
   const [rewardRequests, setRewardRequests] = useState([]);
   const [rewardProducts, setRewardProducts] = useState([]);
+  const [rewardCategories, setRewardCategories] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [manualForm, setManualForm] = useState(initialManualForm);
   const [rewardForm, setRewardForm] = useState(initialRewardForm);
+  const [rewardCategoryForm, setRewardCategoryForm] = useState(initialRewardCategoryForm);
   const [rewardProductForm, setRewardProductForm] = useState(initialRewardProductForm);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -91,15 +97,16 @@ export default function EcoPointsPage() {
     let active = true;
     async function loadData() {
       setLoading(true);
-      const [rulesResponse, historyResponse, usersResponse, rewardRequestsResponse, rewardProductsResponse, submissionsResponse] = await Promise.all([listPointRules(), listPointHistory(), listUsers(), listRewardRedemptions(), listRewards(), listRecyclingSubmissions()]);
+      const [rulesResponse, historyResponse, usersResponse, rewardRequestsResponse, rewardProductsResponse, rewardCategoriesResponse, submissionsResponse] = await Promise.all([listPointRules(), listPointHistory(), listUsers(), listRewardRedemptions(), listRewards(), listRewardCategories(), listRecyclingSubmissions()]);
       if (!active) return;
       setRules(rulesResponse.data);
       setHistory(historyResponse.data);
       setUsers(usersResponse.data);
       setRewardRequests(rewardRequestsResponse.data);
       setRewardProducts(rewardProductsResponse.data);
+      setRewardCategories(rewardCategoriesResponse.data);
       setSubmissions(submissionsResponse.data);
-      setError(rulesResponse.error || historyResponse.error || usersResponse.error || rewardRequestsResponse.error || rewardProductsResponse.error || submissionsResponse.error);
+      setError(rulesResponse.error || historyResponse.error || usersResponse.error || rewardRequestsResponse.error || rewardProductsResponse.error || rewardCategoriesResponse.error || submissionsResponse.error);
       setLoading(false);
     }
     loadData();
@@ -134,14 +141,18 @@ export default function EcoPointsPage() {
   const useProfilePointsForLeaderboard = !(dateFrom || dateTo || binGroup || userId);
   const userLeaderboard = useMemo(() => buildUserLeaderboard(users, filteredHistory, { useProfilePoints: useProfilePointsForLeaderboard, userGroup }).slice(0, 10), [users, filteredHistory, useProfilePointsForLeaderboard, userGroup]);
   const groupLeaderboard = useMemo(() => buildGroupLeaderboard(users, filteredHistory, { useProfilePoints: useProfilePointsForLeaderboard, userGroup }).slice(0, 10), [users, filteredHistory, useProfilePointsForLeaderboard, userGroup]);
+  const rewardProductsWithCategories = useMemo(() => rewardProducts.map(product => {
+    const category = rewardCategories.find(item => item.id === product.categoryId);
+    return { ...product, categoryName: category?.name || product.categoryName || "" };
+  }), [rewardProducts, rewardCategories]);
   const rewardOptions = useMemo(() => {
-    const catalogOptions = rewardProducts
+    const catalogOptions = rewardProductsWithCategories
       .filter(item => item.status === "active")
-      .map(item => ({ id: item.id, label: `${item.title} ${item.costPoints} điểm`, points: Number(item.costPoints || 0) }));
+      .map(item => ({ id: item.id, label: `${item.title} ${item.costPoints} điểm`, points: Number(item.costPoints || 0), categoryName: item.categoryName || "" }));
     const catalogLabels = new Set(catalogOptions.map(item => labelCode(item.label)));
     const legacyOptions = REWARD_OPTIONS.filter(item => !catalogLabels.has(labelCode(item.label)));
     return [...catalogOptions, ...legacyOptions];
-  }, [rewardProducts]);
+  }, [rewardProductsWithCategories]);
   const rewardSelectValue = rewardOptions.some(item => item.label === rewardForm.rewardLabel) ? rewardForm.rewardLabel : rewardOptions[0]?.label || "";
 
   const updateRule = (id, updates) => {
@@ -207,9 +218,28 @@ export default function EcoPointsPage() {
     showToast("Đã tạo yêu cầu đổi thưởng");
   };
 
+  const submitRewardCategory = async event => {
+    event.preventDefault();
+    if (!rewardCategoryForm.name.trim()) {
+      showToast("Nhập tên danh mục quà tặng", "danger");
+      return;
+    }
+    const response = await saveRewardCategory(rewardCategoryForm);
+    if (!response.data) {
+      setError(response.error);
+      showToast("Chưa lưu được danh mục quà tặng", "danger");
+      return;
+    }
+    setRewardCategories(current => [response.data, ...current.filter(item => item.id !== response.data.id)].sort((a, b) => a.name.localeCompare(b.name, "vi")));
+    setRewardCategoryForm(initialRewardCategoryForm);
+    setError(response.error);
+    showToast("Đã lưu danh mục quà tặng");
+  };
+
   const submitRewardProduct = async event => {
     event.preventDefault();
     const costPoints = Number(rewardProductForm.costPoints);
+    const selectedCategory = rewardCategories.find(category => category.id === rewardProductForm.categoryId);
     if (!rewardProductForm.title.trim()) {
       showToast("Nhập tên sản phẩm đổi thưởng", "danger");
       return;
@@ -218,7 +248,7 @@ export default function EcoPointsPage() {
       showToast("Điểm cần đổi không hợp lệ", "danger");
       return;
     }
-    const response = await saveRewardProduct({ ...rewardProductForm, costPoints });
+    const response = await saveRewardProduct({ ...rewardProductForm, categoryName: selectedCategory?.name || "", costPoints });
     if (!response.data) {
       setError(response.error);
       showToast("Chưa lưu được sản phẩm đổi thưởng", "danger");
@@ -228,6 +258,19 @@ export default function EcoPointsPage() {
     setRewardProductForm(initialRewardProductForm);
     setError(response.error);
     showToast("Đã lưu sản phẩm đổi thưởng");
+  };
+
+  const removeRewardCategory = async row => {
+    const response = await deleteRewardCategory(row.id);
+    setError(response.error);
+    if (response.error) {
+      showToast("Chưa xóa được danh mục. Kiểm tra quà tặng đang dùng danh mục này.", "danger");
+      return;
+    }
+    setRewardCategories(current => current.filter(item => item.id !== row.id));
+    setRewardProducts(current => current.map(item => item.categoryId === row.id ? { ...item, categoryId: "", categoryName: "" } : item));
+    if (rewardCategoryForm.id === row.id) setRewardCategoryForm(initialRewardCategoryForm);
+    showToast("Đã xóa danh mục quà tặng");
   };
 
   const reviewReward = async (reward, status) => {
@@ -290,6 +333,7 @@ export default function EcoPointsPage() {
 
   const rewardProductColumns = [
     { key: "title", label: "Sản phẩm", render: row => <strong>{row.title}</strong> },
+    { key: "categoryName", label: "Danh mục", render: row => row.categoryName || "Chưa phân loại" },
     { key: "description", label: "Mô tả", render: row => <span className="eg-text-cell">{row.description || "Chưa có mô tả"}</span> },
     { key: "costPoints", label: "Điểm cần đổi", render: row => <strong>{row.costPoints}</strong> },
     { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status} /> },
@@ -297,6 +341,22 @@ export default function EcoPointsPage() {
       key: "actions",
       label: "Thao tác",
       render: row => <button type="button" className="eg-small-btn" onClick={() => setRewardProductForm(row)}>Sửa</button>,
+    },
+  ];
+
+  const rewardCategoryColumns = [
+    { key: "name", label: "Danh mục", render: row => <strong>{row.name}</strong> },
+    { key: "description", label: "Mô tả", render: row => <span className="eg-text-cell">{row.description || "Chưa có mô tả"}</span> },
+    { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status} /> },
+    {
+      key: "actions",
+      label: "Thao tác",
+      render: row => (
+        <div className="eg-table-actions">
+          <button type="button" className="eg-small-btn" onClick={() => setRewardCategoryForm(row)}>Sửa</button>
+          <button type="button" className="eg-small-btn danger" onClick={() => removeRewardCategory(row)}>Xóa</button>
+        </div>
+      ),
     },
   ];
 
@@ -408,10 +468,44 @@ export default function EcoPointsPage() {
 
       <section className="eg-card">
         <div className="eg-card-head"><h2>Sản phẩm đổi thưởng</h2></div>
+        <form className="eg-form eg-reward-product-form" onSubmit={submitRewardCategory}>
+          <label>
+            Tên danh mục
+            <input aria-label="Tên danh mục quà tặng" value={rewardCategoryForm.name} onChange={event => setRewardCategoryForm(current => ({ ...current, name: event.target.value }))} />
+          </label>
+          <label>
+            Trạng thái danh mục
+            <select aria-label="Trạng thái danh mục quà tặng" value={rewardCategoryForm.status} onChange={event => setRewardCategoryForm(current => ({ ...current, status: event.target.value }))}>
+              <option value="active">Đang áp dụng</option>
+              <option value="inactive">Tạm ẩn</option>
+            </select>
+          </label>
+          <label>
+            Màu danh mục
+            <input aria-label="Màu danh mục quà tặng" type="color" value={rewardCategoryForm.color} onChange={event => setRewardCategoryForm(current => ({ ...current, color: event.target.value }))} />
+          </label>
+          <label className="eg-wide-field">
+            Mô tả danh mục
+            <textarea aria-label="Mô tả danh mục quà tặng" rows="2" value={rewardCategoryForm.description} onChange={event => setRewardCategoryForm(current => ({ ...current, description: event.target.value }))} />
+          </label>
+          <div className="eg-form-actions">
+            {rewardCategoryForm.id && <button type="button" className="eg-secondary-btn" onClick={() => setRewardCategoryForm(initialRewardCategoryForm)}>Tạo mới</button>}
+            <button type="submit" className="eg-primary-btn">Lưu danh mục quà tặng</button>
+          </div>
+        </form>
+        <DataTable columns={rewardCategoryColumns} rows={rewardCategories} emptyText="Chưa có danh mục quà tặng." />
+
         <form className="eg-form eg-reward-product-form" onSubmit={submitRewardProduct}>
           <label>
             Tên sản phẩm
             <input aria-label="Tên sản phẩm" value={rewardProductForm.title} onChange={event => setRewardProductForm(current => ({ ...current, title: event.target.value }))} />
+          </label>
+          <label>
+            Danh mục
+            <select aria-label="Danh mục sản phẩm" value={rewardProductForm.categoryId} onChange={event => setRewardProductForm(current => ({ ...current, categoryId: event.target.value, categoryName: rewardCategories.find(category => category.id === event.target.value)?.name || "" }))}>
+              <option value="">Chưa phân loại</option>
+              {rewardCategories.filter(category => category.status === "active" || category.id === rewardProductForm.categoryId).map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
           </label>
           <label>
             Điểm cần đổi
@@ -437,7 +531,7 @@ export default function EcoPointsPage() {
             <button type="submit" className="eg-primary-btn">Lưu sản phẩm đổi thưởng</button>
           </div>
         </form>
-        <DataTable columns={rewardProductColumns} rows={rewardProducts} emptyText="Chưa có sản phẩm đổi thưởng." />
+        <DataTable columns={rewardProductColumns} rows={rewardProductsWithCategories} emptyText="Chưa có sản phẩm đổi thưởng." />
       </section>
 
       <section className="eg-card">

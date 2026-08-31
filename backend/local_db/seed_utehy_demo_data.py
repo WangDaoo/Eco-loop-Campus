@@ -35,6 +35,7 @@ delete from bins where id like 'E2E\_%' escape '\' or qr_code like 'E2E\_%' esca
 delete from waste_types where id like 'E2E\_%' escape '\';
 delete from avatar_presets where key like 'E2E\_%' escape '\';
 delete from rewards where id like 'E2E\_%' escape '\';
+delete from reward_categories where id like 'E2E\_%' escape '\';
 delete from missions where id like 'E2E\_%' escape '\';
 """
 
@@ -97,11 +98,22 @@ on conflict (id) do update set
   points = excluded.points,
   enabled = excluded.enabled;
 
-insert into rewards (id, title, description, cost_points, status, color, updated_at)
-values (%(id)s, %(title)s, %(description)s, %(cost_points)s, %(status)s, %(color)s, now())
+insert into reward_categories (id, name, description, status, color, updated_at)
+values (%(id)s, %(name)s, %(description)s, %(status)s, %(color)s, now())
+on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  status = excluded.status,
+  color = excluded.color,
+  updated_at = now();
+
+insert into rewards (id, title, description, category_id, category_name, cost_points, status, color, updated_at)
+values (%(id)s, %(title)s, %(description)s, %(category_id)s, %(category_name)s, %(cost_points)s, %(status)s, %(color)s, now())
 on conflict (id) do update set
   title = excluded.title,
   description = excluded.description,
+  category_id = excluded.category_id,
+  category_name = excluded.category_name,
   cost_points = excluded.cost_points,
   status = excluded.status,
   color = excluded.color,
@@ -201,13 +213,21 @@ def build_demo_dataset():
         {"id": "UTEHY_RULE_EWASTE", "label": "Rác điện tử nhỏ", "class_keys": ["battery", "pin", "e-waste"], "bin_group": "Điện tử", "points": 18, "enabled": True},
     ]
 
+    reward_categories = [
+        {"id": "UTEHY_REWARD_CAT_FOOD", "name": "Ăn uống", "description": "Voucher căng tin, đồ uống và bữa ăn nhẹ trong khuôn viên.", "status": "active", "color": "#16A34A"},
+        {"id": "UTEHY_REWARD_CAT_STUDY", "name": "Học tập", "description": "Sổ tay, nhà sách, văn phòng phẩm và tài liệu học tập.", "status": "active", "color": "#2563EB"},
+        {"id": "UTEHY_REWARD_CAT_TRANSPORT", "name": "Di chuyển", "description": "Ưu đãi gửi xe và hỗ trợ đi lại trong trường.", "status": "active", "color": "#D97706"},
+        {"id": "UTEHY_REWARD_CAT_GREEN", "name": "Đồ dùng xanh", "description": "Vật dụng tái sử dụng giúp giảm rác thải nhựa.", "status": "active", "color": "#0F766E"},
+        {"id": "UTEHY_REWARD_CAT_BADGE", "name": "Ghi nhận", "description": "Huy hiệu, giấy chứng nhận và phần thưởng phong trào.", "status": "active", "color": "#7C3AED"},
+    ]
+
     rewards = [
-        {"id": "UTEHY_REWARD_CANTEEN_20K", "title": "Voucher căng tin 20.000đ", "description": "Áp dụng tại căng tin sinh viên UTEHY.", "cost_points": 160, "status": "active", "color": "#2F8F5B"},
-        {"id": "UTEHY_REWARD_PARKING", "title": "Vé gửi xe 1 tuần", "description": "Đổi phiếu hỗ trợ gửi xe trong khuôn viên.", "cost_points": 220, "status": "active", "color": "#1D4ED8"},
-        {"id": "UTEHY_REWARD_NOTEBOOK", "title": "Sổ tay Eco-loop", "description": "Sổ tay giấy tái chế dùng cho học tập.", "cost_points": 90, "status": "active", "color": "#8B5CF6"},
-        {"id": "UTEHY_REWARD_BOTTLE", "title": "Bình nước UTEHY", "description": "Bình nước cá nhân giảm chai nhựa dùng một lần.", "cost_points": 380, "status": "active", "color": "#0F766E"},
-        {"id": "UTEHY_REWARD_BADGE", "title": "Huy hiệu Sinh viên xanh", "description": "Huy hiệu ghi nhận hoạt động phân loại rác.", "cost_points": 60, "status": "active", "color": "#D97706"},
-        {"id": "UTEHY_REWARD_BOOKSTORE", "title": "Phiếu nhà sách 30.000đ", "description": "Đổi tại quầy sách và văn phòng phẩm trong trường.", "cost_points": 250, "status": "inactive", "color": "#BE123C"},
+        {"id": "UTEHY_REWARD_CANTEEN_20K", "title": "Voucher căng tin 20.000đ", "description": "Áp dụng tại căng tin sinh viên UTEHY.", "category_id": "UTEHY_REWARD_CAT_FOOD", "category_name": "Ăn uống", "cost_points": 160, "status": "active", "color": "#2F8F5B"},
+        {"id": "UTEHY_REWARD_PARKING", "title": "Vé gửi xe 1 tuần", "description": "Đổi phiếu hỗ trợ gửi xe trong khuôn viên.", "category_id": "UTEHY_REWARD_CAT_TRANSPORT", "category_name": "Di chuyển", "cost_points": 220, "status": "active", "color": "#1D4ED8"},
+        {"id": "UTEHY_REWARD_NOTEBOOK", "title": "Sổ tay Eco-loop", "description": "Sổ tay giấy tái chế dùng cho học tập.", "category_id": "UTEHY_REWARD_CAT_STUDY", "category_name": "Học tập", "cost_points": 90, "status": "active", "color": "#8B5CF6"},
+        {"id": "UTEHY_REWARD_BOTTLE", "title": "Bình nước UTEHY", "description": "Bình nước cá nhân giảm chai nhựa dùng một lần.", "category_id": "UTEHY_REWARD_CAT_GREEN", "category_name": "Đồ dùng xanh", "cost_points": 380, "status": "active", "color": "#0F766E"},
+        {"id": "UTEHY_REWARD_BADGE", "title": "Huy hiệu Sinh viên xanh", "description": "Huy hiệu ghi nhận hoạt động phân loại rác.", "category_id": "UTEHY_REWARD_CAT_BADGE", "category_name": "Ghi nhận", "cost_points": 60, "status": "active", "color": "#D97706"},
+        {"id": "UTEHY_REWARD_BOOKSTORE", "title": "Phiếu nhà sách 30.000đ", "description": "Đổi tại quầy sách và văn phòng phẩm trong trường.", "category_id": "UTEHY_REWARD_CAT_STUDY", "category_name": "Học tập", "cost_points": 250, "status": "inactive", "color": "#BE123C"},
     ]
 
     missions = [
@@ -304,6 +324,7 @@ def build_demo_dataset():
         "bins": bins,
         "waste_types": waste_types,
         "avatar_presets": avatar_presets,
+        "reward_categories": reward_categories,
         "rewards": rewards,
         "missions": missions,
         "point_rules": point_rules,
@@ -431,9 +452,14 @@ def seed_database(database_url=None, dry_run=False):
                 on conflict (id) do update set label = excluded.label, class_keys = excluded.class_keys, bin_group = excluded.bin_group, points = excluded.points, enabled = excluded.enabled
             """, dataset["point_rules"])
             _upsert_many(cursor, """
-                insert into rewards (id, title, description, cost_points, status, color, updated_at)
-                values (%(id)s, %(title)s, %(description)s, %(cost_points)s, %(status)s, %(color)s, now())
-                on conflict (id) do update set title = excluded.title, description = excluded.description, cost_points = excluded.cost_points, status = excluded.status, color = excluded.color, updated_at = now()
+                insert into reward_categories (id, name, description, status, color, updated_at)
+                values (%(id)s, %(name)s, %(description)s, %(status)s, %(color)s, now())
+                on conflict (id) do update set name = excluded.name, description = excluded.description, status = excluded.status, color = excluded.color, updated_at = now()
+            """, dataset["reward_categories"])
+            _upsert_many(cursor, """
+                insert into rewards (id, title, description, category_id, category_name, cost_points, status, color, updated_at)
+                values (%(id)s, %(title)s, %(description)s, %(category_id)s, %(category_name)s, %(cost_points)s, %(status)s, %(color)s, now())
+                on conflict (id) do update set title = excluded.title, description = excluded.description, category_id = excluded.category_id, category_name = excluded.category_name, cost_points = excluded.cost_points, status = excluded.status, color = excluded.color, updated_at = now()
             """, dataset["rewards"])
             _upsert_many(cursor, """
                 insert into missions (id, title, description, target, reward_points, action_label, status, updated_at)

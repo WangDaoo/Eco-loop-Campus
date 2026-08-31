@@ -29,6 +29,7 @@ const RESOURCE_PATHS = {
   "point-history": "/api/admin/point-history",
   feedback: "/api/admin/feedback",
   rewards: "/api/admin/rewards",
+  "reward-categories": "/api/admin/reward-categories",
   "reward-redemptions": "/api/admin/reward-redemptions",
   "recycling-submissions": "/api/admin/recycling-submissions",
   "proof-images": "/api/admin/proof-images",
@@ -87,6 +88,15 @@ async function saveResource(resource, payload, mapper = item => item) {
     return result(mapper(response.data || payload));
   } catch (error) {
     return result(null, BACKEND, error);
+  }
+}
+
+async function deleteResource(resource, itemId) {
+  try {
+    await requestBackend(`${RESOURCE_PATHS[resource]}/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+    return result({ ok: true });
+  } catch (error) {
+    return result({ ok: false }, BACKEND, error);
   }
 }
 
@@ -480,17 +490,33 @@ function toRewardRedemption(item) {
 }
 
 function fromRewardCatalog(row = {}) {
-  const { cost_points: costPointsSnake, created_at: createdAtSnake, ...rest } = row;
+  const { cost_points: costPointsSnake, category_id: categoryIdSnake, category_name: categoryNameSnake, created_at: createdAtSnake, ...rest } = row;
   const costPoints = Number(row.costPoints ?? costPointsSnake ?? 0);
   return {
     ...rest,
     id: row.id,
     title: row.title || "",
     description: row.description || "",
+    categoryId: row.categoryId || categoryIdSnake || "",
+    categoryName: row.categoryName || categoryNameSnake || "",
     costPoints: Number.isFinite(costPoints) ? costPoints : 0,
     status: normalizedRewardCatalogStatus(row.status),
     color: row.color || "#2F8F5B",
     createdAt: row.createdAt || createdAtSnake,
+  };
+}
+
+function fromRewardCategory(row = {}) {
+  const { created_at: createdAtSnake, updated_at: updatedAtSnake, ...rest } = row || {};
+  return {
+    ...rest,
+    id: row?.id || "",
+    name: row?.name || "",
+    description: row?.description || "",
+    status: normalizedRewardCatalogStatus(row?.status || "active"),
+    color: row?.color || "#2F8F5B",
+    createdAt: row?.createdAt || createdAtSnake,
+    updatedAt: row?.updatedAt || updatedAtSnake,
   };
 }
 
@@ -580,7 +606,20 @@ function toRewardCatalog(item) {
     id: normalized.id || buildRewardProductId(normalized.title),
     title: normalized.title,
     description: normalized.description || "",
+    category_id: normalized.categoryId || null,
+    category_name: normalized.categoryName || "",
     cost_points: Number(normalized.costPoints || 0),
+    status: normalized.status || "active",
+    color: normalized.color || "#2F8F5B",
+  };
+}
+
+function toRewardCategory(item) {
+  const normalized = fromRewardCategory(item);
+  return {
+    id: normalized.id || buildRewardProductId(normalized.name || "category"),
+    name: normalized.name,
+    description: normalized.description || "",
     status: normalized.status || "active",
     color: normalized.color || "#2F8F5B",
   };
@@ -946,6 +985,11 @@ export async function listRewards() {
   return result([...rows.data].sort((a, b) => Number(a.costPoints || 0) - Number(b.costPoints || 0)), rows.source, rows.error);
 }
 
+export async function listRewardCategories() {
+  const rows = await listResource("reward-categories", fromRewardCategory);
+  return result([...rows.data].sort((a, b) => a.name.localeCompare(b.name, "vi")), rows.source, rows.error);
+}
+
 export async function listAvatarPresets() {
   try {
     const payload = await requestBackend("/api/avatar-presets");
@@ -988,6 +1032,18 @@ export async function saveRewardProduct(item) {
   if (!title || !Number.isFinite(costPoints) || costPoints < 0 || !status) return result(null, BACKEND, new Error("Invalid reward product"));
   const payload = fromRewardCatalog({ ...item, id: item.id || buildRewardProductId(title), title, description, costPoints, status, color: item.color || "#2F8F5B" });
   return saveResource("rewards", toRewardCatalog(payload), fromRewardCatalog);
+}
+
+export async function saveRewardCategory(item) {
+  const name = typeof item.name === "string" ? item.name.trim() : "";
+  const status = normalizedRewardCatalogStatus(item.status || "active", "");
+  if (!name || !status) return result(null, BACKEND, new Error("Invalid reward category"));
+  const payload = fromRewardCategory({ ...item, id: item.id || buildRewardProductId(name), name, status, color: item.color || "#2F8F5B" });
+  return saveResource("reward-categories", toRewardCategory(payload), fromRewardCategory);
+}
+
+export async function deleteRewardCategory(categoryId) {
+  return deleteResource("reward-categories", categoryId);
 }
 
 export async function saveAvatarPreset(item) {
@@ -1058,6 +1114,8 @@ export const __testing = {
   toRewardRedemption,
   fromRewardCatalog,
   toRewardCatalog,
+  fromRewardCategory,
+  toRewardCategory,
   fromAvatarPreset,
   toAvatarPreset,
   buildStationQrCode,

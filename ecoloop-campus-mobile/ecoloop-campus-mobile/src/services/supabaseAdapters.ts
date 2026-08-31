@@ -459,6 +459,8 @@ export function mapRewardRow(row: Row): Reward {
     id: text(row.id),
     title: text(row.title, 'Qua tang Eco-loop'),
     description: text(row.description),
+    categoryId: text(row.categoryId ?? row.category_id) || undefined,
+    categoryName: text(row.categoryName ?? row.category_name) || undefined,
     costPoints: number(row.costPoints ?? row.cost_points),
     status: status === 'active' ? 'active' : 'inactive',
     color: text(row.color, '#2F8F5B')

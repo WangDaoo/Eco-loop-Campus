@@ -217,6 +217,8 @@ test('maps reward catalog rows from Supabase into mobile rewards', () => {
       title: 'Ca phe canteen',
       description: 'Giam 50% tai canteen',
       cost_points: '300',
+      category_id: 'food',
+      category_name: 'Do an',
       status: 'active',
       color: '#F6B83F'
     }),
@@ -225,6 +227,8 @@ test('maps reward catalog rows from Supabase into mobile rewards', () => {
       title: 'Ca phe canteen',
       description: 'Giam 50% tai canteen',
       costPoints: 300,
+      categoryId: 'food',
+      categoryName: 'Do an',
       status: 'active',
       color: '#F6B83F'
     }

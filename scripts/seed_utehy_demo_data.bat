@@ -12,13 +12,11 @@ cd /d "%PROJECT_DIR%" || (
   exit /b 1
 )
 
-if not exist ".runtime\DATABASE_URL.txt" (
-  echo [INFO] Chua co .runtime\DATABASE_URL.txt. Dang khoi tao PostgreSQL local...
-  powershell -NoProfile -ExecutionPolicy Bypass -File "backend\local_db\init_local_postgres.ps1"
-  if errorlevel 1 (
-    echo [ERROR] PostgreSQL local chua san sang. Hay kiem tra mat khau postgres/native PostgreSQL.
-    exit /b 1
-  )
+echo [INFO] Kiem tra PostgreSQL local va apply schema moi nhat...
+powershell -NoProfile -ExecutionPolicy Bypass -File "backend\local_db\init_local_postgres.ps1"
+if errorlevel 1 (
+  echo [ERROR] PostgreSQL local chua san sang. Hay kiem tra mat khau postgres/native PostgreSQL.
+  exit /b 1
 )
 
 set "PYTHON_EXE=backend\.venv\Scripts\python.exe"

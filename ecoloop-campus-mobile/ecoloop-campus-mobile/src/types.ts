@@ -197,6 +197,8 @@ export type Reward = {
   id: string;
   title: string;
   description: string;
+  categoryId?: string;
+  categoryName?: string;
   costPoints: number;
   status: 'active' | 'inactive';
   color: string;

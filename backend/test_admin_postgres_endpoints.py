@@ -86,6 +86,52 @@ def test_admin_resource_deletes_reward_for_admin(client, monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 
+def test_admin_resource_whitelists_reward_categories():
+    config = app.admin_resource_config("reward-categories")
+
+    assert config["table"] == "reward_categories"
+    assert "name" in config["columns"]
+    assert "status" in config["writable"]
+
+def test_admin_resource_exposes_reward_category_fields():
+    config = app.admin_resource_config("rewards")
+
+    assert "category_id" in config["columns"]
+    assert "category_name" in config["columns"]
+    assert "category_id" in config["writable"]
+
+def test_admin_delete_blocks_reward_category_in_use(monkeypatch):
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params=()):
+            self.query = query
+
+        def fetchone(self):
+            return [1]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(app, "require_database_url", lambda: "postgresql://test", raising=False)
+    monkeypatch.setattr(app.psycopg, "connect", lambda _url: FakeConnection(), raising=False)
+
+    with pytest.raises(app.HTTPException) as error:
+        app.delete_admin_resource("reward-categories", "cat-1")
+
+    assert error.value.status_code == 409
+
 def test_admin_resource_lists_point_history_for_admin(client, monkeypatch):
     patch_current_user(monkeypatch, "admin")
     monkeypatch.setattr(

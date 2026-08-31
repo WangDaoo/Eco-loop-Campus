@@ -99,6 +99,16 @@ create table if not exists settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists reward_categories (
+  id text primary key,
+  name text not null,
+  description text not null default '',
+  status text not null default 'active' check (status in ('active', 'inactive')),
+  color text not null default '#2F8F5B',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists point_history (
   id bigint generated always as identity primary key,
   prediction_id text references predictions(id) on delete cascade,
@@ -121,12 +131,17 @@ create table if not exists rewards (
   id text primary key,
   title text not null,
   description text not null default '',
+  category_id text references reward_categories(id) on delete set null,
+  category_name text not null default '',
   cost_points integer not null default 0 check (cost_points >= 0),
   status text not null default 'active' check (status in ('active', 'inactive')),
   color text not null default '#2F8F5B',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table rewards add column if not exists category_id text references reward_categories(id) on delete set null;
+alter table rewards add column if not exists category_name text not null default '';
 
 create table if not exists missions (
   id text primary key,
