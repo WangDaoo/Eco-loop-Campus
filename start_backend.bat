@@ -62,6 +62,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\release_ecoloop_port.ps1" -Port %BACKEND_PORT% -Name "Eco-loop Campus Backend" -ProjectDir "%PROJECT_DIR%"
+if errorlevel 1 (
+    echo [ERROR] Port backend %BACKEND_PORT% dang bi chiem.
+    pause
+    exit /b 1
+)
+
 echo [INFO] Dang mo API public tunnel...
 start "Eco-loop Campus API Public" powershell -NoExit -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\run_cloudflared_tunnel.ps1" -Name "Eco-loop Campus API" -Url "http://%BACKEND_HOST%:%BACKEND_PORT%" -OutFile "%RUNTIME_DIR%\api_public_url.txt"
 

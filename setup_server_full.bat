@@ -77,6 +77,18 @@ if errorlevel 1 (
 
 echo.
 echo [3/6] Khoi dong backend FastAPI + PostgreSQL native...
+powershell -NoProfile -ExecutionPolicy Bypass -File "!SCRIPTS_DIR!\release_ecoloop_port.ps1" -Port %BACKEND_PORT% -Name "Eco-loop Campus Backend" -ProjectDir "!PROJECT_DIR!"
+if errorlevel 1 (
+    echo [ERROR] Khong giai phong duoc port backend %BACKEND_PORT%.
+    pause
+    exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "!SCRIPTS_DIR!\release_ecoloop_port.ps1" -Port %WEB_PORT% -Name "Eco-loop Campus Web" -ProjectDir "!PROJECT_DIR!"
+if errorlevel 1 (
+    echo [ERROR] Khong giai phong duoc port web %WEB_PORT%.
+    pause
+    exit /b 1
+)
 start "Eco-loop Campus Backend Native" cmd /k call "!PROJECT_DIR!start_backend.bat"
 
 echo [INFO] Doi backend va PostgreSQL health...

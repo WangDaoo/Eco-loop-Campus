@@ -63,6 +63,13 @@ if errorlevel 1 (
 
 cd /d "%PROJECT_DIR%"
 
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\release_ecoloop_port.ps1" -Port %WEB_PORT% -Name "Eco-loop Campus Web" -ProjectDir "%PROJECT_DIR%"
+if errorlevel 1 (
+    echo [ERROR] Port web %WEB_PORT% dang bi chiem.
+    pause
+    exit /b 1
+)
+
 echo [INFO] Dang mo web public tunnel...
 start "Eco-loop Campus Web Public" powershell -NoExit -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\run_cloudflared_tunnel.ps1" -Name "Eco-loop Campus Web" -Url "http://%WEB_HOST%:%WEB_PORT%" -OutFile "%RUNTIME_DIR%\web_public_url.txt"
 
