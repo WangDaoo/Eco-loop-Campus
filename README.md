@@ -250,11 +250,11 @@ http://<LAPTOP_SERVER_LAN_IP>:8000
 ### Prerequisites
 
 - Git
-- Docker Desktop for server mode
+- Docker Desktop for server mode. `setup_server_full.bat` can install it automatically.
 - Python 3.10 for non-Docker backend development
 - Node.js 18+ and npm for non-Docker web development
 - PostgreSQL 17 for non-Docker DB development
-- Android Studio for emulator/APK testing
+- Android Studio for emulator/APK testing, or Android command-line SDK installed automatically by `setup_server_full.bat` when APK build is enabled.
 - Optional: Ollama with `llama3` for local chatbot responses
 
 ### Docker Server Setup
@@ -265,7 +265,23 @@ From the project root:
 setup_server_full.bat
 ```
 
-Run it as Administrator on the laptop server. It checks Docker, can install Docker Desktop through `winget` after confirmation, creates `.env.docker`, configures LAN API URL, opens firewall ports `3000` and `8000`, runs Docker Compose in the background and bootstraps the admin account.
+Run it as Administrator on the laptop server. It checks and installs Docker Desktop automatically through `winget` or the official Docker Desktop installer, creates `.env.docker`, configures LAN API URL, opens firewall ports `3000` and `8000`, runs Docker Compose in the background and bootstraps the admin account.
+
+The same script can also build the Android APK. If Android Studio is not installed, it installs project-local JDK 17 and Android command-line SDK packages automatically, including `platforms;android-34` and `build-tools;34.0.0`.
+
+Use server-only mode when the laptop only hosts backend/web:
+
+```bat
+set SETUP_BUILD_APK=0
+setup_server_full.bat
+```
+
+Force APK build and Android SDK installation:
+
+```bat
+set SETUP_BUILD_APK=1
+setup_server_full.bat
+```
 
 Default admin:
 
@@ -477,7 +493,8 @@ Rebuild APK whenever `EXPO_PUBLIC_API_URL` changes.
 |---|---|
 | Web opens but AI fails | Start backend first, verify `/predict/queue`, rebuild/restart frontend with the correct API URL |
 | `.runtime\api_public_url.txt` missing | Backend tunnel is not ready or Cloudflare is blocked |
-| Docker command missing | Install Docker Desktop and enable WSL2 backend |
+| Docker command missing | Run `setup_server_full.bat`; it downloads Docker Desktop automatically. Open Docker Desktop after install and enable WSL2 backend |
+| Android SDK missing | Run `setup_server_full.bat` with `SETUP_BUILD_APK=1`; it downloads Android command-line SDK and JDK 17 |
 | Backend cannot reach DB | Check `DATABASE_URL` and `/api/health/db` |
 | APK cannot call backend in emulator | Use `http://10.0.2.2:8000`, not `127.0.0.1` |
 | Real phone cannot call backend | Use laptop LAN IP and open Windows Firewall port `8000` |

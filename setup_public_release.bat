@@ -8,6 +8,7 @@ REM copies the APK to dist, then starts the public web tunnel.
 
 set "PROJECT_DIR=%~dp0"
 set "SCRIPTS_DIR=%PROJECT_DIR%scripts"
+set "TOOLS_DIR=%SCRIPTS_DIR%\tools"
 set "RUNTIME_DIR=%PROJECT_DIR%.runtime"
 set "DIST_DIR=%PROJECT_DIR%dist"
 set "API_URL_FILE=%RUNTIME_DIR%\api_public_url.txt"
@@ -176,26 +177,43 @@ if "%ANDROID_SDK_PATH%"=="" set "ANDROID_SDK_PATH=%ANDROID_SDK_ROOT%"
 if "%ANDROID_SDK_PATH%"=="" if exist "%LOCALAPPDATA%\Android\Sdk" set "ANDROID_SDK_PATH=%LOCALAPPDATA%\Android\Sdk"
 
 if "%ANDROID_SDK_PATH%"=="" (
-    if /i "%BUILD_APK_MODE%"=="1" (
-        echo [ERROR] Khong tim thay Android SDK.
-        echo [FIX] Cai Android Studio hoac Android command-line tools, roi dat ANDROID_HOME.
+    echo [INFO] Khong tim thay Android SDK. Dang cai Android SDK command-line tools...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\ensure_windows_runtime.ps1" -Mode frontend -WithAndroid
+    if errorlevel 1 (
+        echo [ERROR] Cai Android SDK/JDK that bai.
         pause
         exit /b 1
     )
-    set "APK_SKIP_REASON=May server khong co Android SDK"
-    goto skip_apk_build
+    set "ANDROID_SDK_PATH=%LOCALAPPDATA%\Android\Sdk"
+    if not "%ANDROID_HOME%"=="" set "ANDROID_SDK_PATH=%ANDROID_HOME%"
+    if exist "%TOOLS_DIR%\jdk-17\bin\java.exe" (
+        set "JAVA_HOME=%TOOLS_DIR%\jdk-17"
+        set "PATH=%TOOLS_DIR%\jdk-17\bin;%PATH%"
+    )
+    if "%ANDROID_SDK_PATH%"=="" (
+        set "APK_SKIP_REASON=May server khong co Android SDK"
+        goto skip_apk_build
+    )
 )
 
 where java >nul 2>nul
 if errorlevel 1 (
-    if /i "%BUILD_APK_MODE%"=="1" (
-        echo [ERROR] Khong tim thay Java/JDK de build Android.
-        echo [FIX] Cai JDK 17 hoac Android Studio, roi chay lai.
+    echo [INFO] Khong tim thay Java/JDK. Dang cai JDK 17 va Android SDK...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\ensure_windows_runtime.ps1" -Mode frontend -WithAndroid
+    if errorlevel 1 (
+        echo [ERROR] Cai JDK 17/Android SDK that bai.
         pause
         exit /b 1
     )
-    set "APK_SKIP_REASON=May server khong co Java/JDK"
-    goto skip_apk_build
+    if exist "%TOOLS_DIR%\jdk-17\bin\java.exe" (
+        set "JAVA_HOME=%TOOLS_DIR%\jdk-17"
+        set "PATH=%TOOLS_DIR%\jdk-17\bin;%PATH%"
+    )
+    where java >nul 2>nul
+    if errorlevel 1 (
+        set "APK_SKIP_REASON=May server khong co Java/JDK"
+        goto skip_apk_build
+    )
 )
 
 set "ANDROID_HOME=%ANDROID_SDK_PATH%"

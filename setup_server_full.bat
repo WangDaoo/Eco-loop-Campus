@@ -4,6 +4,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 set "PROJECT_DIR=%~dp0"
 set "SCRIPTS_DIR=%PROJECT_DIR%scripts"
+set "TOOLS_DIR=%SCRIPTS_DIR%\tools"
 set "ENV_FILE=%PROJECT_DIR%.env.docker"
 set "ENV_EXAMPLE=%PROJECT_DIR%.env.docker.example"
 set "DIST_DIR=%PROJECT_DIR%dist"
@@ -41,36 +42,25 @@ if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
 echo [INFO] Eco-loop Campus full server setup
 echo [INFO] Project: %PROJECT_DIR%
 
-where docker >nul 2>nul
-if errorlevel 1 (
-    echo [WARN] Chua cai Docker Desktop hoac docker chua co trong PATH.
-    where winget >nul 2>nul
-    if errorlevel 1 (
-        echo [ERROR] Khong co winget de tu cai Docker Desktop.
-        echo [FIX] Cai Docker Desktop thu cong: https://www.docker.com/products/docker-desktop/
-        pause
-        exit /b 1
-    )
-
-    if /i not "%SETUP_INSTALL_DOCKER%"=="1" (
-        set /p INSTALL_DOCKER=Ban co muon cai Docker Desktop bang winget ngay bay gio? [Y/N]:
-        if /i not "!INSTALL_DOCKER!"=="Y" (
-            echo [STOP] Chua cai Docker. Cai Docker Desktop roi chay lai file nay.
-            pause
-            exit /b 1
-        )
-    )
-
-    echo [INFO] Dang cai Docker Desktop bang winget...
-    winget install -e --id Docker.DockerDesktop --accept-package-agreements --accept-source-agreements
-    if errorlevel 1 (
-        echo [ERROR] Cai Docker Desktop that bai.
-        pause
-        exit /b 1
-    )
-    echo [NEXT] Mo Docker Desktop, bat WSL2 backend neu duoc hoi, restart terminal neu can, roi chay lai setup_server_full.bat.
+echo [INFO] Kiem tra/cai Docker Desktop, Node/npm va cloudflared...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\ensure_windows_runtime.ps1" -Mode frontend -WithDocker
+if errorlevel 2 (
+    echo [NEXT] Docker Desktop vua duoc cai. Mo Docker Desktop, bat WSL2 backend neu duoc hoi, roi chay lai setup_server_full.bat.
     pause
     exit /b 2
+)
+if errorlevel 1 (
+    echo [ERROR] Runtime server chua san sang.
+    pause
+    exit /b 1
+)
+
+where docker >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Docker Desktop chua san sang sau buoc cai tu dong.
+    echo [FIX] Mo Docker Desktop, doi Running, mo terminal moi roi chay lai setup_server_full.bat.
+    pause
+    exit /b 1
 )
 
 docker compose version >nul 2>nul
@@ -101,14 +91,6 @@ if errorlevel 1 (
 )
 
 :docker_ready
-
-echo [INFO] Kiem tra Node/npm/cloudflared cho web va server setup...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\ensure_windows_runtime.ps1" -Mode frontend
-if errorlevel 1 (
-    echo [ERROR] Runtime web/mobile chua san sang.
-    pause
-    exit /b 1
-)
 
 set "SERVER_IP=%SETUP_SERVER_IP%"
 if "%SERVER_IP%"=="" (
@@ -245,26 +227,43 @@ if "%ANDROID_SDK_PATH%"=="" set "ANDROID_SDK_PATH=%ANDROID_SDK_ROOT%"
 if "%ANDROID_SDK_PATH%"=="" if exist "%LOCALAPPDATA%\Android\Sdk" set "ANDROID_SDK_PATH=%LOCALAPPDATA%\Android\Sdk"
 
 if "%ANDROID_SDK_PATH%"=="" (
-    if /i "%BUILD_APK_MODE%"=="1" (
-        echo [ERROR] Khong tim thay Android SDK.
-        echo [FIX] Cai Android Studio hoac Android command-line tools, roi dat ANDROID_HOME.
+    echo [INFO] Khong tim thay Android SDK. Dang cai Android SDK command-line tools...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\ensure_windows_runtime.ps1" -Mode frontend -WithAndroid
+    if errorlevel 1 (
+        echo [ERROR] Cai Android SDK/JDK that bai.
         pause
         exit /b 1
     )
-    set "APK_SKIP_REASON=May server khong co Android SDK"
-    goto skip_apk_build
+    set "ANDROID_SDK_PATH=%LOCALAPPDATA%\Android\Sdk"
+    if not "%ANDROID_HOME%"=="" set "ANDROID_SDK_PATH=%ANDROID_HOME%"
+    if exist "%TOOLS_DIR%\jdk-17\bin\java.exe" (
+        set "JAVA_HOME=%TOOLS_DIR%\jdk-17"
+        set "PATH=%TOOLS_DIR%\jdk-17\bin;%PATH%"
+    )
+    if "%ANDROID_SDK_PATH%"=="" (
+        set "APK_SKIP_REASON=May server khong co Android SDK"
+        goto skip_apk_build
+    )
 )
 
 where java >nul 2>nul
 if errorlevel 1 (
-    if /i "%BUILD_APK_MODE%"=="1" (
-        echo [ERROR] Khong tim thay Java/JDK de build Android.
-        echo [FIX] Cai JDK 17 hoac Android Studio, roi chay lai.
+    echo [INFO] Khong tim thay Java/JDK. Dang cai JDK 17 va Android SDK...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\ensure_windows_runtime.ps1" -Mode frontend -WithAndroid
+    if errorlevel 1 (
+        echo [ERROR] Cai JDK 17/Android SDK that bai.
         pause
         exit /b 1
     )
-    set "APK_SKIP_REASON=May server khong co Java/JDK"
-    goto skip_apk_build
+    if exist "%TOOLS_DIR%\jdk-17\bin\java.exe" (
+        set "JAVA_HOME=%TOOLS_DIR%\jdk-17"
+        set "PATH=%TOOLS_DIR%\jdk-17\bin;%PATH%"
+    )
+    where java >nul 2>nul
+    if errorlevel 1 (
+        set "APK_SKIP_REASON=May server khong co Java/JDK"
+        goto skip_apk_build
+    )
 )
 
 set "ANDROID_HOME=%ANDROID_SDK_PATH%"
