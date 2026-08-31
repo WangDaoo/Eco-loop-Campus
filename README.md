@@ -250,7 +250,7 @@ http://<LAPTOP_SERVER_LAN_IP>:8000
 ### Prerequisites
 
 - Git
-- Python 3.10 for backend runtime
+- Python 3.10 for backend runtime. `setup_server_full.bat` installs it through `winget` or downloads the official Python 3.10.11 installer.
 - Node.js 18+ and npm for web runtime
 - PostgreSQL native for the database. `setup_server_full.bat` installs PostgreSQL 15 on older Windows when needed.
 - Android Studio for emulator/APK testing, or Android command-line SDK installed by `setup_public_release.bat` when APK build is enabled.

@@ -13,6 +13,8 @@ $toolsDir = Join-Path $PSScriptRoot 'tools'
 $cloudflaredPath = Join-Path $toolsDir 'cloudflared.exe'
 $downloadsDir = Join-Path $toolsDir 'downloads'
 $runtimeDir = Join-Path $projectDir '.runtime'
+$pythonInstallerPath = Join-Path $downloadsDir 'python-3.10.11-amd64.exe'
+$pythonInstallerUrl = 'https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe'
 $androidSdkRoot = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } elseif ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
 $androidCmdlineZip = Join-Path $downloadsDir 'commandlinetools-win-15859902_latest.zip'
 $androidCmdlineUrl = 'https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip'
@@ -83,8 +85,19 @@ function Test-Python310() {
     if (-not (Test-CommandAvailable 'py')) {
         return $false
     }
-    py -3.10 --version *> $null
-    return $LASTEXITCODE -eq 0
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & py -3.10 --version 2>&1
+        return $LASTEXITCODE -eq 0 -and ($output -join "`n") -match 'Python 3\.10'
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
 }
 
 function Ensure-Python310() {
@@ -93,7 +106,24 @@ function Ensure-Python310() {
         return
     }
 
-    Install-WithWinget 'Python.Python.3.10' 'Python 3.10'
+    if (-not (Install-WithWingetIfAvailable 'Python.Python.3.10' 'Python 3.10')) {
+        New-Item -ItemType Directory -Force -Path $downloadsDir | Out-Null
+        Write-Step 'Khong co winget. Dang tai Python 3.10.11 tu www.python.org...'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $pythonInstallerUrl -OutFile $pythonInstallerPath -UseBasicParsing
+
+        if (-not (Test-Path -LiteralPath $pythonInstallerPath)) {
+            throw 'Tai Python 3.10.11 installer that bai.'
+        }
+
+        Write-Step 'Dang cai Python 3.10.11 cho user hien tai...'
+        $process = Start-Process -FilePath $pythonInstallerPath -ArgumentList @('/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_launcher=1', 'Include_pip=1') -Wait -PassThru
+        if ($process.ExitCode -ne 0) {
+            Write-Host "[FIX] Mo installer Python da tai neu can cai thu cong: $pythonInstallerPath"
+            throw "Cai Python 3.10.11 that bai. ExitCode=$($process.ExitCode)"
+        }
+        Update-PathFromMachine
+    }
 
     if (-not (Test-Python310)) {
         throw 'Da cai Python 3.10 nhung Python launcher chua san sang. Dong terminal va chay lai file .bat.'
