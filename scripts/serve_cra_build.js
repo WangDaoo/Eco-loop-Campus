@@ -6,7 +6,7 @@ const projectDir = path.resolve(__dirname, '..');
 const defaultBuildDir = path.join(projectDir, 'frontend', 'eco-loop-campus-admin', 'build');
 const buildDir = path.resolve(process.env.WEB_BUILD_DIR || defaultBuildDir);
 const host = process.env.WEB_HOST || '127.0.0.1';
-const port = Number(process.env.WEB_PORT || 3000);
+const port = Number(process.env.WEB_PORT || 3002);
 
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',

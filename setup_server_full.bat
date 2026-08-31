@@ -21,7 +21,7 @@ if "%ADMIN_PASSWORD%"=="" set "ADMIN_PASSWORD=123456"
 if "%BACKEND_HOST%"=="" set "BACKEND_HOST=127.0.0.1"
 if "%BACKEND_PORT%"=="" set "BACKEND_PORT=8000"
 if "%WEB_HOST%"=="" set "WEB_HOST=127.0.0.1"
-if "%WEB_PORT%"=="" set "WEB_PORT=3000"
+if "%WEB_PORT%"=="" set "WEB_PORT=3002"
 
 if not exist "!PROJECT_DIR!start_backend.bat" (
     echo [ERROR] Khong tim thay start_backend.bat trong:
@@ -72,7 +72,7 @@ if errorlevel 1 (
     echo [INFO] Dang mo firewall cho backend/web...
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
       "New-NetFirewallRule -DisplayName 'Eco-loop Campus Backend 8000' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8000 -ErrorAction SilentlyContinue | Out-Null;" ^
-      "New-NetFirewallRule -DisplayName 'Eco-loop Campus Web 3000' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3000 -ErrorAction SilentlyContinue | Out-Null"
+      "New-NetFirewallRule -DisplayName 'Eco-loop Campus Web %WEB_PORT%' -Direction Inbound -Action Allow -Protocol TCP -LocalPort %WEB_PORT% -ErrorAction SilentlyContinue | Out-Null"
 )
 
 echo.

@@ -19,6 +19,8 @@ $nativeBootstrapScript = Read-RepoFile 'scripts\bootstrap_local_admin.ps1'
 $publicReleaseBat = Read-RepoFile 'setup_public_release.bat'
 $laptopBat = Read-RepoFile 'scripts\start_laptop_server.bat'
 $portScript = Read-RepoFile 'scripts\release_ecoloop_port.ps1'
+$dockerCompose = Read-RepoFile 'docker-compose.yml'
+$dockerEnvExample = Read-RepoFile '.env.docker.example'
 $gitignore = Read-RepoFile '.gitignore'
 
 Assert-Contains $backendBat 'ensure_windows_runtime.ps1' 'start_backend.bat must verify/install runtime dependencies.'
@@ -33,7 +35,9 @@ Assert-Contains $frontendBat 'api_public_url.txt' 'start_frontend.bat must read 
 Assert-Contains $frontendBat 'web_public_url.txt' 'start_frontend.bat must write the web public URL.'
 Assert-Contains $frontendBat 'npm run build' 'start_frontend.bat must build the production web before serving public.'
 Assert-Contains $frontendBat 'serve_cra_build.js' 'start_frontend.bat must serve the production build.'
-Assert-Contains $frontendBat 'release_ecoloop_port.ps1' 'start_frontend.bat must release stale Eco-loop web processes before binding port 3000.'
+Assert-Contains $frontendBat 'release_ecoloop_port.ps1' 'start_frontend.bat must release stale Eco-loop web processes before binding the web port.'
+Assert-Contains $frontendBat 'set "WEB_PORT=3002"' 'start_frontend.bat must default web to port 3002 because 3000 is commonly occupied by desktop tools.'
+Assert-Contains (Read-RepoFile 'scripts\serve_cra_build.js') 'process.env.WEB_PORT || 3002' 'serve_cra_build.js must default web to port 3002 when launched directly.'
 
 Assert-Contains $serverSetupBat '-WithPostgres' 'setup_server_full.bat must install/check native PostgreSQL instead of Docker.'
 Assert-Contains $serverSetupBat 'start_backend.bat' 'setup_server_full.bat must launch the native FastAPI backend.'
@@ -44,6 +48,8 @@ Assert-Contains $serverSetupBat 'api_public_url.txt' 'setup_server_full.bat must
 Assert-Contains $serverSetupBat 'New-NetFirewallRule' 'setup_server_full.bat must open backend/web firewall ports when run as admin.'
 Assert-Contains $serverSetupBat '/api/health/db' 'setup_server_full.bat must verify backend database health.'
 Assert-Contains $serverSetupBat 'Get-NetIPAddress' 'setup_server_full.bat must print LAN IPs for mobile/web clients.'
+Assert-Contains $serverSetupBat 'set "WEB_PORT=3002"' 'setup_server_full.bat must default web to port 3002 before opening the public tunnel.'
+Assert-Contains $serverSetupBat 'LocalPort %WEB_PORT%' 'setup_server_full.bat must open firewall for the configured web port, not a hard-coded 3000.'
 if ($serverSetupBat.Contains('docker compose') -or $serverSetupBat.Contains('-WithDocker')) {
     throw 'setup_server_full.bat must not require Docker after switching to native server mode.'
 }
@@ -62,6 +68,7 @@ Assert-Contains $publicReleaseBat 'gradlew.bat assembleRelease' 'setup_public_re
 Assert-Contains $publicReleaseBat ':app:createBundleReleaseJsAndAssets --rerun-tasks' 'setup_public_release.bat must force the Expo release JS bundle to include the latest public API URL.'
 Assert-Contains $publicReleaseBat 'dist\ecoloop-campus-mobile-release.apk' 'setup_public_release.bat must copy the release APK to the shared dist path.'
 Assert-Contains $publicReleaseBat 'start_frontend.bat' 'setup_public_release.bat must start the public web tunnel after the web build uses the API URL.'
+Assert-Contains $publicReleaseBat 'set "WEB_PORT=3002"' 'setup_public_release.bat must default web to port 3002 before public release.'
 Assert-Contains $publicReleaseBat 'subst' 'setup_public_release.bat must build Android through an ASCII subst path for Unicode project folders.'
 Assert-Contains $publicReleaseBat 'System.Text.UTF8Encoding]::new($false)' 'setup_public_release.bat must write .env files without UTF-8 BOM so Expo reads the first key.'
 Assert-Contains $publicReleaseBat 'PUBLIC_WAIT_SECONDS=900' 'setup_public_release.bat must wait long enough for release builds before timing out public URLs.'
@@ -71,6 +78,11 @@ Assert-Contains $publicReleaseBat '%WEB_PUBLIC_URL%/' 'setup_public_release.bat 
 Assert-Contains $laptopBat 'start_backend.bat' 'start_laptop_server.bat must launch the public backend script.'
 Assert-Contains $laptopBat 'api_public_url.txt' 'start_laptop_server.bat must wait for API public URL before web startup.'
 Assert-Contains $laptopBat 'start_frontend.bat' 'start_laptop_server.bat must launch the public frontend script.'
+Assert-Contains $laptopBat 'http://127.0.0.1:3002' 'start_laptop_server.bat must print the new web port 3002.'
+
+Assert-Contains $dockerCompose '${WEB_PORT:-3002}:3000' 'docker-compose.yml must expose the web host port as 3002 by default.'
+Assert-Contains $dockerEnvExample 'WEB_PORT=3002' '.env.docker.example must default web to port 3002.'
+Assert-Contains $dockerEnvExample 'http://127.0.0.1:3002' '.env.docker.example must allow the native web origin on port 3002.'
 
 Assert-Contains $portScript 'Get-NetTCPConnection' 'release_ecoloop_port.ps1 must inspect listeners through Get-NetTCPConnection.'
 Assert-Contains $portScript 'Win32_Process' 'release_ecoloop_port.ps1 must inspect process command lines before killing.'

@@ -222,8 +222,8 @@ The project can run in three modes:
 
 | Service | Local URL |
 |---|---|
-| Frontend admin | `http://127.0.0.1:3000/#/dashboard` |
-| Login page | `http://127.0.0.1:3000/#/login` |
+| Frontend admin | `http://127.0.0.1:3002/#/dashboard` |
+| Login page | `http://127.0.0.1:3002/#/login` |
 | Backend API | `http://127.0.0.1:8000` |
 | Backend docs | `http://127.0.0.1:8000/docs` |
 | DB health | `http://127.0.0.1:8000/api/health/db` |
@@ -264,7 +264,7 @@ From the project root:
 setup_server_full.bat
 ```
 
-Run it as Administrator on the laptop server. It checks and installs Python, Node.js, PostgreSQL native and cloudflared, initializes `.runtime\DATABASE_URL.txt`, opens firewall ports `3000` and `8000`, starts backend/web in separate windows and bootstraps the admin account. It does not require Docker, WSL2 or Android Studio.
+Run it as Administrator on the laptop server. It checks and installs Python, Node.js, PostgreSQL native and cloudflared, initializes `.runtime\DATABASE_URL.txt`, opens firewall ports `3002` and `8000`, starts backend/web in separate windows and bootstraps the admin account. It does not require Docker, WSL2 or Android Studio.
 
 Default admin:
 
@@ -299,7 +299,7 @@ The Docker stack includes:
 
 - `postgres`: PostgreSQL 17 with persistent volume `ecoloop_postgres_data`.
 - `backend`: FastAPI + TensorFlow + upload volume.
-- `web`: React build served by Nginx on port `3000`.
+- `web`: React build served by Nginx on port `3002`.
 
 ### Backend Setup
 
@@ -493,7 +493,7 @@ Rebuild APK whenever `EXPO_PUBLIC_API_URL` changes.
 ## Usage
 
 1. Start the server with `setup_server_full.bat`.
-2. Open `http://127.0.0.1:3000/#/login`.
+2. Open `http://127.0.0.1:3002/#/login`.
 3. Sign in with an admin account from the backend `users` table.
 4. Create operating data: avatar presets, bins/stations, waste types, rewards and missions.
 5. Student registers or logs in on the mobile app.

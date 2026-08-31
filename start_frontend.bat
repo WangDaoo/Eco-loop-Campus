@@ -10,7 +10,7 @@ set "RUNTIME_DIR=%PROJECT_DIR%.runtime"
 set "API_URL_FILE=%RUNTIME_DIR%\api_public_url.txt"
 
 if "%WEB_HOST%"=="" set "WEB_HOST=127.0.0.1"
-if "%WEB_PORT%"=="" set "WEB_PORT=3000"
+if "%WEB_PORT%"=="" set "WEB_PORT=3002"
 
 if not exist "%FRONTEND_DIR%\package.json" (
     echo [ERROR] Khong tim thay package.json tai:

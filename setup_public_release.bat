@@ -30,7 +30,7 @@ set "APK_SKIP_REASON="
 if "%BACKEND_HOST%"=="" set "BACKEND_HOST=127.0.0.1"
 if "%BACKEND_PORT%"=="" set "BACKEND_PORT=8000"
 if "%WEB_HOST%"=="" set "WEB_HOST=127.0.0.1"
-if "%WEB_PORT%"=="" set "WEB_PORT=3000"
+if "%WEB_PORT%"=="" set "WEB_PORT=3002"
 if "%BUILD_APK_MODE%"=="" set "BUILD_APK_MODE=auto"
 
 if not exist "%PROJECT_DIR%start_backend.bat" (
@@ -356,7 +356,7 @@ echo [OK] Web public HTTP 200.
 echo.
 echo [DONE] Setup public release da gui lenh hoan tat.
 echo [LOCAL] Backend: http://127.0.0.1:8000
-echo [LOCAL] Web:     http://127.0.0.1:3000
+echo [LOCAL] Web:     http://127.0.0.1:%WEB_PORT%
 echo [PUBLIC] API:    %API_PUBLIC_URL%
 if defined WEB_PUBLIC_URL echo [PUBLIC] Web:    %WEB_PUBLIC_URL%
 if "%APK_BUILT%"=="1" (

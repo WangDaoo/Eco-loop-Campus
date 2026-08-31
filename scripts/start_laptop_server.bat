@@ -36,7 +36,7 @@ start "Eco-loop Campus Web" cmd /k ""%PROJECT_DIR%\start_frontend.bat""
 echo [OK] Da gui lenh khoi dong public server.
 echo [INFO] Local:
 echo        API: http://127.0.0.1:8000
-echo        Web: http://127.0.0.1:3000
+echo        Web: http://127.0.0.1:3002
 echo [INFO] Public URL se nam trong:
 echo        %RUNTIME_DIR%\api_public_url.txt
 echo        %RUNTIME_DIR%\web_public_url.txt
