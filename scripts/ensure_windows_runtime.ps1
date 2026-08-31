@@ -146,8 +146,14 @@ function Ensure-DockerDesktop() {
     }
 
     Write-Step 'Dang cai Docker Desktop che do per-user...'
-    $process = Start-Process -FilePath $dockerInstallerPath -ArgumentList @('install', '--user', '--quiet', '--accept-license') -Wait -PassThru
+    $process = Start-Process -FilePath $dockerInstallerPath -ArgumentList @('install', '--user') -Wait -PassThru
+    if ($process.ExitCode -eq 2) {
+        Write-Step 'Docker Desktop installer da tra ExitCode=2. Thuong can mo Docker Desktop, cap quyen WSL2/restart Windows, roi chay lai setup.'
+        Write-Step "Neu Docker Desktop chua hien, mo installer tai: $dockerInstallerPath"
+        exit 2
+    }
     if ($process.ExitCode -ne 0) {
+        Write-Host "[FIX] Mo file installer da tai va cai thu cong neu can: $dockerInstallerPath"
         throw "Cai Docker Desktop that bai. ExitCode=$($process.ExitCode)"
     }
 
