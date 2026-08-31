@@ -246,6 +246,25 @@ function Get-OrCreatePostgresPassword() {
     return $password
 }
 
+function Test-JavaForAndroid() {
+    if (-not (Test-CommandAvailable 'java')) {
+        return $false
+    }
+
+    $javaPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $versionText = (& java -version 2>&1 | Out-String)
+        return $LASTEXITCODE -eq 0 -and $versionText -match 'version "17\.|version "18\.|version "19\.|version "2[0-9]\.|openjdk version "17\.|openjdk version "18\.|openjdk version "19\.|openjdk version "2[0-9]\.'
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $ErrorActionPreference = $javaPreference
+    }
+}
+
 function Ensure-PostgreSQL() {
     $postgresBin = Find-PostgresBin
     if ($postgresBin) {
@@ -306,12 +325,9 @@ function Ensure-Jdk17() {
         return
     }
 
-    if (Test-CommandAvailable 'java') {
-        $versionText = (& java -version 2>&1 | Out-String)
-        if ($versionText -match 'version "17\.|version "18\.|version "19\.|version "2[0-9]\.|openjdk version "17\.|openjdk version "18\.|openjdk version "19\.|openjdk version "2[0-9]\.') {
-            Write-Step 'JDK da san sang cho Android build.'
-            return
-        }
+    if (Test-JavaForAndroid) {
+        Write-Step 'JDK da san sang cho Android build.'
+        return
     }
 
     if ($env:SETUP_INSTALL_SYSTEM_JDK -eq '1' -and (Install-WithWingetIfAvailable 'EclipseAdoptium.Temurin.17.JDK' 'Temurin.17.JDK')) {

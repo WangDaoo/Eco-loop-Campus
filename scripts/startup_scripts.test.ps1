@@ -136,6 +136,9 @@ Assert-Contains $ensureScript 'platforms;android-34' 'ensure script must install
 Assert-Contains $ensureScript 'build-tools;34.0.0' 'ensure script must install the Android build tools used by the mobile project.'
 Assert-Contains $ensureScript 'Temurin.17.JDK' 'ensure script must install JDK 17 for Android builds.'
 Assert-Contains $ensureScript 'api.adoptium.net' 'ensure script must download JDK 17 directly when winget is unavailable.'
+Assert-Contains $ensureScript 'Test-JavaForAndroid' 'ensure script must validate Java without letting java -version stderr abort old PowerShell.'
+Assert-Contains $ensureScript '$javaPreference = $ErrorActionPreference' 'ensure script must preserve ErrorActionPreference around java -version.'
+Assert-Contains $ensureScript '$ErrorActionPreference = "Continue"' 'ensure script must allow java -version stderr on old PowerShell.'
 Assert-Contains $ensureScript 'cloudflared-windows-amd64.exe' 'ensure script must download cloudflared for Windows x64.'
 
 $rngScripts = @(
