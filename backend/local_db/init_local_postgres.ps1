@@ -38,15 +38,41 @@ function ConvertFrom-SecureStringToPlainText([Security.SecureString] $SecureValu
     }
 }
 
+function Invoke-ExternalChecked([string] $ErrorMessage, [scriptblock] $Command) {
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw $ErrorMessage
+    }
+}
+
+function Test-PostgresSuperPassword([string] $Password) {
+    $previousPassword = $env:PGPASSWORD
+    $env:PGPASSWORD = $Password
+    try {
+        & $Psql -h $HostName -p $Port -U postgres -d postgres -tAc "SELECT 1" > $null 2>&1
+        return $LASTEXITCODE -eq 0
+    }
+    finally {
+        $env:PGPASSWORD = $previousPassword
+    }
+}
+
 function Read-PostgresSuperPassword() {
     New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
     if (Test-Path -LiteralPath $PostgresPasswordPath) {
-        return (Get-Content -LiteralPath $PostgresPasswordPath -Raw).Trim()
+        $savedPassword = (Get-Content -LiteralPath $PostgresPasswordPath -Raw).Trim()
+        if (Test-PostgresSuperPassword $savedPassword) {
+            return $savedPassword
+        }
+        Write-Host "[WARN] Mat khau trong $PostgresPasswordPath khong dung voi PostgreSQL hien tai."
     }
 
     if (-not [string]::IsNullOrWhiteSpace($env:SETUP_POSTGRES_PASSWORD)) {
         $password = $env:SETUP_POSTGRES_PASSWORD.Trim()
+        if (-not (Test-PostgresSuperPassword $password)) {
+            throw "Mat khau PostgreSQL user postgres khong dung. Kiem tra lai SETUP_POSTGRES_PASSWORD."
+        }
         Set-Content -LiteralPath $PostgresPasswordPath -Value $password -Encoding ASCII
         Write-Host "[OK] postgres_password.txt da duoc tao tu SETUP_POSTGRES_PASSWORD."
         return $password
@@ -54,15 +80,23 @@ function Read-PostgresSuperPassword() {
 
     Write-Host "[WARN] Thieu $PostgresPasswordPath."
     Write-Host "[INFO] Neu PostgreSQL da cai san, nhap mat khau cua user postgres de script tao database Eco-loop."
-    $securePassword = Read-Host -Prompt "Nhap mat khau PostgreSQL user postgres" -AsSecureString
-    $password = (ConvertFrom-SecureStringToPlainText $securePassword).Trim()
-    if ([string]::IsNullOrWhiteSpace($password)) {
-        throw "Chua nhap mat khau PostgreSQL user postgres."
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $securePassword = Read-Host -Prompt "Nhap mat khau PostgreSQL user postgres" -AsSecureString
+        $password = (ConvertFrom-SecureStringToPlainText $securePassword).Trim()
+        if ([string]::IsNullOrWhiteSpace($password)) {
+            throw "Chua nhap mat khau PostgreSQL user postgres."
+        }
+
+        if (Test-PostgresSuperPassword $password) {
+            Set-Content -LiteralPath $PostgresPasswordPath -Value $password -Encoding ASCII
+            Write-Host "[OK] postgres_password.txt da duoc tao. Lan sau script se dung lai file nay."
+            return $password
+        }
+
+        Write-Host "[WARN] Mat khau PostgreSQL user postgres khong dung. Thu lai ($attempt/3)."
     }
 
-    Set-Content -LiteralPath $PostgresPasswordPath -Value $password -Encoding ASCII
-    Write-Host "[OK] postgres_password.txt da duoc tao. Lan sau script se dung lai file nay."
-    return $password
+    throw "Mat khau PostgreSQL user postgres khong dung sau 3 lan thu."
 }
 
 function Find-PostgresBin() {
@@ -124,27 +158,35 @@ BEGIN
 END
 `$`$;
 "@
-$CreateRoleSql | & $Psql -h $HostName -p $Port -U postgres -d postgres -v ON_ERROR_STOP=1
-
-$DbExistsOutput = & $Psql -h $HostName -p $Port -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DatabaseName'"
-$DbExists = ($DbExistsOutput | Select-Object -First 1)
-if ([string]::IsNullOrWhiteSpace($DbExists)) {
-    & $Createdb -h $HostName -p $Port -U postgres -O $AppUser $DatabaseName
+Invoke-ExternalChecked "Tao/cap nhat PostgreSQL role $AppUser that bai." {
+    $CreateRoleSql | & $Psql -h $HostName -p $Port -U postgres -d postgres -v ON_ERROR_STOP=1
 }
 
-& $Psql -h $HostName -p $Port -U postgres -d postgres -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON DATABASE $DatabaseName TO $AppUser;"
+& $Psql -h $HostName -p $Port -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DatabaseName'" > "$env:TEMP\ecoloop_db_exists.txt"
+if ($LASTEXITCODE -ne 0) {
+    throw "Kiem tra database $DatabaseName that bai."
+}
+$DbExistsOutput = Get-Content -LiteralPath "$env:TEMP\ecoloop_db_exists.txt" -ErrorAction SilentlyContinue
+$DbExists = ($DbExistsOutput | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($DbExists)) {
+    Invoke-ExternalChecked "Tao database $DatabaseName that bai." {
+        & $Createdb -h $HostName -p $Port -U postgres -O $AppUser $DatabaseName
+    }
+}
+
+Invoke-ExternalChecked "Gan quyen database $DatabaseName cho $AppUser that bai." {
+    & $Psql -h $HostName -p $Port -U postgres -d postgres -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON DATABASE $DatabaseName TO $AppUser;"
+}
 
 Set-Content -LiteralPath $DatabaseUrlPath -Value "postgresql://${AppUser}:${AppPassword}@${HostName}:${Port}/${DatabaseName}" -Encoding ASCII
 
 $env:PGPASSWORD = $AppPassword
-Get-Content -LiteralPath $SchemaPath -Raw -Encoding UTF8 | & $Psql -h $HostName -p $Port -U $AppUser -d $DatabaseName -v ON_ERROR_STOP=1
-if ($LASTEXITCODE -ne 0) {
-    throw "Apply schema.sql that bai."
+Invoke-ExternalChecked "Apply schema.sql that bai." {
+    Get-Content -LiteralPath $SchemaPath -Raw -Encoding UTF8 | & $Psql -h $HostName -p $Port -U $AppUser -d $DatabaseName -v ON_ERROR_STOP=1
 }
 
-Get-Content -LiteralPath $SmokePath -Raw -Encoding UTF8 | & $Psql -h $HostName -p $Port -U $AppUser -d $DatabaseName -v ON_ERROR_STOP=1
-if ($LASTEXITCODE -ne 0) {
-    throw "Smoke QR flow that bai."
+Invoke-ExternalChecked "Smoke QR flow that bai." {
+    Get-Content -LiteralPath $SmokePath -Raw -Encoding UTF8 | & $Psql -h $HostName -p $Port -U $AppUser -d $DatabaseName -v ON_ERROR_STOP=1
 }
 
 Write-Host "[OK] Local PostgreSQL ready: ${HostName}:${Port}/${DatabaseName}"
