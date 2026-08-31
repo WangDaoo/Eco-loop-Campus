@@ -14,10 +14,14 @@ set "RELEASE_APK=%PROJECT_DIR%dist\ecoloop-campus-mobile-release.apk"
 set "ADMIN_EMAIL=%ADMIN_EMAIL%"
 set "ADMIN_NAME=%ADMIN_NAME%"
 set "ADMIN_PASSWORD=%ADMIN_PASSWORD%"
+set "BUILD_APK_MODE=%SETUP_BUILD_APK%"
+set "APK_BUILT=0"
+set "APK_SKIP_REASON="
 
 if "%ADMIN_EMAIL%"=="" set "ADMIN_EMAIL=admin@school.edu.vn"
 if "%ADMIN_NAME%"=="" set "ADMIN_NAME=Eco-loop Admin"
 if "%ADMIN_PASSWORD%"=="" set "ADMIN_PASSWORD=123456"
+if "%BUILD_APK_MODE%"=="" set "BUILD_APK_MODE=auto"
 
 if not exist "%PROJECT_DIR%docker-compose.yml" (
     echo [ERROR] Khong tim thay docker-compose.yml trong:
@@ -28,13 +32,6 @@ if not exist "%PROJECT_DIR%docker-compose.yml" (
 
 if not exist "%ENV_EXAMPLE%" (
     echo [ERROR] Khong tim thay .env.docker.example.
-    pause
-    exit /b 1
-)
-
-if not exist "%MOBILE_DIR%\android\gradlew.bat" (
-    echo [ERROR] Khong tim thay Android Gradle wrapper:
-    echo %MOBILE_DIR%\android\gradlew.bat
     pause
     exit /b 1
 )
@@ -105,7 +102,7 @@ if errorlevel 1 (
 
 :docker_ready
 
-echo [INFO] Kiem tra Node/npm/cloudflared cho web va build APK...
+echo [INFO] Kiem tra Node/npm/cloudflared cho web va server setup...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\ensure_windows_runtime.ps1" -Mode frontend
 if errorlevel 1 (
     echo [ERROR] Runtime web/mobile chua san sang.
@@ -221,6 +218,58 @@ if errorlevel 1 (
     echo powershell -NoProfile -ExecutionPolicy Bypass -File scripts\docker_bootstrap_admin.ps1 -Email "%ADMIN_EMAIL%" -Name "%ADMIN_NAME%" -Password "%ADMIN_PASSWORD%"
 )
 
+if /i "%BUILD_APK_MODE%"=="0" (
+    set "APK_SKIP_REASON=SETUP_BUILD_APK=0"
+    goto skip_apk_build
+)
+
+if /i not "%BUILD_APK_MODE%"=="auto" if /i not "%BUILD_APK_MODE%"=="1" (
+    echo [ERROR] SETUP_BUILD_APK chi nhan: auto, 1, hoac 0.
+    pause
+    exit /b 1
+)
+
+if not exist "%MOBILE_DIR%\android\gradlew.bat" (
+    if /i "%BUILD_APK_MODE%"=="1" (
+        echo [ERROR] Khong tim thay Android Gradle wrapper:
+        echo %MOBILE_DIR%\android\gradlew.bat
+        pause
+        exit /b 1
+    )
+    set "APK_SKIP_REASON=Khong co Android Gradle wrapper trong source"
+    goto skip_apk_build
+)
+
+set "ANDROID_SDK_PATH=%ANDROID_HOME%"
+if "%ANDROID_SDK_PATH%"=="" set "ANDROID_SDK_PATH=%ANDROID_SDK_ROOT%"
+if "%ANDROID_SDK_PATH%"=="" if exist "%LOCALAPPDATA%\Android\Sdk" set "ANDROID_SDK_PATH=%LOCALAPPDATA%\Android\Sdk"
+
+if "%ANDROID_SDK_PATH%"=="" (
+    if /i "%BUILD_APK_MODE%"=="1" (
+        echo [ERROR] Khong tim thay Android SDK.
+        echo [FIX] Cai Android Studio hoac Android command-line tools, roi dat ANDROID_HOME.
+        pause
+        exit /b 1
+    )
+    set "APK_SKIP_REASON=May server khong co Android SDK"
+    goto skip_apk_build
+)
+
+where java >nul 2>nul
+if errorlevel 1 (
+    if /i "%BUILD_APK_MODE%"=="1" (
+        echo [ERROR] Khong tim thay Java/JDK de build Android.
+        echo [FIX] Cai JDK 17 hoac Android Studio, roi chay lai.
+        pause
+        exit /b 1
+    )
+    set "APK_SKIP_REASON=May server khong co Java/JDK"
+    goto skip_apk_build
+)
+
+set "ANDROID_HOME=%ANDROID_SDK_PATH%"
+set "ANDROID_SDK_ROOT=%ANDROID_SDK_PATH%"
+
 echo [INFO] Ghi backend URL cho APK mobile: %MOBILE_API_URL%
 if not exist "%MOBILE_ENV%" (
     if exist "%MOBILE_ENV_EXAMPLE%" (
@@ -306,6 +355,7 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+set "APK_BUILT=1"
 echo [OK] APK release da dau backend: %RELEASE_APK%
 
 where adb >nul 2>nul
@@ -330,14 +380,26 @@ if "%ADB%"=="" (
     )
 )
 
+goto after_apk_build
+
+:skip_apk_build
+echo [WARN] Bo qua build/cai APK: %APK_SKIP_REASON%.
+echo [FIX] May server chi can Docker de chay PostgreSQL/backend/web.
+echo [FIX] Build APK tren may dev co Android Studio, hoac cai Android SDK + JDK roi chay: set SETUP_BUILD_APK=1
+
+:after_apk_build
 echo.
 echo [OK] Eco-loop Campus server da san sang.
 echo [URL] Web local: http://127.0.0.1:3000
 echo [URL] Backend local: http://127.0.0.1:8000
 echo [URL] Web LAN: http://%SERVER_IP%:3000
 echo [URL] Backend LAN: http://%SERVER_IP%:8000
-echo [APP] APK da build voi: EXPO_PUBLIC_API_URL=%MOBILE_API_URL%
-echo [APP] APK: %RELEASE_APK%
+if "%APK_BUILT%"=="1" (
+    echo [APP] APK da build voi: EXPO_PUBLIC_API_URL=%MOBILE_API_URL%
+    echo [APP] APK: %RELEASE_APK%
+) else (
+    echo [APP] APK chua build tren may nay: %APK_SKIP_REASON%
+)
 echo [ADMIN] Email: %ADMIN_EMAIL%
 echo [ADMIN] Mat khau: %ADMIN_PASSWORD%
 echo.

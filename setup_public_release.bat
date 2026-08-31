@@ -22,11 +22,15 @@ set "MOBILE_DIR=%PROJECT_DIR%ecoloop-campus-mobile\ecoloop-campus-mobile"
 set "MOBILE_ENV=%MOBILE_DIR%\.env"
 set "MOBILE_ENV_EXAMPLE=%MOBILE_DIR%\.env.example"
 set "RELEASE_APK=%PROJECT_DIR%dist\ecoloop-campus-mobile-release.apk"
+set "BUILD_APK_MODE=%SETUP_BUILD_APK%"
+set "APK_BUILT=0"
+set "APK_SKIP_REASON="
 
 if "%BACKEND_HOST%"=="" set "BACKEND_HOST=127.0.0.1"
 if "%BACKEND_PORT%"=="" set "BACKEND_PORT=8000"
 if "%WEB_HOST%"=="" set "WEB_HOST=127.0.0.1"
 if "%WEB_PORT%"=="" set "WEB_PORT=3000"
+if "%BUILD_APK_MODE%"=="" set "BUILD_APK_MODE=auto"
 
 if not exist "%PROJECT_DIR%start_backend.bat" (
     echo [ERROR] Khong tim thay start_backend.bat trong root project.
@@ -36,13 +40,6 @@ if not exist "%PROJECT_DIR%start_backend.bat" (
 
 if not exist "%PROJECT_DIR%start_frontend.bat" (
     echo [ERROR] Khong tim thay start_frontend.bat trong root project.
-    pause
-    exit /b 1
-)
-
-if not exist "%MOBILE_DIR%\android\gradlew.bat" (
-    echo [ERROR] Khong tim thay Android Gradle wrapper:
-    echo %MOBILE_DIR%\android\gradlew.bat
     pause
     exit /b 1
 )
@@ -152,6 +149,58 @@ set "REACT_APP_API_URL=%API_PUBLIC_URL%"
 set "EXPO_PUBLIC_API_URL=%API_PUBLIC_URL%"
 echo %API_PUBLIC_URL%>"%APK_URL_FILE%"
 
+if /i "%BUILD_APK_MODE%"=="0" (
+    set "APK_SKIP_REASON=SETUP_BUILD_APK=0"
+    goto skip_apk_build
+)
+
+if /i not "%BUILD_APK_MODE%"=="auto" if /i not "%BUILD_APK_MODE%"=="1" (
+    echo [ERROR] SETUP_BUILD_APK chi nhan: auto, 1, hoac 0.
+    pause
+    exit /b 1
+)
+
+if not exist "%MOBILE_DIR%\android\gradlew.bat" (
+    if /i "%BUILD_APK_MODE%"=="1" (
+        echo [ERROR] Khong tim thay Android Gradle wrapper:
+        echo %MOBILE_DIR%\android\gradlew.bat
+        pause
+        exit /b 1
+    )
+    set "APK_SKIP_REASON=Khong co Android Gradle wrapper trong source"
+    goto skip_apk_build
+)
+
+set "ANDROID_SDK_PATH=%ANDROID_HOME%"
+if "%ANDROID_SDK_PATH%"=="" set "ANDROID_SDK_PATH=%ANDROID_SDK_ROOT%"
+if "%ANDROID_SDK_PATH%"=="" if exist "%LOCALAPPDATA%\Android\Sdk" set "ANDROID_SDK_PATH=%LOCALAPPDATA%\Android\Sdk"
+
+if "%ANDROID_SDK_PATH%"=="" (
+    if /i "%BUILD_APK_MODE%"=="1" (
+        echo [ERROR] Khong tim thay Android SDK.
+        echo [FIX] Cai Android Studio hoac Android command-line tools, roi dat ANDROID_HOME.
+        pause
+        exit /b 1
+    )
+    set "APK_SKIP_REASON=May server khong co Android SDK"
+    goto skip_apk_build
+)
+
+where java >nul 2>nul
+if errorlevel 1 (
+    if /i "%BUILD_APK_MODE%"=="1" (
+        echo [ERROR] Khong tim thay Java/JDK de build Android.
+        echo [FIX] Cai JDK 17 hoac Android Studio, roi chay lai.
+        pause
+        exit /b 1
+    )
+    set "APK_SKIP_REASON=May server khong co Java/JDK"
+    goto skip_apk_build
+)
+
+set "ANDROID_HOME=%ANDROID_SDK_PATH%"
+set "ANDROID_SDK_ROOT=%ANDROID_SDK_PATH%"
+
 echo.
 echo [4/7] Cai dependency mobile neu thieu...
 cd /d "%MOBILE_DIR%"
@@ -197,7 +246,7 @@ if errorlevel 1 (
     if "%MAPPED_SUBST%"=="1" subst %BUILD_DRIVE% /d
     echo [ERROR] Build JS bundle release that bai.
     pause
-    exit /b %GRADLE_EXIT%
+    exit /b !GRADLE_EXIT!
 )
 call gradlew.bat assembleRelease
 set "GRADLE_EXIT=%ERRORLEVEL%"
@@ -216,6 +265,7 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+set "APK_BUILT=1"
 echo [OK] APK release: %RELEASE_APK%
 
 echo.
@@ -242,6 +292,15 @@ if "%ADB%"=="" (
     )
 )
 
+goto after_apk_build
+
+:skip_apk_build
+echo.
+echo [WARN] Bo qua build/cai APK: %APK_SKIP_REASON%.
+echo [FIX] May server khong co Android Studio van public duoc backend/web.
+echo [FIX] Build APK tren may dev co Android Studio, hoac cai Android SDK + JDK roi chay: set SETUP_BUILD_APK=1
+
+:after_apk_build
 echo.
 echo [7/7] Khoi dong web build + web public tunnel...
 start "Eco-loop Campus Web Public" cmd /k ""%PROJECT_DIR%start_frontend.bat""
@@ -282,7 +341,11 @@ echo [LOCAL] Backend: http://127.0.0.1:8000
 echo [LOCAL] Web:     http://127.0.0.1:3000
 echo [PUBLIC] API:    %API_PUBLIC_URL%
 if defined WEB_PUBLIC_URL echo [PUBLIC] Web:    %WEB_PUBLIC_URL%
-echo [APK] %RELEASE_APK%
+if "%APK_BUILT%"=="1" (
+    echo [APK] %RELEASE_APK%
+) else (
+    echo [APK] Chua build tren may nay: %APK_SKIP_REASON%
+)
 echo.
 echo [NOTE] Link trycloudflare la tunnel tam. Neu tat cua so tunnel hoac restart, URL se doi va can build lai web/APK.
 echo [NOTE] Muon on dinh cho thiet bi bat ky, dung Cloudflare named tunnel/domain co dinh.
