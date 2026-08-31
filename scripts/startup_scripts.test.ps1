@@ -64,6 +64,10 @@ if ($serverSetupBat.Contains('docker compose') -or $serverSetupBat.Contains('-Wi
 Assert-Contains $nativeBootstrapScript 'DATABASE_URL.txt' 'bootstrap_local_admin.ps1 must read the native PostgreSQL runtime database URL.'
 Assert-Contains $nativeBootstrapScript 'bootstrap_admin.sql' 'bootstrap_local_admin.ps1 must apply the existing admin bootstrap SQL.'
 Assert-Contains $nativeBootstrapScript 'pbkdf2_sha256' 'bootstrap_local_admin.ps1 must hash the admin password before storing it.'
+Assert-Contains $nativeBootstrapScript 'Invoke-PsqlBootstrap' 'bootstrap_local_admin.ps1 must run psql through a checked helper.'
+Assert-Contains $nativeBootstrapScript '& $Psql -v ON_ERROR_STOP=1 `' 'bootstrap_local_admin.ps1 must pass psql variables before the connection string so old psql does not ignore them.'
+Assert-Contains $nativeBootstrapScript '$LASTEXITCODE -ne 0' 'bootstrap_local_admin.ps1 must fail when psql fails instead of printing OK.'
+Assert-Contains $nativeBootstrapScript 'Bootstrap admin native PostgreSQL that bai.' 'bootstrap_local_admin.ps1 must report failed admin bootstrap clearly.'
 
 Assert-Contains $publicReleaseBat 'start_backend.bat' 'setup_public_release.bat must start the backend and API public tunnel.'
 Assert-Contains $publicReleaseBat 'api_public_url.txt' 'setup_public_release.bat must wait for the API public URL before building clients.'

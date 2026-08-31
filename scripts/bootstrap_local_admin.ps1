@@ -59,6 +59,20 @@ function Get-SecureRandomBytes([int] $Count) {
     return $Bytes
 }
 
+function Invoke-PsqlBootstrap([string] $ErrorMessage, [scriptblock] $Command) {
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Command
+        if ($LASTEXITCODE -ne 0) {
+            throw $ErrorMessage
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
 $saltBytes = Get-SecureRandomBytes 16
 $Salt = -join ($saltBytes | ForEach-Object { $_.ToString("x2") })
 $Iterations = 120000
@@ -73,11 +87,13 @@ $PasswordHash = "pbkdf2_sha256`$$Iterations`$$Salt`$$Digest"
 
 $Psql = Find-Psql
 $DatabaseUrl = (Get-Content -LiteralPath $RuntimeDatabaseUrlPath -Raw).Trim()
-Get-Content -Raw -LiteralPath $BootstrapSql | & $Psql $DatabaseUrl `
-    -v ON_ERROR_STOP=1 `
-    -v "admin_email=$Email" `
-    -v "admin_name=$Name" `
-    -v "password_hash=$PasswordHash" `
-    -f -
+Invoke-PsqlBootstrap 'Bootstrap admin native PostgreSQL that bai.' {
+    Get-Content -Raw -LiteralPath $BootstrapSql | & $Psql -v ON_ERROR_STOP=1 `
+        -v "admin_email=$Email" `
+        -v "admin_name=$Name" `
+        -v "password_hash=$PasswordHash" `
+        -f - `
+        $DatabaseUrl
+}
 
 Write-Host "[OK] Da bootstrap admin native PostgreSQL: $Email"
