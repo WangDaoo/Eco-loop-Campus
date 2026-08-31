@@ -1,6 +1,6 @@
 # Eco-loop Campus - Mô hình phân loại và tái chế rác thải trong trường học theo hướng kinh tế tuần hoàn
 
-Eco-loop Campus là hệ thống quản lý phân loại, thu gom và tái chế rác thải trong khuôn viên trường. Repository này chứa web quản trị, backend FastAPI, PostgreSQL, AI phân loại rác, Docker setup và app mobile Android cho sinh viên/tình nguyện viên.
+Eco-loop Campus là hệ thống quản lý phân loại, thu gom và tái chế rác thải trong khuôn viên trường. Repository này chứa web quản trị, backend FastAPI, PostgreSQL native, AI phân loại rác và app mobile Android cho sinh viên/tình nguyện viên.
 
 Dự án dùng AI như một lớp hỗ trợ, không thay thế quy trình xác nhận thật. Luồng chính là sinh viên gửi rác tái chế, app tạo QR giao dịch, tình nguyện viên quét QR và gửi ảnh minh chứng, hệ thống ghi nhận Ecopoint sau khi xác nhận.
 
@@ -8,8 +8,8 @@ Dự án dùng AI như một lớp hỗ trợ, không thay thế quy trình xác
 ![Python](https://img.shields.io/badge/Python-3.10-blue)
 ![React](https://img.shields.io/badge/React-Admin_Web-61DAFB)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791)
+![Windows](https://img.shields.io/badge/Windows-Native_Server-0078D4)
 ![Expo](https://img.shields.io/badge/Expo-Mobile_App-000020)
 ![TensorFlow](https://img.shields.io/badge/TensorFlow-2.13-orange)
 
@@ -72,7 +72,7 @@ Trọng tâm dự án không chỉ là nhận diện ảnh. Hệ thống cần v
    Ghi nhận điểm, lịch sử điểm, bảng xếp hạng, nhiệm vụ xanh, yêu cầu đổi thưởng và trạng thái phần thưởng.
 
 6. **Portable Server Deployment**
-   Cho phép chuyển dự án sang laptop server bằng Docker Compose, chạy PostgreSQL + backend + web ổn định trong LAN.
+   Cho phép chuyển dự án sang laptop server Windows bằng PostgreSQL native + backend + web ổn định trong LAN, không cần Docker/WSL2.
 
 ---
 
@@ -103,7 +103,7 @@ Current system boundaries:
 | PostgreSQL | Source of truth for users, bins, QR, submissions, points, rewards, missions, feedback |
 | Local uploads | Avatar presets, proof images, AI prediction images served through `/uploads/...` |
 | Mobile app | Student and volunteer workflows, backend polling, QR, map, AI suggestion |
-| Docker Compose | Runs PostgreSQL, FastAPI backend and web admin on a laptop server |
+| Native Windows server | Runs PostgreSQL, FastAPI backend and web admin on a laptop server |
 
 Supabase is no longer the runtime database/auth provider. Some Supabase SQL files remain only as legacy/demo/migration references.
 
@@ -114,7 +114,7 @@ Supabase is no longer the runtime database/auth provider. Some Supabase SQL file
 | Component | Technology | Purpose |
 |---|---|---|
 | Backend | Python 3.10, FastAPI, Uvicorn | Auth, API, AI queue, uploads, QR/Ecopoint |
-| Database | PostgreSQL 17, psycopg | Operational data source of truth |
+| Database | PostgreSQL 15+, psycopg | Operational data source of truth |
 | AI/ML | TensorFlow 2.13, Keras, MobileNetV2 | Waste classification |
 | Frontend | React CRA, JavaScript, React Router | Admin web application |
 | UI and charts | Chart.js, react-chartjs-2, Phosphor Icons | Dashboard, KPI, chart and icon system |
@@ -122,7 +122,7 @@ Supabase is no longer the runtime database/auth provider. Some Supabase SQL file
 | Mobile | Expo, React Native, Android APK | Student and volunteer app |
 | QR | JSON QR payload v1, react-native-qrcode-svg, qrcode.react | Station QR and submission QR |
 | Uploads | FastAPI multipart + local static files | Avatar, proof and prediction images |
-| Deployment | Docker Compose, Docker Desktop | Laptop server setup |
+| Deployment | Native Windows batch scripts | Laptop server setup without Docker/WSL2 |
 | Testing | Pytest, Jest, React Testing Library, node:test, TypeScript | Backend, web and mobile verification |
 
 ---
@@ -216,7 +216,7 @@ Supabase is no longer the runtime database/auth provider. Some Supabase SQL file
 
 The project can run in three modes:
 
-- **Docker server mode** for a laptop that runs PostgreSQL + backend + web.
+- **Native server mode** for a laptop that runs PostgreSQL + backend + web without Docker.
 - **Local developer mode** for separate backend/frontend commands.
 - **Public demo mode** through temporary Cloudflare quick tunnels.
 
@@ -250,14 +250,13 @@ http://<LAPTOP_SERVER_LAN_IP>:8000
 ### Prerequisites
 
 - Git
-- Docker Desktop for server mode. `setup_server_full.bat` can install it automatically.
-- Python 3.10 for non-Docker backend development
-- Node.js 18+ and npm for non-Docker web development
-- PostgreSQL 17 for non-Docker DB development
-- Android Studio for emulator/APK testing, or Android command-line SDK installed automatically by `setup_server_full.bat` when APK build is enabled.
+- Python 3.10 for backend runtime
+- Node.js 18+ and npm for web runtime
+- PostgreSQL native for the database. `setup_server_full.bat` installs PostgreSQL 15 on older Windows when needed.
+- Android Studio for emulator/APK testing, or Android command-line SDK installed by `setup_public_release.bat` when APK build is enabled.
 - Optional: Ollama with `llama3` for local chatbot responses
 
-### Docker Server Setup
+### Native Windows Server Setup
 
 From the project root:
 
@@ -265,23 +264,7 @@ From the project root:
 setup_server_full.bat
 ```
 
-Run it as Administrator on the laptop server. It checks and installs Docker Desktop automatically through `winget` or the official Docker Desktop installer, creates `.env.docker`, configures LAN API URL, opens firewall ports `3000` and `8000`, runs Docker Compose in the background and bootstraps the admin account.
-
-The same script can also build the Android APK. If Android Studio is not installed, it installs project-local JDK 17 and Android command-line SDK packages automatically, including `platforms;android-34` and `build-tools;34.0.0`.
-
-Use server-only mode when the laptop only hosts backend/web:
-
-```bat
-set SETUP_BUILD_APK=0
-setup_server_full.bat
-```
-
-Force APK build and Android SDK installation:
-
-```bat
-set SETUP_BUILD_APK=1
-setup_server_full.bat
-```
+Run it as Administrator on the laptop server. It checks and installs Python, Node.js, PostgreSQL native and cloudflared, initializes `.runtime\DATABASE_URL.txt`, opens firewall ports `3000` and `8000`, starts backend/web in separate windows and bootstraps the admin account. It does not require Docker, WSL2 or Android Studio.
 
 Default admin:
 
@@ -303,6 +286,8 @@ setup_server_full.bat
 ```bat
 start_docker.bat
 ```
+
+This is optional legacy/dev convenience for machines that support Docker. The main laptop-server path is native `setup_server_full.bat`.
 
 This uses:
 
@@ -358,10 +343,11 @@ Bootstrap admin:
 
 ```text
 backend/local_db/bootstrap_admin.sql
+scripts/bootstrap_local_admin.ps1
 scripts/docker_bootstrap_admin.ps1
 ```
 
-The database starts blank after schema setup. Demo data is separated and is not loaded by Docker production mode.
+The database starts blank after schema setup. Demo data is separated and is not loaded by native server setup.
 
 ### Quick Start Scripts
 
@@ -493,8 +479,10 @@ Rebuild APK whenever `EXPO_PUBLIC_API_URL` changes.
 |---|---|
 | Web opens but AI fails | Start backend first, verify `/predict/queue`, rebuild/restart frontend with the correct API URL |
 | `.runtime\api_public_url.txt` missing | Backend tunnel is not ready or Cloudflare is blocked |
-| Docker command missing | Run `setup_server_full.bat`; it downloads Docker Desktop automatically. Open Docker Desktop after install and enable WSL2 backend |
-| Android SDK missing | Run `setup_server_full.bat` with `SETUP_BUILD_APK=1`; it downloads Android command-line SDK and JDK 17 |
+| Docker command missing | Ignore it for native setup. Docker is only needed for `start_docker.bat` |
+| WSL2 unavailable | Use `setup_server_full.bat`; native setup does not require WSL2 |
+| PostgreSQL missing | Run `setup_server_full.bat` as Administrator so it can install PostgreSQL native |
+| Android SDK missing | Use `setup_public_release.bat` with `SETUP_BUILD_APK=1`; it downloads Android command-line SDK and JDK 17 |
 | Backend cannot reach DB | Check `DATABASE_URL` and `/api/health/db` |
 | APK cannot call backend in emulator | Use `http://10.0.2.2:8000`, not `127.0.0.1` |
 | Real phone cannot call backend | Use laptop LAN IP and open Windows Firewall port `8000` |
@@ -504,7 +492,7 @@ Rebuild APK whenever `EXPO_PUBLIC_API_URL` changes.
 
 ## Usage
 
-1. Start the server with `setup_server_full.bat` or `start_docker.bat`.
+1. Start the server with `setup_server_full.bat`.
 2. Open `http://127.0.0.1:3000/#/login`.
 3. Sign in with an admin account from the backend `users` table.
 4. Create operating data: avatar presets, bins/stations, waste types, rewards and missions.
@@ -740,6 +728,8 @@ docker compose --env-file .env.docker ps
 docker compose --env-file .env.docker logs -f backend
 ```
 
+Docker checks are optional and only apply to `start_docker.bat`.
+
 Manual E2E checklist:
 
 1. Admin logs in.
@@ -759,7 +749,7 @@ Manual E2E checklist:
 - **Backend:** FastAPI + PostgreSQL.
 - **Frontend:** React admin web.
 - **Mobile:** Expo / React Native Android app.
-- **Deployment:** Docker Compose laptop server.
+- **Deployment:** Native Windows laptop server.
 
 ### Team Members
 

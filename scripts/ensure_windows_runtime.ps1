@@ -2,6 +2,7 @@ param(
     [ValidateSet('backend', 'frontend', 'all')]
     [string] $Mode = 'all',
     [switch] $WithDocker,
+    [switch] $WithPostgres,
     [switch] $WithAndroid
 )
 
@@ -11,11 +12,15 @@ $projectDir = Resolve-Path (Join-Path $PSScriptRoot '..')
 $toolsDir = Join-Path $PSScriptRoot 'tools'
 $cloudflaredPath = Join-Path $toolsDir 'cloudflared.exe'
 $downloadsDir = Join-Path $toolsDir 'downloads'
+$runtimeDir = Join-Path $projectDir '.runtime'
 $androidSdkRoot = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } elseif ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
 $androidCmdlineZip = Join-Path $downloadsDir 'commandlinetools-win-15859902_latest.zip'
 $androidCmdlineUrl = 'https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip'
 $dockerInstallerPath = Join-Path $downloadsDir 'Docker Desktop Installer.exe'
 $dockerInstallerUrl = 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe'
+$postgresInstallerPath = Join-Path $downloadsDir 'postgresql-15.19-1-windows-x64.exe'
+$postgresInstallerUrl = 'https://get.enterprisedb.com/postgresql/postgresql-15.19-1-windows-x64.exe'
+$postgresPasswordPath = Join-Path $runtimeDir 'postgres_password.txt'
 $jdkDir = Join-Path $toolsDir 'jdk-17'
 $jdkZip = Join-Path $downloadsDir 'temurin-17-jdk-windows-x64.zip'
 $jdkZipUrl = 'https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse'
@@ -162,6 +167,95 @@ function Ensure-DockerDesktop() {
     exit 2
 }
 
+function Find-PostgresBin() {
+    $command = Get-Command 'psql.exe' -ErrorAction SilentlyContinue
+    if ($command -and (Test-Path -LiteralPath $command.Source)) {
+        return Split-Path -Parent $command.Source
+    }
+
+    $roots = @(
+        "${env:ProgramFiles}\PostgreSQL",
+        "${env:ProgramFiles(x86)}\PostgreSQL"
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+
+    foreach ($root in $roots) {
+        $candidate = Get-ChildItem -LiteralPath $root -Directory |
+            Sort-Object { [int]($_.Name -replace '[^\d]', '') } -Descending |
+            ForEach-Object { Join-Path $_.FullName 'bin' } |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_ 'psql.exe') } |
+            Select-Object -First 1
+        if ($candidate) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
+function Get-OrCreatePostgresPassword() {
+    New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+    if (Test-Path -LiteralPath $postgresPasswordPath) {
+        return (Get-Content -LiteralPath $postgresPasswordPath -Raw).Trim()
+    }
+
+    $bytes = New-Object byte[] 18
+    [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $password = 'EcoPg-' + [Convert]::ToBase64String($bytes).Replace('+', 'A').Replace('/', 'B').TrimEnd('=')
+    Set-Content -LiteralPath $postgresPasswordPath -Value $password -Encoding ASCII
+    return $password
+}
+
+function Ensure-PostgreSQL() {
+    $postgresBin = Find-PostgresBin
+    if ($postgresBin) {
+        Write-Step "PostgreSQL native da san sang: $postgresBin"
+        return
+    }
+
+    $password = Get-OrCreatePostgresPassword
+
+    if (Install-WithWingetIfAvailable 'PostgreSQL.PostgreSQL.15' 'PostgreSQL 15') {
+        $postgresBin = Find-PostgresBin
+        if ($postgresBin) {
+            Write-Step "PostgreSQL 15 da cai bang winget: $postgresBin"
+            return
+        }
+        throw 'Da cai PostgreSQL 15 bang winget nhung khong tim thay psql.exe. Dong terminal va chay lai.'
+    }
+
+    New-Item -ItemType Directory -Force -Path $downloadsDir | Out-Null
+    Write-Step 'Khong co winget. Dang tai PostgreSQL 15 native installer...'
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -Uri $postgresInstallerUrl -OutFile $postgresInstallerPath -UseBasicParsing
+
+    if (-not (Test-Path -LiteralPath $postgresInstallerPath)) {
+        throw 'Tai PostgreSQL 15 installer that bai.'
+    }
+
+    Write-Step 'Dang cai PostgreSQL 15 native. Buoc nay can quyen Administrator de tao Windows service...'
+    $arguments = @(
+        '--mode', 'unattended',
+        '--unattendedmodeui', 'none',
+        '--superpassword', $password,
+        '--serverport', '5432',
+        '--servicename', 'postgresql-x64-15',
+        '--enable-components', 'server,commandlinetools'
+    )
+    $process = Start-Process -FilePath $postgresInstallerPath -ArgumentList $arguments -Wait -PassThru
+    if ($process.ExitCode -ne 0) {
+        Write-Host "[FIX] Mo installer PostgreSQL da tai neu can cai thu cong: $postgresInstallerPath"
+        throw "Cai PostgreSQL 15 that bai. ExitCode=$($process.ExitCode)"
+    }
+
+    Update-PathFromMachine
+    $postgresBin = Find-PostgresBin
+    if (-not $postgresBin) {
+        throw 'Da cai PostgreSQL 15 nhung chua tim thay psql.exe. Restart terminal roi chay lai setup.'
+    }
+
+    Write-Step "PostgreSQL 15 da san sang: $postgresBin"
+}
+
 function Ensure-Jdk17() {
     $bundledJava = Join-Path $jdkDir 'bin\java.exe'
     if (Test-Path -LiteralPath $bundledJava) {
@@ -268,6 +362,10 @@ if ($Mode -eq 'frontend' -or $Mode -eq 'all') {
 
 if ($WithDocker) {
     Ensure-DockerDesktop
+}
+
+if ($WithPostgres) {
+    Ensure-PostgreSQL
 }
 
 if ($WithAndroid) {
