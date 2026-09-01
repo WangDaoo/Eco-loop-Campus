@@ -31,6 +31,7 @@ export default function ScannerScreen() {
     rejectSubmission,
     requestReview,
     attachProofImage,
+    scanRewardRedemption,
     stations,
     submissions,
     wasteTypes
@@ -124,6 +125,15 @@ export default function ScannerScreen() {
     const token = extractSubmissionQrToken(qrToken);
     if (!token) {
       Alert.alert('Chưa có QR', 'Nhập hoặc quét QR giao dịch.');
+      return;
+    }
+    if (token.startsWith('ECL-REWARD-')) {
+      try {
+        await scanRewardRedemption(token);
+        Alert.alert('Đổi thưởng thành công', 'Điểm đã được trừ và yêu cầu đổi thưởng đã được xác nhận.');
+      } catch (error) {
+        Alert.alert('Không thể đổi thưởng', messageOf(error));
+      }
       return;
     }
     const scannedPending = submissions.find(item => item.qrToken.trim().toUpperCase() === token && item.status === 'QR_SCANNED');

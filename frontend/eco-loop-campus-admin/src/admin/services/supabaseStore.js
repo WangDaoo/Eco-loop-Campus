@@ -31,6 +31,7 @@ const RESOURCE_PATHS = {
   rewards: "/api/admin/rewards",
   "reward-categories": "/api/admin/reward-categories",
   "reward-redemptions": "/api/admin/reward-redemptions",
+  "reward-redemption-batches": "/api/admin/reward-redemption-batches",
   "recycling-submissions": "/api/admin/recycling-submissions",
   "proof-images": "/api/admin/proof-images",
   settings: "/api/admin/settings",
@@ -176,12 +177,6 @@ function normalizedEnabled(value) {
     if (["false", "0", "no", "disabled", "off", ""].includes(normalized)) return false;
   }
   return false;
-}
-
-function addPoints(currentPoints, deltaPoints) {
-  const current = Number(currentPoints ?? 0);
-  const delta = Number(deltaPoints ?? 0);
-  return (Number.isFinite(current) ? current : 0) + (Number.isFinite(delta) ? delta : 0);
 }
 
 function isActiveAdminProfile(profile = {}) {
@@ -844,7 +839,7 @@ export async function setPredictionStatus(record, status) {
     const rules = await listPointRules();
     const rule = rules.data.find(item => normalizedEnabled(item.enabled) && ruleMatchesClass(item, record.class));
     if (!alreadyAwarded && rule && rule.points > 0) {
-      await saveManualPointHistory(buildPointHistoryRecord(record, rule));
+      await saveManualPointHistory({ ...buildPointHistoryRecord(record, rule), referenceType: "prediction_approval", referenceId: record.id });
     }
   }
   return result(saved.data);
@@ -921,15 +916,39 @@ export async function updateFeedbackItem(feedback, updates) {
   if (hasStatusUpdate && !nextStatus) return result(currentFeedback, BACKEND, new Error("Invalid feedback status"));
   if (hasPriorityUpdate && !nextPriority) return result(currentFeedback, BACKEND, new Error("Invalid feedback priority"));
   if (hasMessageUpdate && !nextMessage) return result(currentFeedback, BACKEND, new Error("Invalid feedback message"));
-  const nextFeedback = normalizeFeedback({ ...feedback, ...updates, ...(hasStatusUpdate ? { status: nextStatus } : {}), ...(hasPriorityUpdate ? { priority: nextPriority } : {}), ...(hasMessageUpdate ? { message: nextMessage } : {}) });
-  return saveResource("feedback", toFeedback(nextFeedback), fromFeedback);
+   const nextFeedback = normalizeFeedback({ ...feedback, ...updates, ...(hasStatusUpdate ? { status: nextStatus } : {}), ...(hasPriorityUpdate ? { priority: nextPriority } : {}), ...(hasMessageUpdate ? { message: nextMessage } : {}) });
+   if (hasStatusUpdate && !hasPriorityUpdate && !hasMessageUpdate) {
+     try {
+       const response = await requestBackend(`/api/admin/feedback/${encodeURIComponent(feedback.id)}`, { method: "PATCH", body: { status: nextStatus, adminNote: updates.adminNote || "" } });
+       return result(fromFeedback(response.data || nextFeedback), BACKEND);
+     } catch (error) {
+       return result(currentFeedback, BACKEND, error);
+     }
+   }
+   return saveResource("feedback", toFeedback(nextFeedback), fromFeedback);
+}
+
+export async function correctPrediction(record, correctedClass, note = "") {
+  try {
+    const response = await requestBackend(`/api/admin/predictions/${encodeURIComponent(record.id)}/correct`, { method: "POST", body: { correctedClass, note } });
+    return result(response.data || null, BACKEND);
+  } catch (error) {
+    return result(null, BACKEND, error);
+  }
 }
 
 export async function updateFeedbackStatus(feedback, status) {
   const nextStatus = normalizedFeedbackStatusAction(status);
   if (!nextStatus) return result(normalizeFeedback(feedback), BACKEND, new Error("Invalid feedback status"));
-  const updates = nextStatus === "resolved" ? { status: nextStatus, resolvedAt: new Date().toISOString() } : { status: nextStatus };
-  return updateFeedbackItem(feedback, updates);
+   try {
+     const response = await requestBackend(`/api/admin/feedback/${encodeURIComponent(feedback.id)}`, {
+       method: "PATCH",
+       body: { status: nextStatus },
+     });
+     return result(fromFeedback(response.data || feedback), BACKEND);
+   } catch (error) {
+     return result(normalizeFeedback(feedback), BACKEND, error);
+   }
 }
 
 export async function listPointRules() {
@@ -960,14 +979,12 @@ export async function saveManualPointHistory(record) {
   const action = typeof record.action === "string" ? record.action.trim() : "";
   const points = Number(record.points);
   if (!userId || !action || !Number.isFinite(points) || points === 0) return result(null, BACKEND, new Error("Invalid manual point record"));
-  const timestamp = new Date().toISOString();
-  const pointRecord = fromPointHistory({ predictionId: record.predictionId || null, userId, binId: record.binId || null, class: record.class || "manual_adjustment", binGroup: record.binGroup || "Điều chỉnh", action, points, timestamp, createdAt: timestamp, source: record.source || "manual_adjustment", adminNote: record.adminNote || "", description: record.description || action, status: "confirmed" });
-  const saved = await saveResource("point-history", toPointHistory(pointRecord), fromPointHistory);
-  if (saved.error || !saved.data) return saved;
-  const users = await listUsers();
-  const user = users.data.find(item => item.id === pointRecord.userId);
-  if (user) await saveUser({ ...user, points: addPoints(user.points, pointRecord.points) });
-  return result(pointRecord);
+   try {
+     const response = await requestBackend("/api/admin/point-adjustments", { method: "POST", body: { userId, points, reason: action, referenceType: record.referenceType || "manual_point", referenceId: record.referenceId || "" } });
+     return result(response.data || null, BACKEND);
+   } catch (error) {
+     return result(null, BACKEND, error);
+   }
 }
 
 export async function listRewardRedemptions() {
@@ -978,6 +995,23 @@ export async function listRewardRedemptions() {
     return { ...item, userName: user?.name || item.userId || "Chưa rõ người dùng", userGroup: user?.group || "" };
   }).sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
   return result(data, BACKEND, error);
+}
+
+export async function listRewardRedemptionBatches() {
+  const rows = await listResource("reward-redemption-batches", item => item);
+  return result(rows.data, BACKEND, rows.error);
+}
+
+export async function finalizeRewardRedemptionBatch(batchId, status, note = "") {
+  try {
+    const response = await requestBackend(`/api/admin/reward-redemption-batches/${encodeURIComponent(batchId)}/finalize`, {
+      method: "POST",
+      body: { status, note },
+    });
+    return result(response.data || null, BACKEND);
+  } catch (error) {
+    return result(null, BACKEND, error);
+  }
 }
 
 export async function listRewards() {

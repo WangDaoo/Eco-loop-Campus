@@ -99,6 +99,8 @@ export type BackendMobileStore = {
   submitFeedback(user: UserProfile, input: CreateFeedbackInput): Promise<Feedback>;
   advanceMission(userId: string, missionId: string, missions: Mission[]): Promise<Mission>;
   requestReward(userId: string, reward: Reward): Promise<RewardRedemption>;
+  requestRewardBatch(userId: string, items: Array<{ rewardId: string; quantity: number }>, rewards: Reward[]): Promise<RewardRedemption>;
+  scanRewardRedemption(qrToken: string): Promise<{ id: string; status: string; pointsSpent: number; studentId: string }>;
 };
 
 const DEFAULT_API_URL = 'http://10.0.2.2:8000';
@@ -357,7 +359,34 @@ export function createBackendMobileStore({
 
     async requestReward(_userId, reward) {
       const payload = await request('/api/mobile/reward-redemptions', { method: 'POST', body: { rewardId: reward.id } });
-      return mapRewardRedemptionRow(payload.data ?? {});
+      const batch = payload.data ?? {};
+      return {
+        ...mapRewardRedemptionRow({ ...batch, status: batch.status ?? 'pending', rewardId: reward.id, rewardLabel: reward.title, costPoints: batch.totalPoints ?? reward.costPoints }),
+        qrToken: batch.qrToken,
+        expiresAt: batch.expiresAt ? new Date(batch.expiresAt) : undefined,
+        totalPoints: Number(batch.totalPoints ?? reward.costPoints),
+      };
+    },
+    async requestRewardBatch(userId, items, rewardCatalog) {
+      const payload = await request('/api/mobile/reward-redemptions', { method: 'POST', body: { items } });
+      const batch = payload.data ?? {};
+      const normalizedItems = items.map(item => {
+        const reward = rewardCatalog.find(row => row.id === item.rewardId);
+        const quantity = Math.max(1, Number(item.quantity) || 1);
+        const pointsEach = Number(reward?.costPoints || 0);
+        return { rewardId: item.rewardId, rewardLabel: reward?.title || item.rewardId, quantity, pointsEach, pointsTotal: quantity * pointsEach };
+      });
+      return {
+        ...mapRewardRedemptionRow({ ...batch, userId, rewardId: normalizedItems[0]?.rewardId, rewardLabel: normalizedItems.map(item => `${item.rewardLabel} x${item.quantity}`).join(', '), costPoints: batch.totalPoints ?? normalizedItems.reduce((sum, item) => sum + item.pointsTotal, 0), status: batch.status ?? 'pending' }),
+        qrToken: batch.qrToken,
+        expiresAt: batch.expiresAt ? new Date(batch.expiresAt) : undefined,
+        totalPoints: Number(batch.totalPoints ?? normalizedItems.reduce((sum, item) => sum + item.pointsTotal, 0)),
+        items: normalizedItems,
+      };
+    },
+    async scanRewardRedemption(qrToken) {
+      const payload = await request('/api/mobile/reward-redemptions/scan', { method: 'POST', body: { qrToken } });
+      return payload.data ?? {};
     },
   };
 }

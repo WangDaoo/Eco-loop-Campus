@@ -54,6 +54,40 @@ def test_student_creates_recycling_submission_qr(client, monkeypatch):
     assert captured["user_id"] == "student-1"
     assert captured["payload"]["binId"] == "bin-e1"
 
+def test_student_creates_reward_batch_without_spending_points(client, monkeypatch):
+    patch_current_user(monkeypatch, "student")
+    captured = {}
+
+    def fake_create(user_id, payload):
+        captured.update(user_id=user_id, payload=payload)
+        return {"id": "batch-1", "qrToken": "ECL-REWARD-1", "status": "pending", "totalPoints": 20}
+
+    monkeypatch.setattr(app, "create_reward_redemption_batch_account", fake_create, raising=False)
+    response = client.post(
+        "/api/mobile/reward-redemptions",
+        json={"items": [{"rewardId": "reward-1", "quantity": 2}]},
+        headers=bearer("student"),
+    )
+    assert response.status_code == 201
+    assert response.json()["data"]["status"] == "pending"
+    assert captured["payload"]["items"][0]["quantity"] == 2
+
+def test_volunteer_scans_reward_batch(client, monkeypatch):
+    patch_current_user(monkeypatch, "volunteer")
+    monkeypatch.setattr(app, "scan_reward_redemption_batch_account", lambda actor_id, payload: {"status": "scanned", "pointsSpent": 20}, raising=False)
+    response = client.post("/api/mobile/reward-redemptions/scan", json={"qrToken": "ECL-REWARD-1"}, headers=bearer("volunteer"))
+    assert response.status_code == 200
+    assert response.json()["data"]["pointsSpent"] == 20
+
+def test_only_admin_can_finalize_reward_batch(client, monkeypatch):
+    patch_current_user(monkeypatch, "volunteer")
+    response = client.post(
+        "/api/admin/reward-redemption-batches/batch-1/finalize",
+        json={"status": "fulfilled"},
+        headers=bearer("volunteer"),
+    )
+    assert response.status_code == 403
+
 
 def test_volunteer_scans_recycling_qr(client, monkeypatch):
     patch_current_user(monkeypatch, "volunteer")

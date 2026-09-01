@@ -53,6 +53,7 @@ type AppContextValue = {
   updateAvatar: (avatarKey: string) => Promise<void>;
   updatePassword: (email: string, currentPassword: string, newPassword: string) => Promise<void>;
   requestReward: (reward: Reward) => Promise<boolean>;
+  requestRewardBatch: (items: Array<{ rewardId: string; quantity: number }>) => Promise<boolean>;
   handleMissionAction: (id: string) => void;
   createSubmission: (input: CreateSubmissionInput) => Promise<RecyclingSubmission>;
   saveAiPrediction: (input: SavePredictionInput) => Promise<PredictionRecord | undefined>;
@@ -64,6 +65,7 @@ type AppContextValue = {
   rejectSubmission: (submissionId: string, volunteerNote?: string) => Promise<void>;
   requestReview: (submissionId: string, volunteerNote?: string) => Promise<void>;
   attachProofImage: (submissionId: string, input: CreateProofImageInput) => Promise<RecyclingSubmission | undefined>;
+  scanRewardRedemption: (qrToken: string) => Promise<boolean>;
 };
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -442,6 +444,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const requestRewardBatch = async (items: Array<{ rewardId: string; quantity: number }>) => {
+    try {
+      if (!isAuthenticated || !items.length) return false;
+      const redemption = await remoteStore.requestRewardBatch(currentUser.id, items, rewards);
+      setRewardRedemptions(current => [redemption, ...current.filter(item => item.id !== redemption.id)]);
+      return true;
+    } catch (error) {
+      return failRemoteMutation(error);
+    }
+  };
+
+  const scanRewardRedemption = async (qrToken: string) => {
+    try {
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để quét mã đổi thưởng.');
+      await remoteStore.scanRewardRedemption(qrToken);
+      await hydrateRemoteData(currentUser);
+      return true;
+    } catch (error) {
+      return failRemoteMutation(error);
+    }
+  };
+
   const value = useMemo(
     () => ({
       currentUser,
@@ -469,6 +493,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateAvatar,
       updatePassword,
       requestReward,
+      requestRewardBatch,
       handleMissionAction,
       createSubmission,
       saveAiPrediction,
@@ -479,7 +504,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       confirmSubmission,
       rejectSubmission,
       requestReview,
-      attachProofImage
+       attachProofImage,
+       scanRewardRedemption
     }),
     [
       currentUser,

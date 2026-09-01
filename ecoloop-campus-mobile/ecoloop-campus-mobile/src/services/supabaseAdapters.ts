@@ -474,10 +474,13 @@ export function mapRewardRedemptionRow(row: Row): RewardRedemption {
     rewardId: text(row.rewardId ?? row.reward_id ?? row.reward_label),
     rewardLabel: text(row.rewardLabel ?? row.reward_label),
     costPoints: number(row.costPoints ?? row.cost_points),
-    status: status === 'approved' || status === 'rejected' || status === 'delivered' ? status : 'requested',
+    status: ['approved', 'rejected', 'delivered', 'pending', 'scanned', 'fulfilled', 'expired', 'cancelled'].includes(status) ? status as RewardRedemption['status'] : 'requested',
     requestedAt: date(row.requestedAt ?? row.requested_at),
     reviewedAt: row.reviewedAt || row.reviewed_at ? date(row.reviewedAt ?? row.reviewed_at) : undefined,
-    adminNote: text(row.adminNote ?? row.admin_note) || undefined
+    adminNote: text(row.adminNote ?? row.admin_note) || undefined,
+    qrToken: text(row.qrToken ?? row.qr_token) || undefined,
+    expiresAt: row.expiresAt || row.expires_at ? date(row.expiresAt ?? row.expires_at) : undefined,
+    totalPoints: row.totalPoints ?? row.total_points ? number(row.totalPoints ?? row.total_points) : undefined
   };
 }
 

@@ -211,10 +211,14 @@ export type RewardRedemption = {
   rewardId: string;
   rewardLabel: string;
   costPoints: number;
-  status: 'requested' | 'approved' | 'rejected' | 'delivered';
+  status: 'requested' | 'approved' | 'rejected' | 'delivered' | 'pending' | 'scanned' | 'fulfilled' | 'expired' | 'cancelled';
   requestedAt: Date;
   reviewedAt?: Date;
   adminNote?: string;
+  qrToken?: string;
+  expiresAt?: Date;
+  totalPoints?: number;
+  items?: Array<{ rewardId: string; rewardLabel: string; quantity: number; pointsEach: number; pointsTotal: number }>;
 };
 
 export type Feedback = {

@@ -5,7 +5,7 @@ import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { getBinGroup, getWasteLabel } from "../data/wasteConfig";
-import { getModelSettings, listPredictions, setPredictionStatus } from "../services/supabaseStore";
+import { correctPrediction, getModelSettings, listPredictions, setPredictionStatus } from "../services/supabaseStore";
 
 const formatDate = value => {
   const date = new Date(value);
@@ -30,6 +30,7 @@ export default function ScansPage() {
   const [error, setError] = useState(null);
   const [toast, setToast] = useState("");
   const [previewRecord, setPreviewRecord] = useState(null);
+  const [correctionClass, setCorrectionClass] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -78,6 +79,14 @@ export default function ScansPage() {
 
   const imageSourceFor = record => record.thumbnailUrl || "";
   const fullImageSourceFor = record => record.imageUrl || record.thumbnailUrl || "";
+
+  const saveCorrection = async () => {
+    if (!previewRecord || !correctionClass) return;
+    const response = await correctPrediction(previewRecord, correctionClass);
+    if (!response.data) { setError(response.error); return; }
+    setToast("Đã review và export ảnh vào dataset");
+    setCorrectionClass("");
+  };
 
   const columns = [
     {
@@ -183,6 +192,12 @@ export default function ScansPage() {
                 <span>Tên ảnh</span>
                 <strong>{previewRecord.imageName || "Không rõ"}</strong>
               </div>
+            </div>
+            <div className="eg-scan-correction">
+              <label>Nhãn đúng để train
+                <input value={correctionClass} onChange={event => setCorrectionClass(event.target.value)} placeholder="plastic" pattern="[A-Za-z0-9_-]+" />
+              </label>
+              <button type="button" className="eg-secondary-btn" onClick={() => void saveCorrection()} disabled={!correctionClass}>Review và export dataset</button>
             </div>
             {previewRecord.status === "pending" ? (
               <div className="eg-button-row eg-scan-preview-actions">

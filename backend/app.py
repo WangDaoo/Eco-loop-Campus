@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import io
 import json
+import shutil
 import secrets
 import time
 import uuid
@@ -45,7 +46,7 @@ ai_worker_tasks = []
 
 def parse_cors_origins(raw_origins):
     if not raw_origins or not raw_origins.strip():
-        return ["*"]
+        return ["http://127.0.0.1:3002", "http://localhost:3002", "http://127.0.0.1:3000", "http://localhost:3000"]
 
     origins = [origin.strip() for origin in raw_origins.split(",")]
     return [origin for origin in origins if origin] or ["*"]
@@ -134,9 +135,18 @@ UPLOADS_DIR = Path(BASE_DIR) / "uploads"
 AVATAR_UPLOADS_DIR = UPLOADS_DIR / "avatars"
 PROOF_UPLOADS_DIR = UPLOADS_DIR / "proofs"
 PREDICTION_UPLOADS_DIR = UPLOADS_DIR / "predictions"
+TRAINING_DATASET_DIR = Path(__file__).resolve().parent / "model_training" / "dataset"
 
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+
+async def read_limited_upload(file):
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File vượt quá giới hạn kích thước cho phép")
+    return content
 
 
 def get_windows_short_path(path):
@@ -671,8 +681,8 @@ ADMIN_RESOURCES = {
     },
     "rewards": {
         "table": "rewards",
-        "columns": ["id", "title", "description", "category_id", "category_name", "cost_points", "status", "color", "created_at", "updated_at"],
-        "writable": ["id", "title", "description", "category_id", "category_name", "cost_points", "status", "color"],
+        "columns": ["id", "title", "description", "category_id", "category_name", "cost_points", "stock", "status", "color", "created_at", "updated_at"],
+        "writable": ["id", "title", "description", "category_id", "category_name", "cost_points", "stock", "status", "color"],
         "order": "cost_points asc",
     },
     "reward-categories": {
@@ -717,6 +727,12 @@ ADMIN_RESOURCES = {
         "writable": ["id", "user_id", "reward_id", "reward_label", "cost_points", "status", "reviewed_at", "admin_note"],
         "order": "requested_at desc",
     },
+    "reward-redemption-batches": {
+        "table": "reward_redemption_batches",
+        "columns": ["id", "student_id", "qr_token", "created_at", "expires_at", "status", "scanned_by", "scanned_at", "fulfilled_at", "updated_at"],
+        "writable": [],
+        "order": "created_at desc",
+    },
     "recycling-submissions": {
         "table": "recycling_submissions",
         "columns": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "created_at", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
@@ -737,8 +753,8 @@ ADMIN_RESOURCES = {
     },
     "point-history": {
         "table": "point_history",
-        "columns": ["id", "prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "created_at", "admin_note", "source", "description", "status"],
-        "writable": ["prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "admin_note", "source", "description", "status"],
+        "columns": ["id", "prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "created_at", "admin_note", "source", "description", "status", "reference_type", "reference_id"],
+        "writable": ["prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "admin_note", "source", "description", "status", "reference_type", "reference_id"],
         "order": "timestamp desc",
     },
 }
@@ -793,7 +809,17 @@ def list_rows_from_config(config, where_sql="", params=()):
 
 def list_admin_resource(resource):
     config = admin_resource_config(resource)
-    return list_rows_from_config(config)
+    rows = list_rows_from_config(config)
+    if resource == "reward-redemption-batches":
+        database_url = require_database_url()
+        with psycopg.connect(database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select id, batch_id, reward_id, reward_title, quantity, points_each, points_total from reward_redemption_items order by id")
+                item_rows = cursor.fetchall()
+        items = [admin_row_to_json(["id", "batch_id", "reward_id", "reward_title", "quantity", "points_each", "points_total"], row) for row in item_rows]
+        for row in rows:
+            row["items"] = [item for item in items if item["batch_id"] == row["id"]]
+    return rows
 
 def generated_admin_id(payload):
     base = payload.get("id") or payload.get("key") or payload.get("name") or payload.get("title") or payload.get("label") or "item"
@@ -997,6 +1023,50 @@ def save_mobile_feedback(user, payload):
         connection.commit()
     return admin_row_to_json(ADMIN_RESOURCES["feedback"]["columns"], row)
 
+def correct_prediction(prediction_id, admin_id, payload):
+    corrected_class = str(payload.get("correctedClass") or payload.get("corrected_class") or "").strip()
+    if not corrected_class or not re.fullmatch(r"[A-Za-z0-9_-]+", corrected_class):
+        raise HTTPException(status_code=400, detail="Nhãn AI không hợp lệ")
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select id, image_url, class, user_id, bin_id from predictions where id=%s", (prediction_id,))
+            prediction = cursor.fetchone()
+            if not prediction:
+                raise HTTPException(status_code=404, detail="Không tìm thấy prediction")
+            sample_id = str(uuid.uuid4())
+            image_url = str(prediction[1] or "")
+            source = (UPLOADS_DIR / image_url.removeprefix("/uploads/")).resolve() if image_url.startswith("/uploads/") else None
+            if not source or not source.is_file() or source.is_relative_to(TRAINING_DATASET_DIR):
+                raise HTTPException(status_code=400, detail="Prediction chưa có ảnh server hợp lệ để export")
+            destination_dir = (TRAINING_DATASET_DIR / corrected_class).resolve()
+            if not destination_dir.is_relative_to(TRAINING_DATASET_DIR.resolve()):
+                raise HTTPException(status_code=400, detail="Đường dẫn dataset không hợp lệ")
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
+            destination = destination_dir / f"reviewed-{digest}{source.suffix.lower()}"
+            cursor.execute("insert into ai_training_samples (id, prediction_id, original_class, corrected_class, corrected_by, note, annotation_status, image_path, export_class) values (%s,%s,%s,%s,%s,%s,'reviewed',%s,%s) returning id", (sample_id, prediction[0], prediction[2] or "", corrected_class, admin_id, str(payload.get("note") or "").strip(), str(source), corrected_class))
+            if not destination.exists():
+                destination_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+                cursor.execute("update ai_training_samples set annotation_status='exported', exported_at=now(), image_path=%s where id=%s", (str(destination), sample_id))
+            connection.commit()
+    return {"id": sample_id, "predictionId": prediction_id, "originalClass": prediction[2], "correctedClass": corrected_class, "exportedPath": str(destination)}
+
+def update_feedback_status(feedback_id, payload, admin_id):
+    status = str(payload.get("status") or "").strip().lower()
+    if status not in {"unread", "in_progress", "resolved", "rejected"}:
+        raise HTTPException(status_code=400, detail="Trạng thái phản hồi không hợp lệ")
+    note = str(payload.get("adminNote") or payload.get("admin_note") or "").strip()
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("update feedback set status=%s, admin_note=%s, resolved_at=case when %s='resolved' then now() else resolved_at end where id=%s returning id, user_id, user_name, category, message, status, priority, bin_id, admin_note, resolved_at, timestamp, created_at", (status, note, status, feedback_id))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Không tìm thấy phản hồi")
+            connection.commit()
+    return admin_row_to_json(ADMIN_RESOURCES["feedback"]["columns"], row)
+
 def advance_mobile_mission(user_id, mission_id):
     database_url = require_database_url()
     with psycopg.connect(database_url) as connection:
@@ -1056,7 +1126,7 @@ def request_mobile_reward(user_id, reward_id):
     database_url = require_database_url()
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("select title, cost_points from rewards where id = %s and status = 'active'", (reward_id,))
+            cursor.execute("select title, cost_points, stock from rewards where id = %s and status = 'active'", (reward_id,))
             reward = cursor.fetchone()
             if not reward:
                 raise HTTPException(status_code=404, detail="Không tìm thấy phần thưởng")
@@ -1064,6 +1134,8 @@ def request_mobile_reward(user_id, reward_id):
             user_points = cursor.fetchone()
             if not user_points:
                 raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+            if reward[2] is not None and int(reward[2]) < 1:
+                raise HTTPException(status_code=409, detail="Phần thưởng đã hết hàng")
             if int(user_points[0] or 0) < int(reward[1] or 0):
                 raise HTTPException(status_code=400, detail="Không đủ Ecopoint để đổi phần thưởng")
             cursor.execute(
@@ -1098,6 +1170,16 @@ def mobile_save_feedback(payload: dict, authorization: str | None = Header(defau
     user = require_role_user(authorization, {"student", "volunteer", "admin"})
     return {"data": save_mobile_feedback(user, payload)}
 
+@app.patch("/api/admin/feedback/{feedback_id}")
+def admin_update_feedback(feedback_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": update_feedback_status(feedback_id, payload, user["id"])}
+
+@app.post("/api/admin/predictions/{prediction_id}/correct")
+def admin_correct_prediction(prediction_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": correct_prediction(prediction_id, user["id"], payload)}
+
 @app.post("/api/mobile/missions/{mission_id}/advance")
 def mobile_advance_mission(mission_id: str, authorization: str | None = Header(default=None)):
     user = require_role_user(authorization, {"student"})
@@ -1106,7 +1188,22 @@ def mobile_advance_mission(mission_id: str, authorization: str | None = Header(d
 @app.post("/api/mobile/reward-redemptions", status_code=201)
 def mobile_request_reward(payload: dict, authorization: str | None = Header(default=None)):
     user = require_role_user(authorization, {"student"})
-    return {"data": request_mobile_reward(user["id"], payload.get("rewardId") or payload.get("reward_id"))}
+    return {"data": create_reward_redemption_batch_account(user["id"], payload)}
+
+@app.post("/api/mobile/reward-redemptions/scan")
+def mobile_scan_reward_redemption(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"volunteer", "admin"})
+    return {"data": scan_reward_redemption_batch_account(user["id"], payload)}
+
+@app.post("/api/admin/reward-redemption-batches/{batch_id}/finalize")
+def admin_finalize_reward_redemption(batch_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": finalize_reward_redemption_batch_account(user["id"], batch_id, payload)}
+
+@app.post("/api/admin/point-adjustments")
+def admin_adjust_points(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": adjust_manual_points_account(user["id"], payload)}
 
 
 def normalize_json_result(value):
@@ -1123,6 +1220,22 @@ POSTGRES_BUSINESS_ERROR_STATUS = {
     "INVALID_QUANTITY": 400,
     "INVALID_SUBMISSION_STATUS": 400,
     "PROOF_IMAGE_REQUIRED": 400,
+    "REWARD_ITEMS_REQUIRED": 400,
+    "ACTIVE_REWARD_BATCH_EXISTS": 409,
+    "REWARD_NOT_FOUND": 404,
+    "REWARD_OUT_OF_STOCK": 409,
+    "DUPLICATE_REWARD_ITEM": 400,
+    "REWARD_TOTAL_INVALID": 400,
+    "INVALID_REDEMPTION_ACTOR": 403,
+    "REWARD_BATCH_NOT_FOUND": 404,
+    "REWARD_BATCH_ALREADY_PROCESSED": 409,
+    "REWARD_BATCH_EXPIRED": 409,
+    "INSUFFICIENT_POINTS": 400,
+    "INVALID_REDEMPTION_STATUS": 400,
+    "INVALID_MANUAL_POINT_ACTOR": 403,
+    "INVALID_MANUAL_POINT": 400,
+    "USER_NOT_FOUND": 404,
+    "POINT_BALANCE_WOULD_BE_NEGATIVE": 400,
 }
 
 def postgres_business_error_code(error):
@@ -1162,6 +1275,31 @@ def create_recycling_submission_account(user_id, payload):
             qr_payload_value(payload, "quantity"),
         ],
     )
+
+def create_reward_redemption_batch_account(user_id, payload):
+    items = payload.get("items") or [{"rewardId": payload.get("rewardId"), "quantity": payload.get("quantity", 1)}]
+    database_url = require_database_url()
+    try:
+        with psycopg.connect(database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select create_reward_redemption_batch(%s, %s::jsonb, %s)", [user_id, json.dumps(items), 15])
+                row = cursor.fetchone()
+            connection.commit()
+    except Exception as error:
+        error_code = postgres_business_error_code(error)
+        if error_code in POSTGRES_BUSINESS_ERROR_STATUS:
+            raise HTTPException(status_code=POSTGRES_BUSINESS_ERROR_STATUS[error_code], detail=error_code) from error
+        raise
+    return normalize_json_result(row[0])
+
+def scan_reward_redemption_batch_account(actor_id, payload):
+    return call_postgres_json_function("scan_reward_redemption_batch", [qr_payload_value(payload, "qrToken", "qr_token"), actor_id])
+
+def finalize_reward_redemption_batch_account(actor_id, batch_id, payload):
+    return call_postgres_json_function("finalize_reward_redemption_batch", [batch_id, actor_id, payload.get("status"), payload.get("note", "")])
+
+def adjust_manual_points_account(admin_id, payload):
+    return call_postgres_json_function("adjust_manual_points", [payload.get("userId") or payload.get("user_id"), admin_id, payload.get("points"), payload.get("reason"), payload.get("referenceType", "manual_point"), payload.get("referenceId", "")])
 
 def scan_recycling_submission_account(volunteer_id, payload):
     return call_postgres_json_function(
@@ -1275,7 +1413,7 @@ async def mobile_upload_recycling_proof(
     authorization: str | None = Header(default=None),
 ):
     require_role_user(authorization, {"volunteer", "admin"})
-    content = await file.read()
+    content = await read_limited_upload(file)
     return {"data": save_submission_proof_image(submission_id, file.filename, file.content_type, content, note)}
 
 @app.post("/api/uploads/predictions", status_code=201)
@@ -1423,7 +1561,8 @@ def delete_avatar_preset(key):
 
 
 @app.get("/api/avatar-presets")
-def avatar_presets_index():
+def avatar_presets_index(authorization: str | None = Header(default=None)):
+    require_role_user(authorization, {"student", "volunteer", "admin"})
     return list_avatar_presets()
 
 
@@ -1432,24 +1571,29 @@ async def avatar_presets_create(
     key: str = Form(...),
     label: str = Form(...),
     file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
 ):
-    content = await file.read()
+    require_admin_user(authorization)
+    content = await read_limited_upload(file)
     return save_avatar_preset(key, label, file.filename, file.content_type, content)
 
 
 @app.delete("/api/avatar-presets/{key}")
-def avatar_presets_delete(key: str):
+def avatar_presets_delete(key: str, authorization: str | None = Header(default=None)):
+    require_admin_user(authorization)
     return delete_avatar_preset(key)
 
 
 # ---------------- PREDICTION ROUTE ----------------
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    image_bytes = await file.read()
+async def predict(file: UploadFile = File(...), authorization: str | None = Header(default=None)):
+    require_role_user(authorization, {"student", "volunteer", "admin"})
+    image_bytes = await read_limited_upload(file)
     return predict_image_bytes(image_bytes)
 
 @app.post("/predict/jobs")
-async def create_prediction_job(file: UploadFile = File(...)):
+async def create_prediction_job(file: UploadFile = File(...), authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student", "volunteer", "admin"})
     cleanup_ai_jobs()
     ensure_ai_workers()
     if ai_queue.full():
@@ -1460,9 +1604,10 @@ async def create_prediction_job(file: UploadFile = File(...)):
     ai_jobs[job_id] = {
         "job_id": job_id,
         "status": "queued",
-        "image_bytes": await file.read(),
+        "image_bytes": await read_limited_upload(file),
         "created_at": now,
         "updated_at": now,
+        "user_id": user["id"],
     }
     position = ai_queue.qsize() + 1
     await ai_queue.put(job_id)
@@ -1474,11 +1619,14 @@ async def create_prediction_job(file: UploadFile = File(...)):
     })
 
 @app.get("/predict/jobs/{job_id}")
-async def get_prediction_job(job_id: str):
+async def get_prediction_job(job_id: str, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student", "volunteer", "admin"})
     cleanup_ai_jobs()
     job = ai_jobs.get(job_id)
     if not job:
         return JSONResponse(status_code=404, content={"error": "AI job not found"})
+    if job.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Không có quyền xem AI job này")
 
     payload = {"job_id": job_id, "status": job["status"]}
     if job["status"] == "done":

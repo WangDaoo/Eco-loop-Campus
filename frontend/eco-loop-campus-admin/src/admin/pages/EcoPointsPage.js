@@ -12,6 +12,8 @@ import {
   listRewards,
   listRewardCategories,
   listRewardRedemptions,
+  listRewardRedemptionBatches,
+  finalizeRewardRedemptionBatch,
   listUsers,
   deleteRewardCategory,
   saveManualPointHistory,
@@ -76,6 +78,7 @@ export default function EcoPointsPage() {
   const [history, setHistory] = useState([]);
   const [users, setUsers] = useState([]);
   const [rewardRequests, setRewardRequests] = useState([]);
+  const [rewardBatches, setRewardBatches] = useState([]);
   const [rewardProducts, setRewardProducts] = useState([]);
   const [rewardCategories, setRewardCategories] = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -97,16 +100,17 @@ export default function EcoPointsPage() {
     let active = true;
     async function loadData() {
       setLoading(true);
-      const [rulesResponse, historyResponse, usersResponse, rewardRequestsResponse, rewardProductsResponse, rewardCategoriesResponse, submissionsResponse] = await Promise.all([listPointRules(), listPointHistory(), listUsers(), listRewardRedemptions(), listRewards(), listRewardCategories(), listRecyclingSubmissions()]);
+       const [rulesResponse, historyResponse, usersResponse, rewardRequestsResponse, rewardProductsResponse, rewardCategoriesResponse, submissionsResponse, rewardBatchesResponse] = await Promise.all([listPointRules(), listPointHistory(), listUsers(), listRewardRedemptions(), listRewards(), listRewardCategories(), listRecyclingSubmissions(), listRewardRedemptionBatches()]);
       if (!active) return;
       setRules(rulesResponse.data);
       setHistory(historyResponse.data);
       setUsers(usersResponse.data);
-      setRewardRequests(rewardRequestsResponse.data);
+       setRewardRequests(rewardRequestsResponse.data);
+       setRewardBatches(rewardBatchesResponse.data);
       setRewardProducts(rewardProductsResponse.data);
       setRewardCategories(rewardCategoriesResponse.data);
       setSubmissions(submissionsResponse.data);
-      setError(rulesResponse.error || historyResponse.error || usersResponse.error || rewardRequestsResponse.error || rewardProductsResponse.error || rewardCategoriesResponse.error || submissionsResponse.error);
+       setError(rulesResponse.error || historyResponse.error || usersResponse.error || rewardRequestsResponse.error || rewardProductsResponse.error || rewardCategoriesResponse.error || submissionsResponse.error || rewardBatchesResponse.error);
       setLoading(false);
     }
     loadData();
@@ -114,6 +118,16 @@ export default function EcoPointsPage() {
       active = false;
     };
   }, []);
+
+  const finalizeBatch = async (batch, status) => {
+    const response = await finalizeRewardRedemptionBatch(batch.id, status);
+    if (response.error || !response.data) {
+      showToast(response.error?.message || "Không thể cập nhật đổi thưởng", "danger");
+      return;
+    }
+    setRewardBatches(current => current.map(item => item.id === batch.id ? { ...item, ...response.data } : item));
+    showToast(status === "fulfilled" ? "Đã hoàn tất đổi thưởng" : "Đã hoàn điểm đổi thưởng");
+  };
 
   const userGroups = useMemo(() => Array.from(new Set(users.map(user => String(user.group || "").trim()).filter(Boolean))).sort(), [users]);
   const binGroupOptions = useMemo(() => BIN_GROUPS.map(group => group.label), []);
@@ -187,6 +201,11 @@ export default function EcoPointsPage() {
       action: manualForm.action.trim(),
       adminNote: manualForm.action.trim(),
     });
+    if (response.error || !response.data) {
+      setError(response.error);
+      showToast(response.error?.message || "Không thể điều chỉnh Ecopoint", "danger");
+      return;
+    }
     const user = users.find(item => item.id === response.data.userId);
     setHistory(current => [{ ...response.data, userName: user?.name || response.data.userId, binName: "Điều chỉnh thủ công" }, ...current]);
     setUsers(current => current.map(item => item.id === response.data.userId ? { ...item, points: Number(item.points || 0) + Number(response.data.points || 0) } : item));
@@ -585,6 +604,17 @@ export default function EcoPointsPage() {
       <section className="eg-card">
         <div className="eg-card-head"><h2>Yêu cầu đổi thưởng</h2></div>
         <DataTable columns={rewardColumns} rows={rewardRequests} emptyText="Chưa có yêu cầu đổi thưởng." />
+      </section>
+      <section className="eg-card">
+        <div className="eg-card-head"><h2>Mã QR đổi thưởng</h2></div>
+        {rewardBatches.length === 0 ? <p>Chưa có mã QR đổi thưởng.</p> : rewardBatches.map(batch => (
+          <div key={batch.id} className="eg-list-row">
+            <div><strong>{batch.id}</strong><p>{batch.items?.map(item => `${item.reward_title} x${item.quantity}`).join(', ')}</p></div>
+            <div><StatusBadge group={batch.status}>{batch.status}</StatusBadge><div className="eg-button-row">
+              {batch.status === "scanned" && <><button type="button" className="eg-primary-btn" onClick={() => void finalizeBatch(batch, "fulfilled")}>Hoàn tất</button><button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "rejected")}>Hoàn điểm</button></>}
+            </div></div>
+          </div>
+        ))}
       </section>
       <Toast message={toast} tone={toastTone} onClose={() => setToast("")} />
     </div>

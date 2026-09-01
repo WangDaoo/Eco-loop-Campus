@@ -144,6 +144,28 @@ export default function BinsPage() {
     setForm(current => ({ ...current, [key]: value }));
   };
 
+  const pickMapPosition = event => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    updateForm("mapX", normalizePercent(((event.clientX - rect.left) / rect.width) * 100, 0).toFixed(1));
+    updateForm("mapY", normalizePercent(((event.clientY - rect.top) / rect.height) * 100, 0).toFixed(1));
+  };
+
+  const dragMapMarker = event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.parentElement.getBoundingClientRect();
+    const move = pointer => {
+      updateForm("mapX", normalizePercent(((pointer.clientX - rect.left) / rect.width) * 100, 0).toFixed(1));
+      updateForm("mapY", normalizePercent(((pointer.clientY - rect.top) / rect.height) * 100, 0).toFixed(1));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  };
+
   const submitForm = async event => {
     event.preventDefault();
     const id = form.id.trim();
@@ -297,8 +319,12 @@ export default function BinsPage() {
           <button type="button" className="eg-secondary-btn" onClick={() => updateForm("qrCode", buildStationQrCode(`${form.id || form.name}-${Date.now().toString().slice(-6)}`))}>Tạo lại mã QR</button>
           <label>Sức chứa<input type="number" min="0" max="100" value={form.capacity} onChange={event => updateForm("capacity", event.target.value)} /></label>
           <label>Trạng thái<select value={form.status} onChange={event => updateForm("status", event.target.value)}><option value="active">Hoạt động</option><option value="full">Đầy</option><option value="maintenance">Bảo trì</option></select></label>
-          <label>Tọa độ X<input type="number" min="0" max="100" step="0.1" value={form.mapX} onChange={event => updateForm("mapX", event.target.value)} placeholder="30" /></label>
-          <label>Tọa độ Y<input type="number" min="0" max="100" step="0.1" value={form.mapY} onChange={event => updateForm("mapY", event.target.value)} placeholder="78" /></label>
+           <label>Tọa độ X<input type="number" min="0" max="100" step="0.1" value={form.mapX} onChange={event => updateForm("mapX", event.target.value)} placeholder="30" /></label>
+           <label>Tọa độ Y<input type="number" min="0" max="100" step="0.1" value={form.mapY} onChange={event => updateForm("mapY", event.target.value)} placeholder="78" /></label>
+           <div className="eg-map-picker" role="application" aria-label="Bản đồ chọn thùng" onPointerDown={pickMapPosition}>
+             <span className="eg-map-picker-label">Bấm hoặc kéo marker để chọn vị trí</span>
+             {form.mapX !== "" && form.mapY !== "" && <button type="button" className="eg-map-marker" style={{ left: `${normalizePercent(form.mapX, 0)}%`, top: `${normalizePercent(form.mapY, 0)}%` }} onPointerDown={dragMapMarker} aria-label="Kéo marker thùng">+</button>}
+           </div>
           <div className="eg-form-actions">
             <button type="button" className="eg-secondary-btn" onClick={closeForm}>Hủy</button>
             <button type="submit" className="eg-primary-btn" disabled={saving}>{saving ? "Đang lưu..." : "Lưu trạm"}</button>
