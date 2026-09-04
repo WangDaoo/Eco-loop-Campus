@@ -1298,6 +1298,7 @@ POSTGRES_BUSINESS_ERROR_STATUS = {
     "INVALID_VOLUNTEER": 400,
     "INVALID_QUANTITY": 400,
     "INVALID_SUBMISSION_STATUS": 400,
+    "SUBMISSION_ACTOR_MISMATCH": 403,
     "PROOF_IMAGE_REQUIRED": 400,
     "REWARD_ITEMS_REQUIRED": 400,
     "ACTIVE_REWARD_BATCH_EXISTS": 409,
@@ -1426,11 +1427,29 @@ def to_proof_image(row):
         "note": note,
     }
 
-def save_submission_proof_image(submission_id, file_name, content_type, content, note=""):
+def require_submission_actor(submission_id, actor):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "select status, verified_by from recycling_submissions where id = %s",
+                (submission_id,),
+            )
+            submission = cursor.fetchone()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch rác")
+    if actor.get("role") != "admin" and submission[1] != actor.get("id"):
+        raise HTTPException(status_code=403, detail="SUBMISSION_ACTOR_MISMATCH")
+    if submission[0] not in {"QR_SCANNED", "PENDING_REVIEW"}:
+        raise HTTPException(status_code=400, detail="INVALID_SUBMISSION_STATUS")
+
+
+def save_submission_proof_image(submission_id, file_name, content_type, content, note="", actor=None):
     if not str(content_type or "").startswith("image/"):
         raise HTTPException(status_code=400, detail="File minh chứng phải là ảnh")
     if not content:
         raise HTTPException(status_code=400, detail="File minh chứng trống")
+    require_submission_actor(submission_id, actor or {})
 
     PROOF_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     proof_dir = PROOF_UPLOADS_DIR / slugify(submission_id, "submission")
@@ -1491,9 +1510,9 @@ async def mobile_upload_recycling_proof(
     file: UploadFile = File(...),
     authorization: str | None = Header(default=None),
 ):
-    require_role_user(authorization, {"volunteer", "admin"})
+    user = require_role_user(authorization, {"volunteer", "admin"})
     content = await read_limited_upload(file)
-    return {"data": save_submission_proof_image(submission_id, file.filename, file.content_type, content, note)}
+    return {"data": save_submission_proof_image(submission_id, file.filename, file.content_type, content, note, user)}
 
 @app.post("/api/uploads/predictions", status_code=201)
 async def upload_prediction_image(file: UploadFile = File(...), authorization: str | None = Header(default=None)):

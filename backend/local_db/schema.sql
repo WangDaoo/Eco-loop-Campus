@@ -556,8 +556,12 @@ declare
   v_submission recycling_submissions%rowtype;
   v_waste waste_types%rowtype;
   v_points integer;
+  v_actor_role text;
 begin
-  if not exists (select 1 from users where id = p_volunteer_id and role in ('volunteer', 'admin') and status = 'active') then
+  select role into v_actor_role
+  from users
+  where id = p_volunteer_id and role in ('volunteer', 'admin') and status = 'active';
+  if not found then
     raise exception 'INVALID_VOLUNTEER';
   end if;
 
@@ -567,6 +571,9 @@ begin
   end if;
   if v_submission.status <> 'QR_SCANNED' then
     raise exception 'INVALID_SUBMISSION_STATUS';
+  end if;
+  if v_actor_role <> 'admin' and v_submission.verified_by is distinct from p_volunteer_id then
+    raise exception 'SUBMISSION_ACTOR_MISMATCH';
   end if;
   if not exists (select 1 from proof_images where submission_id = p_submission_id and status <> 'rejected') then
     raise exception 'PROOF_IMAGE_REQUIRED';
@@ -611,19 +618,32 @@ create or replace function reject_recycling_submission(
 returns jsonb
 language plpgsql
 as $$
+declare
+  v_submission recycling_submissions%rowtype;
+  v_actor_role text;
 begin
-  if not exists (select 1 from users where id = p_volunteer_id and role in ('volunteer', 'admin') and status = 'active') then
+  select role into v_actor_role
+  from users
+  where id = p_volunteer_id and role in ('volunteer', 'admin') and status = 'active';
+  if not found then
     raise exception 'INVALID_VOLUNTEER';
+  end if;
+  select * into v_submission
+  from recycling_submissions
+  where id = p_submission_id
+  for update;
+  if not found or v_submission.status not in ('CREATED', 'QR_SCANNED', 'PENDING_REVIEW') then
+    raise exception 'INVALID_SUBMISSION_STATUS';
+  end if;
+  if v_actor_role <> 'admin' and v_submission.verified_by is distinct from p_volunteer_id then
+    raise exception 'SUBMISSION_ACTOR_MISMATCH';
   end if;
   update recycling_submissions
   set status = 'REJECTED',
       verified_by = p_volunteer_id,
       verified_at = now(),
       volunteer_note = coalesce(p_note, '')
-  where id = p_submission_id and status in ('CREATED', 'QR_SCANNED', 'PENDING_REVIEW');
-  if not found then
-    raise exception 'INVALID_SUBMISSION_STATUS';
-  end if;
+  where id = p_submission_id;
   return jsonb_build_object('status', 'REJECTED', 'submissionId', p_submission_id);
 end;
 $$;
@@ -636,19 +656,32 @@ create or replace function request_recycling_review(
 returns jsonb
 language plpgsql
 as $$
+declare
+  v_submission recycling_submissions%rowtype;
+  v_actor_role text;
 begin
-  if not exists (select 1 from users where id = p_volunteer_id and role in ('volunteer', 'admin') and status = 'active') then
+  select role into v_actor_role
+  from users
+  where id = p_volunteer_id and role in ('volunteer', 'admin') and status = 'active';
+  if not found then
     raise exception 'INVALID_VOLUNTEER';
+  end if;
+  select * into v_submission
+  from recycling_submissions
+  where id = p_submission_id
+  for update;
+  if not found or v_submission.status not in ('CREATED', 'QR_SCANNED') then
+    raise exception 'INVALID_SUBMISSION_STATUS';
+  end if;
+  if v_actor_role <> 'admin' and v_submission.verified_by is distinct from p_volunteer_id then
+    raise exception 'SUBMISSION_ACTOR_MISMATCH';
   end if;
   update recycling_submissions
   set status = 'PENDING_REVIEW',
       verified_by = p_volunteer_id,
       verified_at = now(),
       volunteer_note = coalesce(p_note, '')
-  where id = p_submission_id and status in ('CREATED', 'QR_SCANNED');
-  if not found then
-    raise exception 'INVALID_SUBMISSION_STATUS';
-  end if;
+  where id = p_submission_id;
   return jsonb_build_object('status', 'PENDING_REVIEW', 'submissionId', p_submission_id);
 end;
 $$;

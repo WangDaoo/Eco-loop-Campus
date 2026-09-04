@@ -125,7 +125,7 @@ def test_volunteer_uploads_proof_image(client, monkeypatch):
     monkeypatch.setattr(
         app,
         "save_submission_proof_image",
-        lambda submission_id, file_name, content_type, content, note: {
+        lambda submission_id, file_name, content_type, content, note, actor: {
             "id": "proof-1",
             "submissionId": submission_id,
             "imageUrl": "/uploads/proofs/sub-1/proof.png",
