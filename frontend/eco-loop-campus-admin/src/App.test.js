@@ -144,6 +144,15 @@ function mockBackendFetch(rawUrl, init = {}) {
     next.status = body.status;
     return jsonResponse({ data: next });
   }
+  if (path.startsWith("/api/mobile/recycling-submissions/") && path.endsWith("/reject") && method === "POST") {
+    const id = decodeURIComponent(path.split("/")[4]);
+    const body = readRequestBody(init);
+    const current = (mockTables.recycling_submissions || []).find(item => item.id === id);
+    if (!current) return jsonResponse({ detail: "SUBMISSION_NOT_FOUND" }, 404);
+    const next = { ...current, status: "REJECTED", volunteer_note: body.note || "" };
+    mockTables.recycling_submissions = mockTables.recycling_submissions.map(item => item.id === id ? next : item);
+    return jsonResponse({ data: next });
+  }
   if (path.startsWith("/api/users/") && path.endsWith("/status") && method === "PATCH") {
     const id = decodeURIComponent(path.split("/")[3]);
     const body = readRequestBody(init);
@@ -3186,7 +3195,11 @@ test("ecopoints page shows recycling submissions awaiting admin review and lets 
 
   fireEvent.click(screen.getByRole("button", { name: /từ chối giao dịch eco-review-001/i }));
 
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("recycling_submissions", expect.objectContaining({ status: "REJECTED" })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/api/mobile/recycling-submissions/sub-review/reject"),
+    expect.objectContaining({ method: "POST" }),
+  ));
+  expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("recycling_submissions", expect.anything());
   expect(await screen.findByText(/đã từ chối giao dịch gửi rác/i)).toBeInTheDocument();
 });
 

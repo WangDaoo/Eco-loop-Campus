@@ -483,6 +483,15 @@ export function mapRewardRow(row: Row): Reward {
 }
 export function mapRewardRedemptionRow(row: Row): RewardRedemption {
   const status = text(row.status, 'requested').trim().toLowerCase();
+  const items = Array.isArray(row.items)
+    ? row.items.map((item: Row) => ({
+        rewardId: text(item.rewardId ?? item.reward_id),
+        rewardLabel: text(item.rewardLabel ?? item.reward_label ?? item.rewardTitle ?? item.reward_title),
+        quantity: number(item.quantity),
+        pointsEach: number(item.pointsEach ?? item.points_each),
+        pointsTotal: number(item.pointsTotal ?? item.points_total)
+      }))
+    : undefined;
   return {
     id: text(row.id),
     userId: text(row.userId ?? row.user_id),
@@ -495,7 +504,8 @@ export function mapRewardRedemptionRow(row: Row): RewardRedemption {
     adminNote: text(row.adminNote ?? row.admin_note) || undefined,
     qrToken: text(row.qrToken ?? row.qr_token) || undefined,
     expiresAt: row.expiresAt || row.expires_at ? date(row.expiresAt ?? row.expires_at) : undefined,
-    totalPoints: row.totalPoints ?? row.total_points ? number(row.totalPoints ?? row.total_points) : undefined
+    totalPoints: row.totalPoints ?? row.total_points ? number(row.totalPoints ?? row.total_points) : undefined,
+    ...(items ? { items } : {})
   };
 }
 

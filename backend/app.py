@@ -13,10 +13,12 @@ import unicodedata
 from decimal import Decimal, InvalidOperation
 from urllib.parse import unquote, urlparse
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 import tensorflow as tf
 import numpy as np
@@ -32,6 +34,31 @@ except Exception:
     psycopg = None
 
 app = FastAPI()
+
+
+def error_code_for(status_code, detail):
+    if isinstance(detail, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", detail):
+        return detail
+    if status_code == 422 and detail == "Dữ liệu đầu vào không hợp lệ":
+        return "VALIDATION_ERROR"
+    return f"HTTP_{status_code}"
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_response(_request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "code": error_code_for(exc.status_code, exc.detail)},
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_response(_request: Request, _exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Dữ liệu đầu vào không hợp lệ", "code": "VALIDATION_ERROR"},
+    )
 
 AI_QUEUE_WORKERS = int(os.getenv("AI_QUEUE_WORKERS", "1"))
 AI_QUEUE_MAX_SIZE = int(os.getenv("AI_QUEUE_MAX_SIZE", "50"))

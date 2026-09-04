@@ -13,7 +13,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PREDICTION_STATUSES = ["pending", "approved", "rejected"];
 const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
 const PREDICTION_SOURCES = ["upload", "camera", "mobile"];
-const REWARD_STATUSES = ["pending", "approved", "rejected"];
+const REWARD_STATUSES = ["requested", "pending", "approved", "rejected", "delivered", "scanned", "fulfilled", "expired", "cancelled"];
 const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
 const REWARD_CATALOG_STATUSES = ["active", "inactive"];
 const USER_ROLES = ["student", "teacher", "volunteer", "admin"];
@@ -1054,8 +1054,21 @@ export async function updateRecyclingSubmissionReview(item, updates) {
   if (!nextStatus || ["POINT_CONFIRMED", "LOCKED"].includes(String(current.status || "").trim().toUpperCase())) {
     return result(current, BACKEND, new Error("Invalid recycling submission status"));
   }
-  const next = fromRecyclingSubmission({ ...current, status: nextStatus, volunteerNote: typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : current.volunteerNote, verifiedAt: updates.verifiedAt || new Date().toISOString() });
-  return saveResource("recycling-submissions", toRecyclingSubmissionUpdate(next), fromRecyclingSubmission);
+  const endpoint = nextStatus === "REJECTED"
+    ? `/api/mobile/recycling-submissions/${encodeURIComponent(item.id)}/reject`
+    : nextStatus === "PENDING_REVIEW"
+      ? `/api/mobile/recycling-submissions/${encodeURIComponent(item.id)}/review`
+      : "";
+  if (!endpoint) return result(current, BACKEND, new Error("Invalid recycling submission status"));
+  try {
+    const response = await requestBackend(endpoint, {
+      method: "POST",
+      body: { note: typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : current.volunteerNote || "" },
+    });
+    return result(fromRecyclingSubmission(response.data || current), BACKEND);
+  } catch (error) {
+    return result(current, BACKEND, error);
+  }
 }
 
 export async function saveRewardProduct(item) {

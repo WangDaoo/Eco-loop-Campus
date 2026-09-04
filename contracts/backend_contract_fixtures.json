@@ -1,0 +1,101 @@
+{
+  "user": {
+    "id": "student-contract-1",
+    "name": "Nguyễn Ánh Dương",
+    "email": "anh.duong@hyute.edu.vn",
+    "role": "student",
+    "group": "Khoa Công nghệ thông tin",
+    "points": 125,
+    "status": "active",
+    "avatarKey": null,
+    "avatarUrl": null,
+    "createdAt": "2026-09-05T01:02:03+00:00",
+    "updatedAt": "2026-09-05T01:02:03+00:00",
+    "studentCode": "SV20260001",
+    "facultyCode": "information-technology",
+    "facultyName": "Khoa Công nghệ thông tin",
+    "phoneNumber": "0912345678",
+    "profileCompleted": true,
+    "requiresProfileCompletion": false
+  },
+  "faculty": {
+    "code": "information-technology",
+    "name": "Khoa Công nghệ thông tin",
+    "status": "active",
+    "sortOrder": 4
+  },
+  "submission": {
+    "id": "submission-contract-1",
+    "userId": "student-contract-1",
+    "binId": "bin-contract-1",
+    "wasteTypeId": "plastic-contract-1",
+    "quantity": 2.5,
+    "unit": "kg",
+    "qrToken": "ECL-SUB-CONTRACT-1",
+    "qrSignature": null,
+    "status": "POINT_CONFIRMED",
+    "createdAt": "2026-09-05T01:02:03+00:00",
+    "expiredAt": "2026-09-05T01:47:03+00:00",
+    "verifiedBy": "volunteer-contract-1",
+    "verifiedAt": "2026-09-05T01:10:03+00:00",
+    "actualQuantity": 2.5,
+    "volunteerNote": "Đã kiểm tra"
+  },
+  "pointHistory": {
+    "id": 501,
+    "predictionId": null,
+    "submissionId": "submission-contract-1",
+    "userId": "student-contract-1",
+    "binId": "bin-contract-1",
+    "class": null,
+    "binGroup": "Tái chế",
+    "action": "Cộng điểm gửi rác",
+    "points": 25,
+    "timestamp": "2026-09-05T01:10:03+00:00",
+    "createdAt": "2026-09-05T01:10:03+00:00",
+    "adminNote": null,
+    "source": "qr_submission",
+    "description": "Cộng điểm gửi rác",
+    "status": "confirmed",
+    "referenceType": "submission",
+    "referenceId": "submission-contract-1"
+  },
+  "rewardBatch": {
+    "id": "reward-batch-contract-1",
+    "studentId": "student-contract-1",
+    "userId": "student-contract-1",
+    "qrToken": "ECL-REWARD-CONTRACT-1",
+    "createdAt": "2026-09-05T02:00:00+00:00",
+    "expiresAt": "2026-09-05T02:15:00+00:00",
+    "status": "fulfilled",
+    "scannedBy": "volunteer-contract-1",
+    "scannedAt": "2026-09-05T02:05:00+00:00",
+    "fulfilledAt": "2026-09-05T02:05:00+00:00",
+    "updatedAt": "2026-09-05T02:05:00+00:00",
+    "rewardId": "reward-contract-1",
+    "rewardLabel": "Bình nước x2",
+    "costPoints": 100,
+    "totalPoints": 100,
+    "requestedAt": "2026-09-05T02:00:00+00:00",
+    "reviewedAt": "2026-09-05T02:05:00+00:00",
+    "items": [
+      {
+        "id": 701,
+        "batchId": "reward-batch-contract-1",
+        "rewardId": "reward-contract-1",
+        "rewardTitle": "Bình nước",
+        "quantity": 2,
+        "pointsEach": 50,
+        "pointsTotal": 100
+      }
+    ]
+  },
+  "errors": [
+    { "status": 401, "detail": "Thiếu token đăng nhập", "code": "HTTP_401" },
+    { "status": 403, "detail": "PROFILE_INCOMPLETE", "code": "PROFILE_INCOMPLETE" },
+    { "status": 404, "detail": "REWARD_BATCH_NOT_FOUND", "code": "REWARD_BATCH_NOT_FOUND" },
+    { "status": 409, "detail": "STUDENT_CODE_EXISTS", "code": "STUDENT_CODE_EXISTS" },
+    { "status": 422, "detail": "Dữ liệu đầu vào không hợp lệ", "code": "VALIDATION_ERROR" },
+    { "status": 503, "detail": "DATABASE_URL chưa cấu hình", "code": "HTTP_503" }
+  ]
+}
