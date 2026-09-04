@@ -2275,16 +2275,22 @@ a.eg-priority-item:focus-visible {
 
 .eg-map-picker {
   position: relative;
-  min-height: 180px;
+  min-height: 240px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: linear-gradient(135deg, #dff3ea, #cce9f3);
+  background-color: #dff3ea;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   cursor: crosshair;
   touch-action: none;
 }
-.eg-map-picker-label { position: absolute; top: 12px; left: 12px; padding: 5px 8px; border-radius: 8px; background: rgb(255 255 255 / 82%); color: var(--ink-soft); font-size: 12px; pointer-events: none; }
-.eg-map-marker { position: absolute; width: 28px; height: 28px; transform: translate(-50%, -50%); border: 3px solid #fff; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 900; cursor: grab; box-shadow: 0 4px 12px rgb(25 80 80 / 24%); }
+.eg-map-picker::after { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgb(30 64 175 / 9%) 1px, transparent 1px), linear-gradient(90deg, rgb(30 64 175 / 9%) 1px, transparent 1px); background-size: 24px 24px; }
+.eg-map-picker-label, .eg-map-picker-coordinate { position: absolute; z-index: 1; padding: 5px 8px; border-radius: 8px; background: rgb(255 255 255 / 88%); color: var(--ink-soft); font-size: 12px; pointer-events: none; box-shadow: 0 1px 3px rgb(15 23 42 / 12%); }
+.eg-map-picker-label { top: 12px; left: 12px; }
+.eg-map-picker-coordinate { right: 12px; bottom: 12px; font-variant-numeric: tabular-nums; }
+.eg-map-marker { position: absolute; z-index: 2; width: 28px; height: 28px; transform: translate(-50%, -50%); border: 3px solid #fff; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 900; cursor: grab; box-shadow: 0 4px 12px rgb(25 80 80 / 24%); }
 
 .eg-form-actions {
   grid-column: 1 / -1;

@@ -1,5 +1,6 @@
 const BACKEND = "backend";
 const DEFAULT_API_URL = "http://127.0.0.1:8000";
+const TOKEN_KEY = "ecoloop_admin_token";
 const API_URL = (process.env.REACT_APP_API_URL || DEFAULT_API_URL).replace(/\/+$/, "");
 
 function result(data, error = null) {
@@ -8,6 +9,14 @@ function result(data, error = null) {
 
 function errorFromMessage(message) {
   return new Error(message || "Backend avatar chưa kết nối");
+}
+
+function authHeaders(extra = {}) {
+  const token = localStorage.getItem(TOKEN_KEY) || "";
+  return {
+    ...extra,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 }
 
 async function readError(response) {
@@ -38,7 +47,7 @@ function normalizeAvatarPreset(row = {}) {
 
 export async function listAvatarPresets() {
   try {
-    const response = await fetch(`${API_URL}/api/avatar-presets`);
+    const response = await fetch(`${API_URL}/api/avatar-presets`, { headers: authHeaders() });
     if (!response.ok) throw errorFromMessage(await readError(response));
     const payload = await response.json();
     const data = Array.isArray(payload) ? payload.map(normalizeAvatarPreset) : [];
@@ -62,6 +71,7 @@ export async function saveAvatarPreset({ key, label, file }) {
     const response = await fetch(`${API_URL}/api/avatar-presets`, {
       method: "POST",
       body: formData,
+      headers: authHeaders(),
     });
     if (!response.ok) throw errorFromMessage(await readError(response));
     return result(normalizeAvatarPreset(await response.json()));
@@ -75,6 +85,7 @@ export async function deleteAvatarPreset(key) {
   try {
     const response = await fetch(`${API_URL}/api/avatar-presets/${encodeURIComponent(key.trim())}`, {
       method: "DELETE",
+      headers: authHeaders(),
     });
     if (!response.ok) throw errorFromMessage(await readError(response));
     return result({ ok: true });
