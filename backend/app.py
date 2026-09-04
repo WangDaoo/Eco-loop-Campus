@@ -860,6 +860,25 @@ def save_admin_resource(resource, payload):
         connection.commit()
     return admin_row_to_json(config["columns"], row)
 
+
+TRANSACTION_ONLY_ADMIN_RESOURCES = {
+    "point-history",
+    "recycling-submissions",
+}
+
+
+def validate_admin_resource_write(resource, payload):
+    if resource in TRANSACTION_ONLY_ADMIN_RESOURCES:
+        raise HTTPException(
+            status_code=405,
+            detail="Dữ liệu nghiệp vụ này chỉ được cập nhật qua transaction endpoint",
+        )
+    if resource == "users" and any(field in payload for field in {"points", "status"}):
+        raise HTTPException(
+            status_code=400,
+            detail="Điểm và trạng thái tài khoản phải cập nhật qua endpoint chuyên dụng",
+        )
+
 def delete_admin_resource(resource, item_id):
     config = admin_resource_config(resource)
     database_url = require_database_url()
@@ -887,6 +906,7 @@ def admin_list_resource(resource: str, authorization: str | None = Header(defaul
 @app.post("/api/admin/{resource}")
 def admin_save_resource(resource: str, payload: dict, authorization: str | None = Header(default=None)):
     require_admin_user(authorization)
+    validate_admin_resource_write(resource, payload)
     return {"data": save_admin_resource(resource, payload)}
 
 @app.delete("/api/admin/{resource}/{item_id}")
