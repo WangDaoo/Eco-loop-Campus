@@ -208,10 +208,17 @@ def seed_operating_catalog(postgres_test_url, reset_test_database):
     return seed_catalog(postgres_test_url)
 
 
-@pytest.fixture
-def api_client(monkeypatch, postgres_test_url):
-    monkeypatch.setenv("DATABASE_URL", postgres_test_url)
+@pytest.fixture(scope="session")
+def api_client(postgres_test_url):
+    previous_database_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = postgres_test_url
     import app as backend_app
 
-    with TestClient(backend_app.app) as client:
-        yield client
+    try:
+        with TestClient(backend_app.app) as client:
+            yield client
+    finally:
+        if previous_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_database_url

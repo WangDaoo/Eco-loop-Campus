@@ -556,9 +556,12 @@ def current_user_from_authorization(authorization):
     if not payload or not payload.get("sub"):
         raise HTTPException(status_code=401, detail="Token đăng nhập không hợp lệ")
     try:
-        return get_user_account(payload["sub"])
+        user = get_user_account(payload["sub"])
     except AuthError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail)
+    if str(user.get("status") or "").strip().lower() != "active":
+        raise HTTPException(status_code=403, detail="Tài khoản không hoạt động")
+    return user
 
 def require_admin_user(authorization):
     user = current_user_from_authorization(authorization)
@@ -905,6 +908,22 @@ def mission_with_progress(mission, progress):
         "actionLabel": "Xong" if completed else mission.get("actionLabel", "Tiếp tục"),
     }
 
+def list_mobile_leaderboard_users():
+    columns = ["id", "name", "group", "points", "avatar_key", "avatar_url"]
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select id, name, "group", points, avatar_key, avatar_url
+                from users
+                where role = 'student' and status = 'active'
+                order by points desc, name asc
+                """
+            )
+            return [admin_row_to_json(columns, row) for row in cursor.fetchall()]
+
+
 def load_mobile_initial_data(user):
     progress_rows = list_rows_from_config(USER_MISSIONS_CONFIG, "user_id = %s", (user["id"],))
     progress_by_mission = {row["missionId"]: row for row in progress_rows}
@@ -912,20 +931,60 @@ def load_mobile_initial_data(user):
         mission_with_progress(mission, progress_by_mission.get(mission["id"]))
         for mission in list_rows_from_config(ADMIN_RESOURCES["missions"])
     ]
+    role = str(user.get("role") or "").strip().lower()
+    user_id = user["id"]
+
+    if role == "student":
+        predictions = list_rows_from_config(ADMIN_RESOURCES["predictions"], "user_id = %s", (user_id,))
+        submissions = list_rows_from_config(ADMIN_RESOURCES["recycling-submissions"], "user_id = %s", (user_id,))
+        point_transactions = list_rows_from_config(POINT_HISTORY_CONFIG, "user_id = %s", (user_id,))
+        feedbacks = list_rows_from_config(ADMIN_RESOURCES["feedback"], "user_id = %s", (user_id,))
+        reward_redemptions = list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"], "user_id = %s", (user_id,))
+        proof_images = list_rows_from_config(
+            ADMIN_RESOURCES["proof-images"],
+            "submission_id in (select id from recycling_submissions where user_id = %s)",
+            (user_id,),
+        )
+        qr_scan_logs = []
+    elif role == "volunteer":
+        predictions = []
+        submissions = list_rows_from_config(
+            ADMIN_RESOURCES["recycling-submissions"],
+            "status = 'CREATED' or verified_by = %s",
+            (user_id,),
+        )
+        point_transactions = []
+        feedbacks = []
+        reward_redemptions = []
+        proof_images = list_rows_from_config(
+            ADMIN_RESOURCES["proof-images"],
+            "submission_id in (select id from recycling_submissions where verified_by = %s)",
+            (user_id,),
+        )
+        qr_scan_logs = list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"], "scanned_by = %s", (user_id,))
+    else:
+        predictions = list_rows_from_config(ADMIN_RESOURCES["predictions"])
+        submissions = list_rows_from_config(ADMIN_RESOURCES["recycling-submissions"])
+        point_transactions = list_rows_from_config(POINT_HISTORY_CONFIG)
+        feedbacks = list_rows_from_config(ADMIN_RESOURCES["feedback"])
+        reward_redemptions = list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"])
+        proof_images = list_rows_from_config(ADMIN_RESOURCES["proof-images"])
+        qr_scan_logs = list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"])
+
     return {
-        "users": list_rows_from_config(ADMIN_RESOURCES["users"]),
+        "users": list_mobile_leaderboard_users() if role in {"student", "volunteer"} else list_rows_from_config(ADMIN_RESOURCES["users"]),
         "stations": list_rows_from_config(ADMIN_RESOURCES["bins"]),
         "wasteTypes": list_rows_from_config(ADMIN_RESOURCES["waste-types"]),
-        "predictions": list_rows_from_config(ADMIN_RESOURCES["predictions"]),
-        "submissions": list_rows_from_config(ADMIN_RESOURCES["recycling-submissions"]),
-        "pointTransactions": list_rows_from_config(POINT_HISTORY_CONFIG),
-        "feedbacks": list_rows_from_config(ADMIN_RESOURCES["feedback"]),
+        "predictions": predictions,
+        "submissions": submissions,
+        "pointTransactions": point_transactions,
+        "feedbacks": feedbacks,
         "missions": missions,
         "rewards": list_rows_from_config(ADMIN_RESOURCES["rewards"]),
         "rewardCategories": list_rows_from_config(ADMIN_RESOURCES["reward-categories"]),
-        "rewardRedemptions": list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"]),
-        "proofImages": list_rows_from_config(ADMIN_RESOURCES["proof-images"]),
-        "qrScanLogs": list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"]),
+        "rewardRedemptions": reward_redemptions,
+        "proofImages": proof_images,
+        "qrScanLogs": qr_scan_logs,
         "avatarOptions": list_avatar_presets(),
     }
 
