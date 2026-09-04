@@ -101,8 +101,8 @@ where id = 'main' and model_name like '%UTEHY%';
 """
 
 UPSERT_SQL = """
-insert into users (id, name, email, password_hash, role, "group", points, status, avatar_key, avatar_url, updated_at)
-values (%(id)s, %(name)s, %(email)s, %(password_hash)s, %(role)s, %(group)s, %(points)s, %(status)s, %(avatar_key)s, %(avatar_url)s, now())
+insert into users (id, name, email, password_hash, role, "group", points, status, student_code, faculty_code, phone_number, avatar_key, avatar_url, updated_at)
+values (%(id)s, %(name)s, %(email)s, %(password_hash)s, %(role)s, %(group)s, %(points)s, %(status)s, %(student_code)s, %(faculty_code)s, %(phone_number)s, %(avatar_key)s, %(avatar_url)s, now())
 on conflict (email) do update set
   id = excluded.id,
   name = excluded.name,
@@ -111,6 +111,9 @@ on conflict (email) do update set
   "group" = excluded."group",
   points = excluded.points,
   status = excluded.status,
+  student_code = excluded.student_code,
+  faculty_code = excluded.faculty_code,
+  phone_number = excluded.phone_number,
   avatar_key = excluded.avatar_key,
   avatar_url = excluded.avatar_url,
   updated_at = now();
@@ -238,7 +241,30 @@ def build_demo_dataset():
         {"id": "UTEHY_STU_10124518", "name": "Hoàng Minh Châu", "email": "10124518@utehy.edu.vn", "role": "student", "group": "12524W.2", "points": 88, "status": "active", "avatar_key": "UTEHY_AVATAR_RECYCLE"},
         {"id": "UTEHY_STU_10122509", "name": "Đào Gia Hưng", "email": "10122509@utehy.edu.vn", "role": "student", "group": "12522W.1", "points": 240, "status": "active", "avatar_key": "UTEHY_AVATAR_TECH"},
     ]
+    faculty_profiles = [
+        ("information-technology", "Khoa Công nghệ thông tin"),
+        ("mechanical-engineering", "Khoa Cơ khí"),
+        ("electrical-electronics", "Khoa Điện – Điện tử"),
+        ("chemical-environmental", "Khoa Công nghệ Hóa học và Môi trường"),
+        ("economics", "Khoa Kinh tế"),
+    ]
+    profile_index = 0
     for user in users:
+        if user["role"] in {"student", "volunteer"}:
+            faculty_code, faculty_name = faculty_profiles[profile_index % len(faculty_profiles)]
+            user["student_code"] = (
+                user["email"].split("@", 1)[0].upper()
+                if user["role"] == "student"
+                else f"HYUTEVOL{profile_index + 1:02d}"
+            )
+            user["faculty_code"] = faculty_code
+            user["phone_number"] = f"09010000{profile_index + 1:02d}"
+            user["group"] = faculty_name
+            profile_index += 1
+        else:
+            user["student_code"] = None
+            user["faculty_code"] = None
+            user["phone_number"] = None
         user["password_hash"] = _password_hash()
         user["avatar_url"] = avatar_urls.get(user["avatar_key"])
 
@@ -476,8 +502,8 @@ def seed_database(database_url=None, dry_run=False):
                 on conflict (key) do update set label = excluded.label, image_url = excluded.image_url, updated_at = now()
             """, dataset["avatar_presets"])
             _upsert_many(cursor, """
-                insert into users (id, name, email, password_hash, role, "group", points, status, avatar_key, avatar_url, updated_at)
-                values (%(id)s, %(name)s, %(email)s, %(password_hash)s, %(role)s, %(group)s, %(points)s, %(status)s, %(avatar_key)s, %(avatar_url)s, now())
+                insert into users (id, name, email, password_hash, role, "group", points, status, student_code, faculty_code, phone_number, avatar_key, avatar_url, updated_at)
+                values (%(id)s, %(name)s, %(email)s, %(password_hash)s, %(role)s, %(group)s, %(points)s, %(status)s, %(student_code)s, %(faculty_code)s, %(phone_number)s, %(avatar_key)s, %(avatar_url)s, now())
                 on conflict (email) do update set
                   id = excluded.id,
                   name = excluded.name,
@@ -486,6 +512,9 @@ def seed_database(database_url=None, dry_run=False):
                   "group" = excluded."group",
                   points = excluded.points,
                   status = excluded.status,
+                  student_code = excluded.student_code,
+                  faculty_code = excluded.faculty_code,
+                  phone_number = excluded.phone_number,
                   avatar_key = excluded.avatar_key,
                   avatar_url = excluded.avatar_url,
                   updated_at = now()

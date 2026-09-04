@@ -157,8 +157,20 @@ export function mapUserRow(row: Row): UserProfile {
   };
   const avatarKey = text(row.avatarKey ?? row.avatar_key).trim();
   const avatarUrl = text(row.avatarUrl ?? row.avatar_url).trim();
+  const studentCode = text(row.studentCode ?? row.student_code).trim();
+  const facultyCode = text(row.facultyCode ?? row.faculty_code).trim();
+  const facultyName = text(row.facultyName ?? row.faculty_name).trim();
+  const phoneNumber = text(row.phoneNumber ?? row.phone_number).trim();
   if (avatarKey) profile.avatarKey = avatarKey;
   if (avatarUrl) profile.avatarUrl = avatarUrl;
+  if (studentCode) profile.studentCode = studentCode;
+  if (facultyCode) profile.facultyCode = facultyCode;
+  if (facultyName) profile.facultyName = facultyName;
+  if (phoneNumber) profile.phoneNumber = phoneNumber;
+  const profileCompleted = row.profileCompleted ?? row.profile_completed;
+  const requiresProfileCompletion = row.requiresProfileCompletion ?? row.requires_profile_completion;
+  if (typeof profileCompleted === 'boolean') profile.profileCompleted = profileCompleted;
+  if (typeof requiresProfileCompletion === 'boolean') profile.requiresProfileCompletion = requiresProfileCompletion;
   return profile;
 }
 
@@ -172,7 +184,10 @@ export function toUserRow(user: UserProfile): Row {
     points: user.points,
     status: user.status,
     avatar_key: user.avatarKey ?? null,
-    avatar_url: user.avatarUrl ?? null
+    avatar_url: user.avatarUrl ?? null,
+    student_code: user.studentCode ?? null,
+    faculty_code: user.facultyCode ?? null,
+    phone_number: user.phoneNumber ?? null
   };
 }
 

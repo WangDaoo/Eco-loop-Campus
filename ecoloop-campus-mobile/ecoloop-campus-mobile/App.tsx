@@ -9,6 +9,7 @@ import { RootStackParamList, StudentTabParamList, VolunteerTabParamList } from '
 import SplashScreen from './src/screens/SplashScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import CompleteProfileScreen from './src/screens/CompleteProfileScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import MapScreen from './src/screens/MapScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
@@ -64,7 +65,7 @@ function MainTabs() {
 }
 
 function RootNavigator() {
-  const { isAuthenticated } = useAppContext();
+  const { isAuthenticated, currentUser } = useAppContext();
 
   return (
     <NavigationContainer>
@@ -76,6 +77,8 @@ function RootNavigator() {
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
           </>
+        ) : currentUser.requiresProfileCompletion ? (
+          <Stack.Screen name="CompleteProfile" component={CompleteProfileScreen} />
         ) : (
           <>
             <Stack.Screen name="MainTabs" component={MainTabs} />

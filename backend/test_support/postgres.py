@@ -32,6 +32,7 @@ TEST_TABLES = (
     "avatar_presets",
     "settings",
     "users",
+    "faculties",
 )
 
 SEED_IDS = {
@@ -49,6 +50,20 @@ SEED_IDS = {
     "reward_bottle": "TEST-REWARD-BOTTLE",
     "mission": "TEST-MISSION",
 }
+
+FACULTIES = (
+    ("mechanical-engineering", "Khoa Cơ khí", "active", 1),
+    ("automotive-engineering", "Khoa Cơ khí động lực", "active", 2),
+    ("electrical-electronics", "Khoa Điện – Điện tử", "active", 3),
+    ("information-technology", "Khoa Công nghệ thông tin", "active", 4),
+    ("garment-fashion", "Khoa Công nghệ May và Thời trang", "active", 5),
+    ("chemical-environmental", "Khoa Công nghệ Hóa học và Môi trường", "active", 6),
+    ("economics", "Khoa Kinh tế", "active", 7),
+    ("foreign-languages", "Khoa Ngoại ngữ", "active", 8),
+    ("technical-education", "Khoa Sư phạm Kỹ thuật", "active", 9),
+    ("basic-sciences", "Khoa Khoa học cơ bản", "active", 10),
+    ("political-theory", "Khoa Lý luận chính trị", "active", 11),
+)
 
 
 class UnsafeTestDatabaseError(RuntimeError):
@@ -108,12 +123,12 @@ def _test_password_hash(password="TestPass-2026!"):
 def seed_catalog(database_url):
     password_hash = _test_password_hash()
     users = (
-        (SEED_IDS["admin"], "Test Admin", "admin.test@hyute.edu.vn", password_hash, "admin", "Khoa Công nghệ thông tin", 0, "active"),
-        (SEED_IDS["student_a"], "Test Student A", "student.a@hyute.edu.vn", password_hash, "student", "Khoa Công nghệ thông tin", 1000, "active"),
-        (SEED_IDS["student_b"], "Test Student B", "student.b@hyute.edu.vn", password_hash, "student", "Khoa Cơ khí", 800, "active"),
-        (SEED_IDS["volunteer_a"], "Test Volunteer A", "volunteer.a@hyute.edu.vn", password_hash, "volunteer", "Khoa Điện – Điện tử", 0, "active"),
-        (SEED_IDS["volunteer_b"], "Test Volunteer B", "volunteer.b@hyute.edu.vn", password_hash, "volunteer", "Khoa Công nghệ Hóa học và Môi trường", 0, "active"),
-        (SEED_IDS["volunteer_pending"], "Test Volunteer Pending", "volunteer.pending@hyute.edu.vn", password_hash, "volunteer", "Khoa Kinh tế", 0, "pending"),
+        (SEED_IDS["admin"], "Test Admin", "admin.test@hyute.edu.vn", password_hash, "admin", "Khoa Công nghệ thông tin", 0, "active", None, None, None),
+        (SEED_IDS["student_a"], "Test Student A", "student.a@hyute.edu.vn", password_hash, "student", "Khoa Công nghệ thông tin", 1000, "active", "TESTSTA2026", "information-technology", "0900000001"),
+        (SEED_IDS["student_b"], "Test Student B", "student.b@hyute.edu.vn", password_hash, "student", "Khoa Cơ khí", 800, "active", "TESTSTB2026", "mechanical-engineering", "0900000002"),
+        (SEED_IDS["volunteer_a"], "Test Volunteer A", "volunteer.a@hyute.edu.vn", password_hash, "volunteer", "Khoa Điện – Điện tử", 0, "active", "TESTVOLA2026", "electrical-electronics", "0900000003"),
+        (SEED_IDS["volunteer_b"], "Test Volunteer B", "volunteer.b@hyute.edu.vn", password_hash, "volunteer", "Khoa Công nghệ Hóa học và Môi trường", 0, "active", "TESTVOLB2026", "chemical-environmental", "0900000004"),
+        (SEED_IDS["volunteer_pending"], "Test Volunteer Pending", "volunteer.pending@hyute.edu.vn", password_hash, "volunteer", "Khoa Kinh tế", 0, "pending", "TESTVOLP2026", "economics", "0900000005"),
     )
     bins = (
         (SEED_IDS["bin_a"], "Test Station A", "Tái chế", "Nhà A", "ECL-ST-TEST-BIN-A", "active", 20),
@@ -133,8 +148,17 @@ def seed_catalog(database_url):
         with connection.cursor() as cursor:
             cursor.executemany(
                 """
-                insert into users (id, name, email, password_hash, role, "group", points, status)
-                values (%s, %s, %s, %s, %s, %s, %s, %s)
+                insert into faculties (code, name, status, sort_order)
+                values (%s, %s, %s, %s)
+                """,
+                FACULTIES,
+            )
+            cursor.executemany(
+                """
+                insert into users
+                  (id, name, email, password_hash, role, "group", points, status,
+                   student_code, faculty_code, phone_number)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 users,
             )

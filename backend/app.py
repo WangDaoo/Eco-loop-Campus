@@ -69,7 +69,14 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     role: str = "student"
-    group: str | None = None
+    studentCode: str
+    facultyCode: str
+    phoneNumber: str
+
+class ProfileUpdateRequest(BaseModel):
+    studentCode: str
+    facultyCode: str
+    phoneNumber: str
 
 class LoginRequest(BaseModel):
     email: str
@@ -410,6 +417,27 @@ def validate_password(password):
     if len(str(password or "")) < 6:
         raise AuthError(400, "Mật khẩu phải có ít nhất 6 ký tự")
 
+def normalize_student_code(value):
+    student_code = str(value or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{6,20}", student_code):
+        raise AuthError(400, "INVALID_STUDENT_CODE")
+    return student_code
+
+def normalize_phone_number(value):
+    phone_number = re.sub(r"[\s.\-]", "", str(value or "").strip())
+    if not re.fullmatch(r"0\d{9}", phone_number):
+        raise AuthError(400, "INVALID_PHONE_NUMBER")
+    return phone_number
+
+def validate_school_email(email):
+    if not re.fullmatch(r"[A-Z0-9._%+\-]+@(utehy|hyute)\.edu\.vn", email, re.IGNORECASE):
+        raise AuthError(400, "INVALID_SCHOOL_EMAIL")
+
+def profile_is_complete(role, student_code, faculty_code, phone_number):
+    if role not in {"student", "volunteer"}:
+        return True
+    return all((student_code, faculty_code, phone_number))
+
 def to_user_profile(row):
     (
         user_id,
@@ -423,7 +451,12 @@ def to_user_profile(row):
         avatar_url,
         created_at,
         updated_at,
+        student_code,
+        faculty_code,
+        faculty_name,
+        phone_number,
     ) = row
+    profile_completed = profile_is_complete(role, student_code, faculty_code, phone_number)
     return {
         "id": user_id,
         "name": name,
@@ -436,18 +469,27 @@ def to_user_profile(row):
         "avatarUrl": avatar_url,
         "createdAt": created_at.isoformat() if created_at else None,
         "updatedAt": updated_at.isoformat() if updated_at else None,
+        "studentCode": student_code,
+        "facultyCode": faculty_code,
+        "facultyName": faculty_name,
+        "phoneNumber": phone_number,
+        "profileCompleted": profile_completed,
+        "requiresProfileCompletion": not profile_completed,
     }
 
 USER_SELECT = """
-select id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
-from users
+select u.id, u.name, u.email, u.role, u."group", u.points, u.status,
+       u.avatar_key, u.avatar_url, u.created_at, u.updated_at,
+       u.student_code, u.faculty_code, f.name, u.phone_number
+from users u
+left join faculties f on f.code = u.faculty_code
 """
 
 def get_user_account(user_id):
     database_url = require_database_url()
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
-            cursor.execute(USER_SELECT + " where id = %s", (user_id,))
+            cursor.execute(USER_SELECT + " where u.id = %s", (user_id,))
             row = cursor.fetchone()
     if not row:
         raise AuthError(404, "Không tìm thấy tài khoản")
@@ -458,11 +500,14 @@ def register_user_account(payload):
     email = clean_email(payload.get("email"))
     password = payload.get("password")
     role = str(payload.get("role") or "student").strip().lower()
-    group_name = str(payload.get("group") or "").strip() or None
     if not name or not email:
         raise AuthError(400, "Thiếu tên hoặc email")
     if role not in {"student", "volunteer"}:
-        raise AuthError(400, "Vai trò đăng ký không hợp lệ")
+        raise AuthError(400, "INVALID_REGISTRATION_ROLE")
+    validate_school_email(email)
+    student_code = normalize_student_code(payload.get("studentCode"))
+    faculty_code = str(payload.get("facultyCode") or "").strip().lower()
+    phone_number = normalize_phone_number(payload.get("phoneNumber"))
     validate_password(password)
 
     status = "pending" if role == "volunteer" else "active"
@@ -472,17 +517,29 @@ def register_user_account(payload):
             cursor.execute("select 1 from users where lower(email) = lower(%s)", (email,))
             if cursor.fetchone():
                 raise AuthError(409, "Email đã tồn tại")
+            cursor.execute("select name from faculties where code = %s and status = 'active'", (faculty_code,))
+            faculty = cursor.fetchone()
+            if not faculty:
+                raise AuthError(400, "INVALID_FACULTY")
+            cursor.execute("select 1 from users where lower(student_code) = lower(%s)", (student_code,))
+            if cursor.fetchone():
+                raise AuthError(409, "STUDENT_CODE_EXISTS")
+            user_id = str(uuid.uuid4())
             cursor.execute(
                 """
-                insert into users (id, name, email, password_hash, role, "group", status, points, updated_at)
-                values (%s, %s, %s, %s, %s, %s, %s, 0, now())
-                returning id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                insert into users (
+                    id, name, email, password_hash, role, "group", status, points,
+                    student_code, faculty_code, phone_number, updated_at
+                )
+                values (%s, %s, %s, %s, %s, %s, %s, 0, %s, %s, %s, now())
                 """,
-                (str(uuid.uuid4()), name, email, hash_password(password), role, group_name, status),
+                (
+                    user_id, name, email, hash_password(password), role, faculty[0], status,
+                    student_code, faculty_code, phone_number,
+                ),
             )
-            row = cursor.fetchone()
         connection.commit()
-    return to_user_profile(row)
+    return get_user_account(user_id)
 
 def login_user_account(email, password):
     database_url = require_database_url()
@@ -490,21 +547,21 @@ def login_user_account(email, password):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                select id, name, email, password_hash, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                select id, password_hash, status
                 from users
                 where lower(email) = lower(%s)
                 """,
                 (clean_email(email),),
             )
             row = cursor.fetchone()
-    if not row or not verify_password(password, row[3]):
+    if not row or not verify_password(password, row[1]):
         raise AuthError(401, "Email hoặc mật khẩu không đúng")
-    status = row[7]
+    status = row[2]
     if status == "pending":
         raise AuthError(403, "Tài khoản tình nguyện viên đang chờ duyệt")
     if status != "active":
         raise AuthError(403, "Tài khoản không được phép đăng nhập")
-    return to_user_profile((row[0], row[1], row[2], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11]))
+    return get_user_account(row[0])
 
 def change_user_password(user_id, current_password, new_password):
     validate_password(new_password)
@@ -535,7 +592,7 @@ def update_user_account_status(user_id, status):
                 """
                 update users set status = %s, updated_at = now()
                 where id = %s
-                returning id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                returning id
                 """,
                 (cleaned, user_id),
             )
@@ -543,7 +600,58 @@ def update_user_account_status(user_id, status):
         connection.commit()
     if not row:
         raise AuthError(404, "Không tìm thấy tài khoản")
-    return to_user_profile(row)
+    return get_user_account(row[0])
+
+def list_active_faculties():
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select code, name, status, sort_order
+                from faculties
+                where status = 'active'
+                order by sort_order asc
+                """
+            )
+            rows = cursor.fetchall()
+    return [
+        {"code": row[0], "name": row[1], "status": row[2], "sortOrder": row[3]}
+        for row in rows
+    ]
+
+def update_user_profile(user_id, payload):
+    student_code = normalize_student_code(payload.get("studentCode"))
+    faculty_code = str(payload.get("facultyCode") or "").strip().lower()
+    phone_number = normalize_phone_number(payload.get("phoneNumber"))
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select name from faculties where code = %s and status = 'active'", (faculty_code,))
+            faculty = cursor.fetchone()
+            if not faculty:
+                raise AuthError(400, "INVALID_FACULTY")
+            cursor.execute(
+                "select 1 from users where lower(student_code) = lower(%s) and id <> %s",
+                (student_code, user_id),
+            )
+            if cursor.fetchone():
+                raise AuthError(409, "STUDENT_CODE_EXISTS")
+            cursor.execute(
+                """
+                update users
+                set student_code = %s, faculty_code = %s, phone_number = %s,
+                    "group" = %s, updated_at = now()
+                where id = %s and role in ('student', 'volunteer')
+                returning id
+                """,
+                (student_code, faculty_code, phone_number, faculty[0], user_id),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    if not row:
+        raise AuthError(404, "Không tìm thấy tài khoản sinh viên")
+    return get_user_account(row[0])
 
 def raise_auth_error(error):
     if isinstance(error, AuthError):
@@ -574,14 +682,23 @@ def require_role_user(authorization, allowed_roles):
     user = current_user_from_authorization(authorization)
     if user.get("role") not in allowed_roles:
         raise HTTPException(status_code=403, detail="Tài khoản không có quyền thực hiện thao tác này")
+    if user.get("role") in {"student", "volunteer"} and user.get("requiresProfileCompletion"):
+        raise HTTPException(status_code=403, detail="PROFILE_INCOMPLETE")
     return user
 
 @app.post("/api/auth/register", status_code=201)
 def auth_register(request: RegisterRequest):
     try:
-        return {"user": register_user_account(request.dict())}
+        user = register_user_account(request.dict())
     except AuthError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail)
+    response = {"user": user}
+    if user["status"] == "active":
+        response.update({
+            "token": create_auth_token({"sub": user["id"], "role": user["role"]}),
+            "tokenType": "Bearer",
+        })
+    return response
 
 @app.post("/api/auth/login")
 def auth_login(request: LoginRequest):
@@ -595,6 +712,18 @@ def auth_login(request: LoginRequest):
 @app.get("/api/auth/me")
 def auth_me(authorization: str | None = Header(default=None)):
     return {"user": current_user_from_authorization(authorization)}
+
+@app.get("/api/catalog/faculties")
+def catalog_faculties():
+    return {"data": list_active_faculties()}
+
+@app.patch("/api/users/me/profile")
+def users_update_own_profile(request: ProfileUpdateRequest, authorization: str | None = Header(default=None)):
+    user = current_user_from_authorization(authorization)
+    try:
+        return {"user": update_user_profile(user["id"], request.dict())}
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
 
 @app.post("/api/auth/change-password")
 def auth_change_password(request: ChangePasswordRequest, authorization: str | None = Header(default=None)):
@@ -620,6 +749,10 @@ def users_update_status(user_id: str, request: UserStatusRequest, authorization:
 CAMEL_ALIASES = {
     "avatar_key": "avatarKey",
     "avatar_url": "avatarUrl",
+    "student_code": "studentCode",
+    "faculty_code": "facultyCode",
+    "phone_number": "phoneNumber",
+    "sort_order": "sortOrder",
     "bin_group": "binGroup",
     "qr_code": "qrCode",
     "map_x": "mapX",
@@ -680,8 +813,8 @@ CAMEL_ALIASES = {
 ADMIN_RESOURCES = {
     "users": {
         "table": "users",
-        "columns": ["id", "name", "email", "role", "group", "points", "status", "avatar_key", "avatar_url", "created_at", "updated_at"],
-        "writable": ["name", "email", "role", "group", "points", "status", "avatar_key", "avatar_url"],
+        "columns": ["id", "name", "email", "role", "group", "points", "status", "student_code", "faculty_code", "phone_number", "avatar_key", "avatar_url", "created_at", "updated_at"],
+        "writable": ["name", "email", "role", "group", "points", "status", "student_code", "faculty_code", "phone_number", "avatar_key", "avatar_url"],
         "order": "created_at desc",
     },
     "bins": {
@@ -1093,7 +1226,7 @@ def update_mobile_user_avatar(user_id, avatar_key):
                 update users
                 set avatar_key = %s, avatar_url = %s, updated_at = now()
                 where id = %s
-                returning id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                returning id
                 """,
                 (avatar[0], avatar[1], user_id),
             )
@@ -1101,7 +1234,7 @@ def update_mobile_user_avatar(user_id, avatar_key):
         connection.commit()
     if not row:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
-    return to_user_profile(row)
+    return get_user_account(row[0])
 
 def prediction_bin_group(class_name, fallback="Khác"):
     groups = {

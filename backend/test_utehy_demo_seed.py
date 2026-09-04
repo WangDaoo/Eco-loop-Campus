@@ -36,6 +36,11 @@ def test_utehy_demo_seed_uses_prefix_and_hashed_passwords():
         assert user["email"].endswith("@utehy.edu.vn")
         assert user["password_hash"] != TEMPORARY_PASSWORD
         assert app.verify_password(TEMPORARY_PASSWORD, user["password_hash"])
+        if user["role"] in {"student", "volunteer"}:
+            assert user["student_code"]
+            assert user["faculty_code"]
+            assert user["phone_number"]
+            assert user["group"].startswith("Khoa ")
 
 
 def test_utehy_demo_seed_cleanup_sql_targets_only_e2e_data():

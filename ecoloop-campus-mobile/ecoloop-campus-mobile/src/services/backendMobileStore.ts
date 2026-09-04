@@ -6,6 +6,7 @@ import {
   CreateProofImageInput,
   CreateSubmissionInput,
   EcoPointTransaction,
+  Faculty,
   Feedback,
   Mission,
   PredictionRecord,
@@ -16,6 +17,7 @@ import {
   Reward,
   RewardRedemption,
   SavePredictionInput,
+  StudentProfileInput,
   UserProfile,
   UserRole,
   WasteType,
@@ -77,7 +79,9 @@ export type BackendMobileStore = {
   checkSchema(): Promise<SchemaHealth>;
   getOperatingReadiness(data: Pick<MobileInitialData, 'stations' | 'wasteTypes'>): OperatingReadiness;
   signIn(role: UserRole, email: string, password: string): Promise<UserProfile>;
-  signUp(name: string, email: string, password: string, role: UserRole): Promise<UserProfile>;
+  signUp(name: string, email: string, password: string, role: UserRole, profile: StudentProfileInput): Promise<UserProfile>;
+  loadFaculties(): Promise<Faculty[]>;
+  updateProfile(profile: StudentProfileInput): Promise<UserProfile>;
   updatePassword(email: string, currentPassword: string, newPassword: string): Promise<void>;
   signOut(): Promise<void>;
   loadSessionProfile(): Promise<UserProfile | undefined>;
@@ -228,8 +232,27 @@ export function createBackendMobileStore({
       return user;
     },
 
-    async signUp(name, email, password, role) {
-      const payload = await request('/api/auth/register', { method: 'POST', body: { name: name.trim(), email: email.trim(), password, role } });
+    async signUp(name, email, password, role, profile) {
+      const payload = await request('/api/auth/register', {
+        method: 'POST',
+        body: { name: name.trim(), email: email.trim(), password, role, ...profile },
+      });
+      if (payload.token) await setToken(String(payload.token));
+      return normalizeUser(payload.user ?? {}, endpointBaseUrl);
+    },
+
+    async loadFaculties() {
+      const payload = await request('/api/catalog/faculties');
+      return (payload.data ?? []).map((row: Row) => ({
+        code: String(row.code ?? ''),
+        name: String(row.name ?? ''),
+        status: row.status === 'inactive' ? 'inactive' : 'active',
+        sortOrder: Number(row.sortOrder ?? row.sort_order ?? 0),
+      }));
+    },
+
+    async updateProfile(profile) {
+      const payload = await request('/api/users/me/profile', { method: 'PATCH', body: profile });
       return normalizeUser(payload.user ?? {}, endpointBaseUrl);
     },
 

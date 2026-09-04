@@ -143,6 +143,38 @@ create table if not exists rewards (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists faculties (
+  code text primary key,
+  name text not null unique,
+  status text not null default 'active' check (status in ('active', 'inactive')),
+  sort_order integer not null unique check (sort_order > 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into faculties (code, name, status, sort_order) values
+  ('mechanical-engineering', 'Khoa Cơ khí', 'active', 1),
+  ('automotive-engineering', 'Khoa Cơ khí động lực', 'active', 2),
+  ('electrical-electronics', 'Khoa Điện – Điện tử', 'active', 3),
+  ('information-technology', 'Khoa Công nghệ thông tin', 'active', 4),
+  ('garment-fashion', 'Khoa Công nghệ May và Thời trang', 'active', 5),
+  ('chemical-environmental', 'Khoa Công nghệ Hóa học và Môi trường', 'active', 6),
+  ('economics', 'Khoa Kinh tế', 'active', 7),
+  ('foreign-languages', 'Khoa Ngoại ngữ', 'active', 8),
+  ('technical-education', 'Khoa Sư phạm Kỹ thuật', 'active', 9),
+  ('basic-sciences', 'Khoa Khoa học cơ bản', 'active', 10),
+  ('political-theory', 'Khoa Lý luận chính trị', 'active', 11)
+on conflict (code) do update set
+  name = excluded.name,
+  sort_order = excluded.sort_order,
+  updated_at = now();
+
+alter table users add column if not exists student_code text;
+alter table users add column if not exists faculty_code text references faculties(code) on delete restrict;
+alter table users add column if not exists phone_number text;
+create unique index if not exists idx_users_student_code_ci
+  on users (lower(student_code)) where student_code is not null;
+
 alter table rewards add column if not exists stock integer check (stock is null or stock >= 0);
 
 alter table rewards add column if not exists category_id text references reward_categories(id) on delete set null;

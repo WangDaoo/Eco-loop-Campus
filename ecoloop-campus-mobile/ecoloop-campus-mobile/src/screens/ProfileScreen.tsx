@@ -85,6 +85,14 @@ export default function ProfileScreen({ navigation }: any) {
           <Text style={styles.summaryPoints}>{Number(user.points || 0).toLocaleString('vi-VN')} Ecopoint</Text>
         </View>
 
+        {user.role === 'student' || user.role === 'volunteer' ? (
+          <View style={styles.studentDetails}>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Mã sinh viên</Text><Text style={styles.detailValue}>{user.studentCode || 'Chưa cập nhật'}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Khoa</Text><Text style={styles.detailValue}>{user.facultyName || user.group || 'Chưa cập nhật'}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Số điện thoại</Text><Text style={styles.detailValue}>{user.phoneNumber || 'Chưa cập nhật'}</Text></View>
+          </View>
+        ) : null}
+
         <View style={styles.actionList}>
           <Pressable
             style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
@@ -250,6 +258,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
   },
+  studentDetails: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    marginBottom: 20,
+    gap: 4,
+  },
+  detailRow: {
+    paddingVertical: 10,
+  },
+  detailLabel: { color: 'rgba(44, 110, 110, 0.68)', fontSize: 12, fontWeight: '800' },
+  detailValue: { color: '#2c6e6e', fontSize: 15, fontWeight: '900', marginTop: 3 },
   actionList: {
     width: '100%',
     maxWidth: 400,

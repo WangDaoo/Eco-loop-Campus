@@ -7,6 +7,7 @@ import {
   CreateProofImageInput,
   CreateSubmissionInput,
   EcoPointTransaction,
+  Faculty,
   Feedback,
   Mission,
   PredictionRecord,
@@ -17,6 +18,7 @@ import {
   Reward,
   RewardRedemption,
   SavePredictionInput,
+  StudentProfileInput,
   UserProfile,
   WasteType
 } from '../types';
@@ -45,9 +47,11 @@ type AppContextValue = {
   qrScanLogs: QRScanLog[];
   feedbacks: Feedback[];
   avatarOptions: AvatarPreset[];
+  faculties: Faculty[];
   dutyStationId: string;
   signIn: (role: UserProfile['role'], email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string, role: UserProfile['role']) => Promise<UserProfile | undefined>;
+  signUp: (name: string, email: string, password: string, role: UserProfile['role'], profile: StudentProfileInput) => Promise<UserProfile | undefined>;
+  completeProfile: (profile: StudentProfileInput) => Promise<void>;
   signOut: () => Promise<void>;
   updateAvatar: (avatarKey: string) => Promise<void>;
   updatePassword: (email: string, currentPassword: string, newPassword: string) => Promise<void>;
@@ -107,8 +111,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [wasteTypes, setWasteTypes] = useState<WasteType[]>([]);
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [avatarOptions, setAvatarOptions] = useState<AvatarPreset[]>([]);
+  const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [dutyStationId, setDutyStationId] = useState('');
   const remoteStore = useMemo(() => createBackendMobileStore(), []);
+
+  useEffect(() => {
+    let active = true;
+    remoteStore.loadFaculties()
+      .then(items => {
+        if (active) setFaculties(items);
+      })
+      .catch(error => {
+        if (active) setSyncError(messageOf(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [remoteStore]);
 
   const failRemoteMutation = (error: unknown): never => {
     const message = messageOf(error);
@@ -175,7 +194,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         setCurrentUser(profile);
         setIsAuthenticated(true);
-        await hydrateRemoteData(profile);
+        if (!profile.requiresProfileCompletion) await hydrateRemoteData(profile);
       } catch (error) {
         if (active) setSyncError(messageOf(error));
       } finally {
@@ -189,7 +208,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [hydrateRemoteData, remoteStore]);
 
   useEffect(() => {
-    if (!isAuthenticated || !currentUser.id) return undefined;
+    if (!isAuthenticated || !currentUser.id || currentUser.requiresProfileCompletion) return undefined;
     const timer = setInterval(() => {
       void hydrateRemoteData(currentUser);
     }, POLL_INTERVAL_MS);
@@ -197,7 +216,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [currentUser, hydrateRemoteData, isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated || !currentUser.id) return undefined;
+    if (!isAuthenticated || !currentUser.id || currentUser.requiresProfileCompletion) return undefined;
     const subscription = AppState.addEventListener('change', nextState => {
       if (nextState === 'active') void hydrateRemoteData(currentUser);
     });
@@ -217,16 +236,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const user = await remoteStore.signIn(role, email, password);
       setCurrentUser(user);
       setIsAuthenticated(true);
-      await hydrateRemoteData(user);
+      if (!user.requiresProfileCompletion) await hydrateRemoteData(user);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const signUp = async (name: string, email: string, password: string, role: UserProfile['role']) => {
+  const signUp = async (name: string, email: string, password: string, role: UserProfile['role'], profile: StudentProfileInput) => {
     setIsLoading(true);
     try {
-      const user = await remoteStore.signUp(name, email, password, role);
+      const user = await remoteStore.signUp(name, email, password, role, profile);
       if (user.status !== 'active') {
         setCurrentUser(user);
         setIsAuthenticated(false);
@@ -407,6 +426,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const completeProfile = async (profile: StudentProfileInput) => {
+    setIsLoading(true);
+    try {
+      const nextUser = await remoteStore.updateProfile(profile);
+      setCurrentUser(nextUser);
+      setSyncError('');
+      await hydrateRemoteData(nextUser);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const requestRewardBatch = async (items: Array<{ rewardId: string; quantity: number }>) => {
     try {
       if (!isAuthenticated || !items.length) return false;
@@ -447,11 +478,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       rewards,
       feedbacks,
       avatarOptions,
+      faculties,
       rewardRedemptions,
       qrScanLogs,
       dutyStationId,
       signIn,
       signUp,
+      completeProfile,
       signOut,
       updateAvatar,
       updatePassword,
@@ -486,6 +519,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       rewards,
       feedbacks,
       avatarOptions,
+      faculties,
       rewardRedemptions,
       qrScanLogs,
       dutyStationId,

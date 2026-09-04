@@ -12,7 +12,7 @@ const ROLE_OPTIONS = [
   { value: "admin", label: "Admin", prefix: "AD", aliases: ["admin", "quản trị", "quan tri"] },
 ];
 
-const emptyForm = { name: "", email: "", role: "student", group: "CNTT K18" };
+const emptyForm = { name: "", email: "", role: "student", group: "Khoa Công nghệ thông tin" };
 
 function roleCode(value) {
   const normalized = String(value || "").trim().toLowerCase();
@@ -88,7 +88,7 @@ export default function UsersPage() {
 
   const filteredUsers = useMemo(() => users.filter(user => {
     const normalizedQuery = query.trim().toLowerCase();
-    const matchesQuery = `${user.id} ${user.name} ${user.email} ${user.group}`.toLowerCase().includes(normalizedQuery);
+    const matchesQuery = `${user.id} ${user.studentCode || ""} ${user.name} ${user.email} ${user.group} ${user.phoneNumber || ""}`.toLowerCase().includes(normalizedQuery);
     const matchesRole = role === "all" || roleCode(user.role) === role;
     const matchesStatus = status === "all" || statusCode(user.status) === status;
     const matchesGroup = groupFilter === "all" || groupCode(user.group) === groupCode(groupFilter);
@@ -172,8 +172,10 @@ export default function UsersPage() {
 
   const columns = [
     { key: "name", label: "Người dùng", render: row => <div><strong>{row.name}</strong><span className="eg-muted-block">{row.email}</span></div> },
+    { key: "studentCode", label: "Mã sinh viên", render: row => row.studentCode || "—" },
     { key: "role", label: "Vai trò", render: row => roleLabel(row.role) },
-    { key: "group", label: "Lớp / Khoa", render: row => groupLabel(row.group) || "Không rõ" },
+    { key: "group", label: "Khoa", render: row => groupLabel(row.group) || "Không rõ" },
+    { key: "phoneNumber", label: "Số điện thoại", render: row => row.phoneNumber || "—" },
     { key: "points", label: "Điểm", render: row => <strong>{pointValue(row.points)}</strong> },
     { key: "status", label: "Trạng thái", render: row => <StatusBadge status={statusCode(row.status)} /> },
     {
@@ -204,8 +206,8 @@ export default function UsersPage() {
     <div className="eg-page">
       <div className="eg-page-title">
         <div>
-          <span>Tài khoản và nhóm học tập</span>
-          <h1>Người dùng / Lớp / Khoa</h1>
+          <span>Tài khoản và khoa đào tạo</span>
+          <h1>Người dùng / Khoa</h1>
         </div>
       </div>
 
@@ -216,7 +218,7 @@ export default function UsersPage() {
         <div className="eg-filter-row">
           <label>
             Tìm kiếm
-            <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Mã, tên, email, lớp" />
+            <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Mã sinh viên, tên, email, số điện thoại" />
           </label>
           <label>
             Vai trò
@@ -236,7 +238,7 @@ export default function UsersPage() {
             </select>
           </label>
           <label>
-            Lớp / Khoa
+            Khoa
             <select value={groupFilter} onChange={event => setGroupFilter(event.target.value)}>
               <option value="all">Tất cả</option>
               {groupOptions.map(group => <option key={group} value={group}>{group}</option>)}
@@ -251,7 +253,7 @@ export default function UsersPage() {
           <label>Họ tên<input required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} /></label>
           <label>Email<input required type="email" value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} /></label>
           <label>Vai trò<select value={form.role} onChange={event => setForm({ ...form, role: event.target.value })}>{ROLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-          <label>Lớp / Khoa<input value={form.group} onChange={event => setForm({ ...form, group: event.target.value })} /></label>
+          <label>Khoa<input value={form.group} onChange={event => setForm({ ...form, group: event.target.value })} /></label>
           <button type="submit" className="eg-primary-btn">Lưu thay đổi</button>
         </form>
       </Modal>

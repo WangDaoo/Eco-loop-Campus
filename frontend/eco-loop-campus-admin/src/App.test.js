@@ -1170,8 +1170,8 @@ test("users page searches by user id", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
-  fireEvent.change(screen.getByPlaceholderText(/tên, email, lớp/i), { target: { value: "SV001" } });
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
+  fireEvent.change(screen.getByPlaceholderText(/mã sinh viên, tên, email, số điện thoại/i), { target: { value: "SV001" } });
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Nguyễn Minh Anh")).toBeInTheDocument();
@@ -1183,8 +1183,8 @@ test("users page trims search text before filtering", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
-  fireEvent.change(screen.getByPlaceholderText(/tên, email, lớp/i), { target: { value: "  SV001  " } });
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
+  fireEvent.change(screen.getByPlaceholderText(/mã sinh viên, tên, email, số điện thoại/i), { target: { value: "  SV001  " } });
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Nguyễn Minh Anh")).toBeInTheDocument();
@@ -1196,7 +1196,7 @@ test("users page filters Supabase role codes with Vietnamese role labels", async
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText(/vai trò/i), { target: { value: "admin" } });
 
   const usersTable = screen.getByRole("table");
@@ -1209,7 +1209,7 @@ test("users page does not expose manual user creation from admin", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /thêm người dùng/i })).not.toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: /thêm người dùng/i })).not.toBeInTheDocument();
 });
@@ -1219,7 +1219,7 @@ test("users page rejects blank required user fields when editing", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
 
@@ -1237,7 +1237,7 @@ test("users page rejects invalid email format when editing", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
 
@@ -1259,7 +1259,7 @@ test("users page filters users by account status", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText(/trạng thái/i), { target: { value: "locked" } });
 
   const usersTable = screen.getByRole("table");
@@ -1276,7 +1276,7 @@ test("users page lets admins approve or reject pending volunteer accounts", asyn
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText(/trạng thái/i), { target: { value: "pending" } });
 
   const usersTable = screen.getByRole("table");
@@ -1300,7 +1300,7 @@ test("users page normalizes dirty account status values", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText(/trạng thái/i), { target: { value: "locked" } });
 
   const usersTable = screen.getByRole("table");
@@ -1318,9 +1318,9 @@ test("users page filters users by class or faculty group", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   expect(await screen.findByText("Nguyễn Minh Anh")).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText(/lớp \/ khoa/i), { target: { value: "CNTT K19" } });
+  fireEvent.change(screen.getByLabelText(/khoa/i), { target: { value: "CNTT K19" } });
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Trần Hoàng Nam")).toBeInTheDocument();
@@ -1337,9 +1337,9 @@ test("users page normalizes dirty class or faculty group labels", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   expect(await screen.findByText("Sinh viên nhóm bẩn")).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText(/lớp \/ khoa/i), { target: { value: "CNTT K19" } });
+  fireEvent.change(screen.getByLabelText(/khoa/i), { target: { value: "CNTT K19" } });
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Sinh viên nhóm bẩn")).toBeInTheDocument();
@@ -1351,7 +1351,7 @@ test("users page only edits existing user profiles from the table", async () => 
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /thêm người dùng/i })).not.toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
@@ -1366,11 +1366,11 @@ test.skip("users create failure saves the new user to local fallback", async () 
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /thêm người dùng/i }));
   fireEvent.change(screen.getByLabelText(/họ tên/i), { target: { value: "Sinh viên fallback" } });
   fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "fallback@school.edu.vn" } });
-  fireEvent.change(screen.getAllByLabelText(/lớp \/ khoa/i).at(-1), { target: { value: "CNTT K21" } });
+  fireEvent.change(screen.getAllByLabelText(/khoa/i).at(-1), { target: { value: "CNTT K21" } });
 
   mockSupabaseFailure = true;
   fireEvent.click(screen.getByRole("button", { name: /lưu người dùng/i }));
@@ -1403,7 +1403,7 @@ test("users page edits user details without changing id points or status", async
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
 
@@ -1411,7 +1411,7 @@ test("users page edits user details without changing id points or status", async
   fireEvent.change(within(dialog).getByLabelText(/họ tên/i), { target: { value: "Nguyễn Minh Anh Eco" } });
   fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: "minhanh.eco@school.edu.vn" } });
   fireEvent.change(within(dialog).getByLabelText(/vai trò/i), { target: { value: "volunteer" } });
-  fireEvent.change(within(dialog).getByLabelText(/lớp \/ khoa/i), { target: { value: "CLB Môi trường" } });
+  fireEvent.change(within(dialog).getByLabelText(/khoa/i), { target: { value: "CLB Môi trường" } });
   fireEvent.click(within(dialog).getByRole("button", { name: /lưu thay đổi/i }));
 
   await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
@@ -1433,7 +1433,7 @@ test("users page rejects duplicate email when editing another user", async () =>
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
 
@@ -1454,7 +1454,7 @@ test("users page locks and unlocks a user account", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: "Khóa" }));
 
@@ -1472,7 +1472,7 @@ test("users page resets toast tone after a successful status update", async () =
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const initialStudentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(initialStudentRow).getByRole("button", { name: /sửa sv001/i }));
   const dialog = await screen.findByRole("dialog", { name: /sửa người dùng/i });
@@ -1502,7 +1502,7 @@ test.skip("users status update failure persists live users to local fallback", a
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const liveRow = (await screen.findByText("Sinh viên Supabase Live")).closest("tr");
   fireEvent.click(within(liveRow).getByRole("button", { name: "Khóa" }));
 
@@ -1526,7 +1526,7 @@ test("users page displays malformed point values as zero", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
 
   expect(within(studentRow).getByText("0")).toBeInTheDocument();
@@ -3207,7 +3207,7 @@ test("ecopoints page shows filters and leaderboards", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
-  expect(screen.getByLabelText(/lớp.?khoa/i)).toHaveValue("CNTT K18");
+  expect(screen.getByLabelText(/khoa/i)).toHaveValue("CNTT K18");
   expect(screen.getByRole("heading", { name: /bảng xếp hạng cá nhân/i })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /bảng xếp hạng lớp.?khoa/i })).toBeInTheDocument();
   expect((await screen.findAllByText("Nguyễn Minh Anh")).length).toBeGreaterThan(0);
@@ -3219,7 +3219,7 @@ test("ecopoints page normalizes dirty group and bin group query filters in the U
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
-  await waitFor(() => expect(screen.getByLabelText(/lớp.?khoa/i)).toHaveValue("CNTT K18"));
+  await waitFor(() => expect(screen.getByLabelText(/khoa/i)).toHaveValue("CNTT K18"));
   expect(screen.getByLabelText(/nhóm rác/i)).toHaveValue("Tái chế");
   expect(await screen.findByText("Duyệt Nhựa")).toBeInTheDocument();
 });

@@ -46,17 +46,66 @@ test('backend mobile store signs in through FastAPI auth and stores bearer token
 });
 
 test('backend mobile store keeps pending volunteer registrations outside app shell', async () => {
+  const calls: Array<{ url: string; init?: any }> = [];
   const store = createBackendMobileStore({
     baseUrl: 'https://api.example.test',
     storage: memoryStorage(),
-    fetcher: async () => response({
-      user: { id: 'volunteer-1', name: 'TN V', email: 'volunteer@school.edu.vn', role: 'volunteer', status: 'pending', points: 0 },
-    }, true, 201),
+    fetcher: async (url, init) => {
+      calls.push({ url, init });
+      return response({
+        user: { id: 'volunteer-1', name: 'TN V', email: 'volunteer@school.edu.vn', role: 'volunteer', status: 'pending', points: 0 },
+      }, true, 201);
+    },
   });
 
-  const user = await store.signUp('TN V', 'volunteer@school.edu.vn', '123456', 'volunteer');
+  const user = await store.signUp('TN V', 'volunteer@school.edu.vn', '123456', 'volunteer', {
+    studentCode: 'HYUTEVOL2026',
+    facultyCode: 'information-technology',
+    phoneNumber: '0912345678',
+  });
 
   assert.equal(user.status, 'pending');
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    name: 'TN V',
+    email: 'volunteer@school.edu.vn',
+    password: '123456',
+    role: 'volunteer',
+    studentCode: 'HYUTEVOL2026',
+    facultyCode: 'information-technology',
+    phoneNumber: '0912345678',
+  });
+});
+
+test('backend mobile store loads faculty catalog and completes a legacy profile', async () => {
+  const calls: Array<{ url: string; init?: any }> = [];
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    initialToken: 'token-1',
+    storage: memoryStorage(),
+    fetcher: async (url, init) => {
+      calls.push({ url, init });
+      if (url.endsWith('/api/catalog/faculties')) {
+        return response({ data: [{ code: 'information-technology', name: 'Khoa Công nghệ thông tin', status: 'active', sortOrder: 4 }] });
+      }
+      return response({ user: {
+        id: 'student-1', name: 'Sinh viên', email: 'student@hyute.edu.vn', role: 'student', status: 'active', points: 0,
+        studentCode: 'SV20260001', facultyCode: 'information-technology', facultyName: 'Khoa Công nghệ thông tin',
+        phoneNumber: '0912345678', profileCompleted: true, requiresProfileCompletion: false,
+      } });
+    },
+  });
+
+  const faculties = await store.loadFaculties();
+  const user = await store.updateProfile({
+    studentCode: 'SV20260001',
+    facultyCode: 'information-technology',
+    phoneNumber: '0912345678',
+  });
+
+  assert.equal(faculties[0].name, 'Khoa Công nghệ thông tin');
+  assert.equal(user.requiresProfileCompletion, false);
+  assert.equal(calls[1].url, 'https://api.example.test/api/users/me/profile');
+  assert.equal(calls[1].init.method, 'PATCH');
 });
 
 test('backend mobile store loads initial data from PostgreSQL backend payload', async () => {
