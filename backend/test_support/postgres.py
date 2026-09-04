@@ -20,6 +20,7 @@ TEST_TABLES = (
     "reward_redemption_items",
     "reward_redemption_batches",
     "reward_redemptions",
+    "mission_events",
     "user_missions",
     "recycling_submissions",
     "missions",

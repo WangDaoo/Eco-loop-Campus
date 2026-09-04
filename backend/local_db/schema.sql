@@ -171,6 +171,22 @@ create table if not exists user_missions (
   unique (user_id, mission_id)
 );
 
+alter table user_missions drop constraint if exists user_missions_status_check;
+alter table user_missions
+  add constraint user_missions_status_check
+  check (status in ('active', 'inactive', 'completed'));
+
+create table if not exists mission_events (
+  id text primary key default gen_random_uuid()::text,
+  user_id text not null references users(id) on delete cascade,
+  mission_id text not null references missions(id) on delete cascade,
+  event_type text not null,
+  event_id text not null,
+  increment integer not null default 1 check (increment > 0),
+  created_at timestamptz not null default now(),
+  unique (user_id, mission_id, event_type, event_id)
+);
+
 create table if not exists reward_redemptions (
   id text primary key,
   user_id text references users(id) on delete set null,
@@ -195,6 +211,9 @@ create table if not exists reward_redemption_batches (
   fulfilled_at timestamptz,
   updated_at timestamptz not null default now()
 );
+
+alter table missions add column if not exists event_type text not null default 'submission_confirmed';
+alter table missions add column if not exists filter_waste_type_id text references waste_types(id) on delete set null;
 
 create table if not exists reward_redemption_items (
   id text primary key,
@@ -457,6 +476,88 @@ create index if not exists idx_recycling_submissions_status on recycling_submiss
 create index if not exists idx_qr_scan_logs_qr_token on qr_scan_logs(qr_token);
 create index if not exists idx_point_history_submission_id on point_history(submission_id);
 create index if not exists idx_user_missions_user_id on user_missions(user_id);
+create index if not exists idx_mission_events_user_id on mission_events(user_id);
+
+create or replace function apply_mission_event(
+  p_user_id text,
+  p_event_type text,
+  p_event_id text,
+  p_waste_type_id text default null,
+  p_increment integer default 1
+)
+returns integer
+language plpgsql
+as $$
+declare
+  v_mission missions%rowtype;
+  v_progress user_missions%rowtype;
+  v_event_row_id text;
+  v_previous_completed boolean;
+  v_processed integer := 0;
+  v_increment integer := greatest(1, coalesce(p_increment, 1));
+begin
+  if nullif(trim(p_event_type), '') is null or nullif(trim(p_event_id), '') is null then
+    raise exception 'MISSION_EVENT_REQUIRED';
+  end if;
+
+  for v_mission in
+    select *
+    from missions
+    where status = 'active'
+      and event_type = p_event_type
+      and (filter_waste_type_id is null or filter_waste_type_id = p_waste_type_id)
+    order by id
+    for update
+  loop
+    v_event_row_id := null;
+    insert into mission_events (user_id, mission_id, event_type, event_id, increment)
+    values (p_user_id, v_mission.id, p_event_type, p_event_id, v_increment)
+    on conflict (user_id, mission_id, event_type, event_id) do nothing
+    returning id into v_event_row_id;
+    if v_event_row_id is null then
+      continue;
+    end if;
+
+    select completed into v_previous_completed
+    from user_missions
+    where user_id = p_user_id and mission_id = v_mission.id
+    for update;
+    if not found then
+      v_previous_completed := false;
+    end if;
+
+    insert into user_missions (user_id, mission_id, current, completed, status)
+    values (p_user_id, v_mission.id, least(v_mission.target, v_increment), false, 'active')
+    on conflict (user_id, mission_id) do update
+    set current = least(v_mission.target, user_missions.current + v_increment),
+        updated_at = now()
+    returning * into v_progress;
+
+    if v_progress.current >= v_mission.target and not v_previous_completed then
+      update user_missions
+      set completed = true, status = 'completed', updated_at = now()
+      where id = v_progress.id
+      returning * into v_progress;
+
+      if v_mission.reward_points > 0 then
+        update users
+        set points = points + v_mission.reward_points, updated_at = now()
+        where id = p_user_id;
+        insert into point_history
+          (user_id, class, bin_group, action, points, source, description,
+           status, reference_type, reference_id)
+        values
+          (p_user_id, 'mission', 'Nhiệm vụ', v_mission.title,
+           v_mission.reward_points, 'mission_reward',
+           'Hoàn thành nhiệm vụ ' || v_mission.title, 'confirmed',
+           'mission', v_mission.id);
+      end if;
+    end if;
+    v_processed := v_processed + 1;
+  end loop;
+  return v_processed;
+end;
+$$;
 
 create or replace function create_recycling_submission(
   p_user_id text,
@@ -604,6 +705,14 @@ begin
     'qr_submission',
     'Cộng điểm từ giao dịch QR',
     coalesce(p_note, '')
+  );
+
+  perform apply_mission_event(
+    v_submission.user_id,
+    'submission_confirmed',
+    p_submission_id,
+    v_submission.waste_type_id,
+    greatest(1, ceil(coalesce(p_actual_quantity, v_submission.quantity))::integer)
   );
 
   return jsonb_build_object('status', 'POINT_CONFIRMED', 'points', v_points, 'submissionId', p_submission_id);

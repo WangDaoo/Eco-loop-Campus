@@ -39,16 +39,17 @@ test('AppProvider exposes mobile AI predictions with backend polling updates', (
   assert.match(source, /setAiPredictions\(state\.predictions\)/);
   assert.doesNotMatch(source, /predictions:\s*payload\s*=>/);
 });
-test('AppProvider auto-progresses missions after real submission and feedback actions', () => {
-  assert.match(source, /missionIdsForSubmission/);
-  assert.match(source, /missionIdsForFeedback/);
-  assert.match(source, /advanceMissionsForAction/);
+test('AppProvider leaves mission progress to verified backend events', () => {
+  assert.doesNotMatch(source, /missionIdsForSubmission/);
+  assert.doesNotMatch(source, /missionIdsForFeedback/);
+  assert.doesNotMatch(source, /advanceMissionsForAction/);
+  assert.doesNotMatch(source, /remoteStore\.advanceMission/);
+  assert.match(source, /remoteStore\.submitFeedback[\s\S]*hydrateRemoteData\(currentUser\)/);
 });
 
 test('AppProvider does not create offline Ecopoint rewards when missions complete', () => {
-  assert.match(source, /createMissionRewardPoint/);
-  assert.match(source, /mission\.rewardPoints/);
-  assert.match(source, /source: 'mission_reward'/);
+  assert.doesNotMatch(source, /createMissionRewardPoint/);
+  assert.doesNotMatch(source, /source: 'mission_reward'/);
   assert.doesNotMatch(source, /setPointTransactions\(items => \[rewardPoint, \.\.\.items\]\)/);
 });
 

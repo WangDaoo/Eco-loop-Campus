@@ -20,7 +20,6 @@ import {
   UserProfile,
   WasteType
 } from '../types';
-import { missionIdsForFeedback, missionIdsForSubmission } from '../services/missionAutomation';
 import { createBackendMobileStore } from '../services/backendMobileStore';
 import { resolveWalletPoints } from '../services/walletPoints';
 import { resolveRemoteHydrationState } from './remoteHydration';
@@ -54,7 +53,6 @@ type AppContextValue = {
   updatePassword: (email: string, currentPassword: string, newPassword: string) => Promise<void>;
   requestReward: (reward: Reward) => Promise<boolean>;
   requestRewardBatch: (items: Array<{ rewardId: string; quantity: number }>) => Promise<boolean>;
-  handleMissionAction: (id: string) => void;
   createSubmission: (input: CreateSubmissionInput) => Promise<RecyclingSubmission>;
   saveAiPrediction: (input: SavePredictionInput) => Promise<PredictionRecord | undefined>;
   submitFeedback: (input: CreateFeedbackInput) => Promise<Feedback | undefined>;
@@ -89,19 +87,6 @@ function applyProofImage(items: RecyclingSubmission[], proofImage: ProofImage | 
   const targetId = proofImage?.submissionId ?? submissionId;
   if (!targetId) return items;
   return items.map(item => (item.id === targetId ? { ...item, proofImage } : item));
-}
-
-function createMissionRewardPoint(userId: string, mission: Mission): EcoPointTransaction {
-  return {
-    id: `mission-point-${mission.id}-${Date.now()}`,
-    userId,
-    points: mission.rewardPoints,
-    type: 'earn',
-    status: 'confirmed',
-    description: `Hoàn thành nhiệm vụ ${mission.title}`,
-    source: 'mission_reward',
-    createdAt: new Date()
-  };
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -318,27 +303,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleMissionAction = async (id: string) => {
-    try {
-      if (!isAuthenticated) return;
-      const mission = await remoteStore.advanceMission(currentUser.id, id, missions);
-      setMissions(items => [mission, ...items.filter(item => item.id !== mission.id)]);
-      void createMissionRewardPoint(currentUser.id, mission);
-    } catch (error) {
-      failRemoteMutation(error);
-    }
-  };
-
-  const advanceMissionsForAction = async (missionIds: string[]) => {
-    try {
-      for (const missionId of missionIds) {
-        await handleMissionAction(missionId);
-      }
-    } catch (error) {
-      setSyncError(messageOf(error));
-    }
-  };
-
   const saveAiPrediction = async (input: SavePredictionInput) => {
     try {
       if (!isAuthenticated) return undefined;
@@ -355,7 +319,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để tạo QR giao dịch.');
       const submission = await remoteStore.createSubmission(currentUser.id, input, wasteTypes);
       setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
-      await advanceMissionsForAction(missionIdsForSubmission(submission));
       return submission;
     } catch (error) {
       return failRemoteMutation(error);
@@ -369,7 +332,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để gửi phản hồi.');
       const feedback = await remoteStore.submitFeedback(currentUser, input);
       setFeedbacks(items => [feedback, ...items.filter(item => item.id !== feedback.id)]);
-      await advanceMissionsForAction(missionIdsForFeedback());
+      await hydrateRemoteData(currentUser);
       return feedback;
     } catch (error) {
       return failRemoteMutation(error);
@@ -494,7 +457,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updatePassword,
       requestReward,
       requestRewardBatch,
-      handleMissionAction,
       createSubmission,
       saveAiPrediction,
       submitFeedback,

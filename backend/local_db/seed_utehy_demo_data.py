@@ -176,14 +176,16 @@ on conflict (id) do update set
   color = excluded.color,
   updated_at = now();
 
-insert into missions (id, title, description, target, reward_points, action_label, status, updated_at)
-values (%(id)s, %(title)s, %(description)s, %(target)s, %(reward_points)s, %(action_label)s, %(status)s, now())
+insert into missions (id, title, description, target, reward_points, action_label, event_type, filter_waste_type_id, status, updated_at)
+values (%(id)s, %(title)s, %(description)s, %(target)s, %(reward_points)s, %(action_label)s, %(event_type)s, %(filter_waste_type_id)s, %(status)s, now())
 on conflict (id) do update set
   title = excluded.title,
   description = excluded.description,
   target = excluded.target,
   reward_points = excluded.reward_points,
   action_label = excluded.action_label,
+  event_type = excluded.event_type,
+  filter_waste_type_id = excluded.filter_waste_type_id,
   status = excluded.status,
   updated_at = now();
 
@@ -288,11 +290,11 @@ def build_demo_dataset():
     ]
 
     missions = [
-        {"id": "UTEHY_MISSION_WEEKLY_5", "title": "Tuần xanh 5 lượt", "description": "Hoàn thành 5 lượt tái chế hợp lệ trong tuần.", "target": 5, "reward_points": 40, "action_label": "Quét QR", "status": "active"},
-        {"id": "UTEHY_MISSION_PLASTIC_10", "title": "Gom 10 chai nhựa", "description": "Tái chế 10 chai nhựa PET tại các trạm trong trường.", "target": 10, "reward_points": 35, "action_label": "Nộp chai", "status": "active"},
-        {"id": "UTEHY_MISSION_FEEDBACK", "title": "Góp ý trạm rác", "description": "Gửi 1 phản hồi có ích về tình trạng trạm thu gom.", "target": 1, "reward_points": 15, "action_label": "Gửi phản hồi", "status": "active"},
-        {"id": "UTEHY_MISSION_PAPER_3KG", "title": "Giấy sạch 3kg", "description": "Thu gom 3kg giấy khô từ lớp học hoặc văn phòng.", "target": 3, "reward_points": 45, "action_label": "Ghi nhận", "status": "active"},
-        {"id": "UTEHY_MISSION_AI_CHECK", "title": "Kiểm tra AI phân loại", "description": "Dùng chức năng AI để kiểm tra 3 ảnh rác tái chế.", "target": 3, "reward_points": 20, "action_label": "Kiểm tra AI", "status": "active"},
+        {"id": "UTEHY_MISSION_WEEKLY_5", "title": "Tuần xanh 5 lượt", "description": "Hoàn thành 5 lượt tái chế hợp lệ trong tuần.", "target": 5, "reward_points": 40, "action_label": "Quét QR", "event_type": "submission_confirmed", "filter_waste_type_id": None, "status": "active"},
+        {"id": "UTEHY_MISSION_PLASTIC_10", "title": "Gom 10 chai nhựa", "description": "Tái chế 10 chai nhựa PET tại các trạm trong trường.", "target": 10, "reward_points": 35, "action_label": "Nộp chai", "event_type": "submission_confirmed", "filter_waste_type_id": "UTEHY_WASTE_PLASTIC_BOTTLE", "status": "active"},
+        {"id": "UTEHY_MISSION_FEEDBACK", "title": "Góp ý trạm rác", "description": "Gửi 1 phản hồi có ích về tình trạng trạm thu gom.", "target": 1, "reward_points": 15, "action_label": "Gửi phản hồi", "event_type": "feedback_created", "filter_waste_type_id": None, "status": "active"},
+        {"id": "UTEHY_MISSION_PAPER_3KG", "title": "Giấy sạch 3kg", "description": "Thu gom 3kg giấy khô từ lớp học hoặc văn phòng.", "target": 3, "reward_points": 45, "action_label": "Ghi nhận", "event_type": "submission_confirmed", "filter_waste_type_id": "UTEHY_WASTE_PAPER", "status": "active"},
+        {"id": "UTEHY_MISSION_AI_CHECK", "title": "Kiểm tra AI phân loại", "description": "Dùng chức năng AI để kiểm tra 3 ảnh rác tái chế.", "target": 3, "reward_points": 20, "action_label": "Kiểm tra AI", "event_type": "prediction_created", "filter_waste_type_id": None, "status": "active"},
     ]
 
     predictions = [
@@ -533,9 +535,9 @@ def seed_database(database_url=None, dry_run=False):
                 on conflict (id) do update set title = excluded.title, description = excluded.description, category_id = excluded.category_id, category_name = excluded.category_name, cost_points = excluded.cost_points, status = excluded.status, color = excluded.color, updated_at = now()
             """, dataset["rewards"])
             _upsert_many(cursor, """
-                insert into missions (id, title, description, target, reward_points, action_label, status, updated_at)
-                values (%(id)s, %(title)s, %(description)s, %(target)s, %(reward_points)s, %(action_label)s, %(status)s, now())
-                on conflict (id) do update set title = excluded.title, description = excluded.description, target = excluded.target, reward_points = excluded.reward_points, action_label = excluded.action_label, status = excluded.status, updated_at = now()
+                insert into missions (id, title, description, target, reward_points, action_label, event_type, filter_waste_type_id, status, updated_at)
+                values (%(id)s, %(title)s, %(description)s, %(target)s, %(reward_points)s, %(action_label)s, %(event_type)s, %(filter_waste_type_id)s, %(status)s, now())
+                on conflict (id) do update set title = excluded.title, description = excluded.description, target = excluded.target, reward_points = excluded.reward_points, action_label = excluded.action_label, event_type = excluded.event_type, filter_waste_type_id = excluded.filter_waste_type_id, status = excluded.status, updated_at = now()
             """, dataset["missions"])
             _upsert_many(cursor, """
                 insert into predictions (id, class, confidence, source, timestamp, bin_group, status, user_id, bin_id, image_name, image_url, thumbnail_url)

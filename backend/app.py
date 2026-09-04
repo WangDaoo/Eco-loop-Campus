@@ -630,6 +630,8 @@ CAMEL_ALIASES = {
     "category_name": "categoryName",
     "reward_points": "rewardPoints",
     "action_label": "actionLabel",
+    "event_type": "eventType",
+    "filter_waste_type_id": "filterWasteTypeId",
     "class_keys": "classKeys",
     "model_name": "modelName",
     "class_count": "classCount",
@@ -696,8 +698,8 @@ ADMIN_RESOURCES = {
     },
     "missions": {
         "table": "missions",
-        "columns": ["id", "title", "description", "target", "reward_points", "action_label", "status", "created_at", "updated_at"],
-        "writable": ["id", "title", "description", "target", "reward_points", "action_label", "status"],
+        "columns": ["id", "title", "description", "target", "reward_points", "action_label", "event_type", "filter_waste_type_id", "status", "created_at", "updated_at"],
+        "writable": ["id", "title", "description", "target", "reward_points", "action_label", "event_type", "filter_waste_type_id", "status"],
         "order": "created_at desc",
     },
     "point-rules": {
@@ -1099,6 +1101,10 @@ def save_mobile_feedback(user, payload):
                 (str(uuid.uuid4()), user["id"], user.get("name") or "Eco-loop user", category, message, payload.get("stationId") or payload.get("binId")),
             )
             row = cursor.fetchone()
+            cursor.execute(
+                "select apply_mission_event(%s, 'feedback_created', %s, null, 1)",
+                (user["id"], row[0]),
+            )
         connection.commit()
     return admin_row_to_json(ADMIN_RESOURCES["feedback"]["columns"], row)
 
@@ -1147,59 +1153,10 @@ def update_feedback_status(feedback_id, payload, admin_id):
     return admin_row_to_json(ADMIN_RESOURCES["feedback"]["columns"], row)
 
 def advance_mobile_mission(user_id, mission_id):
-    database_url = require_database_url()
-    with psycopg.connect(database_url) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                select id, title, description, target, reward_points, action_label, status, created_at, updated_at
-                from missions
-                where id = %s and status = 'active'
-                for update
-                """,
-                (mission_id,),
-            )
-            mission_row = cursor.fetchone()
-            if not mission_row:
-                raise HTTPException(status_code=404, detail="Không tìm thấy nhiệm vụ")
-            mission = admin_row_to_json(ADMIN_RESOURCES["missions"]["columns"], mission_row)
-            target = max(1, int(mission["target"] or 1))
-            cursor.execute(
-                """
-                insert into user_missions (user_id, mission_id, current, completed, status)
-                values (%s, %s, 1, false, 'active')
-                on conflict (user_id, mission_id) do update
-                set current = least(%s, user_missions.current + 1),
-                    updated_at = now()
-                returning id, user_id, mission_id, current, completed, status, updated_at
-                """,
-                (user_id, mission_id, target),
-            )
-            progress = admin_row_to_json(USER_MISSIONS_CONFIG["columns"], cursor.fetchone())
-            completed_now = int(progress["current"] or 0) >= target
-            if completed_now and not progress.get("completed"):
-                cursor.execute(
-                    """
-                    update user_missions
-                    set completed = true, status = 'completed', updated_at = now()
-                    where user_id = %s and mission_id = %s
-                    returning id, user_id, mission_id, current, completed, status, updated_at
-                    """,
-                    (user_id, mission_id),
-                )
-                progress = admin_row_to_json(USER_MISSIONS_CONFIG["columns"], cursor.fetchone())
-                reward_points = int(mission.get("rewardPoints") or 0)
-                if reward_points > 0:
-                    cursor.execute("update users set points = points + %s, updated_at = now() where id = %s", (reward_points, user_id))
-                    cursor.execute(
-                        """
-                        insert into point_history (user_id, class, bin_group, action, points, source, description, status)
-                        values (%s, 'mission', 'Nhiệm vụ', %s, %s, 'mission_reward', %s, 'confirmed')
-                        """,
-                        (user_id, mission.get("title") or "Hoàn thành nhiệm vụ", reward_points, f"Hoàn thành nhiệm vụ {mission.get('title') or mission_id}"),
-                    )
-        connection.commit()
-    return mission_with_progress(mission, progress)
+    raise HTTPException(
+        status_code=405,
+        detail="Tiến độ nhiệm vụ chỉ được cập nhật từ sự kiện nghiệp vụ backend",
+    )
 
 def request_mobile_reward(user_id, reward_id):
     database_url = require_database_url()

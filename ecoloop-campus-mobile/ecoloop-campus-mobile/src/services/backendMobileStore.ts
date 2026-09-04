@@ -97,7 +97,6 @@ export type BackendMobileStore = {
   requestReview(submissionId: string, volunteerId: string, volunteerNote?: string): Promise<RecyclingSubmission>;
   attachProofImage(submissionId: string, input: CreateProofImageInput): Promise<ProofImage>;
   submitFeedback(user: UserProfile, input: CreateFeedbackInput): Promise<Feedback>;
-  advanceMission(userId: string, missionId: string, missions: Mission[]): Promise<Mission>;
   requestReward(userId: string, reward: Reward): Promise<RewardRedemption>;
   requestRewardBatch(userId: string, items: Array<{ rewardId: string; quantity: number }>, rewards: Reward[]): Promise<RewardRedemption>;
   scanRewardRedemption(qrToken: string): Promise<{ id: string; status: string; pointsSpent: number; studentId: string }>;
@@ -350,11 +349,6 @@ export function createBackendMobileStore({
     async submitFeedback(_user, input) {
       const payload = await request('/api/mobile/feedback', { method: 'POST', body: input });
       return mapFeedbackRow(payload.data ?? {});
-    },
-
-    async advanceMission(_userId, missionId, missions) {
-      const payload = await request(`/api/mobile/missions/${encodeURIComponent(missionId)}/advance`, { method: 'POST', body: {} });
-      return payload.data ? mapMissionRow(payload.data) : missions.find(item => item.id === missionId)!;
     },
 
     async requestReward(_userId, reward) {
