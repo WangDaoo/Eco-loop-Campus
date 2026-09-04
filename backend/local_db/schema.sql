@@ -212,6 +212,19 @@ create table if not exists reward_redemption_batches (
   updated_at timestamptz not null default now()
 );
 
+update reward_redemption_batches
+set status = 'fulfilled',
+    fulfilled_at = coalesce(fulfilled_at, scanned_at, updated_at)
+where status = 'scanned';
+update reward_redemption_batches
+set status = 'cancelled'
+where status = 'rejected';
+alter table reward_redemption_batches
+  drop constraint if exists reward_redemption_batches_status_check;
+alter table reward_redemption_batches
+  add constraint reward_redemption_batches_status_check
+  check (status in ('pending', 'fulfilled', 'expired', 'cancelled'));
+
 alter table missions add column if not exists event_type text not null default 'submission_confirmed';
 alter table missions add column if not exists filter_waste_type_id text references waste_types(id) on delete set null;
 
@@ -231,9 +244,10 @@ alter table reward_redemption_items
   add constraint reward_redemption_items_reward_id_fkey
   foreign key (reward_id) references rewards(id) on delete set null;
 
-create unique index if not exists idx_active_reward_batch_per_student
+drop index if exists idx_active_reward_batch_per_student;
+create unique index idx_active_reward_batch_per_student
   on reward_redemption_batches(student_id)
-  where status in ('pending', 'scanned');
+  where status = 'pending';
 create index if not exists idx_reward_batch_qr_token on reward_redemption_batches(qr_token);
 
 create table if not exists recycling_submissions (
@@ -328,7 +342,7 @@ begin
   where student_id = p_student_id
     and status = 'pending'
     and expires_at <= now();
-  if exists (select 1 from reward_redemption_batches where student_id = p_student_id and status in ('pending', 'scanned') and expires_at > now()) then
+  if exists (select 1 from reward_redemption_batches where student_id = p_student_id and status = 'pending' and expires_at > now()) then
     raise exception 'ACTIVE_REWARD_BATCH_EXISTS';
   end if;
 
@@ -342,7 +356,17 @@ begin
     if exists (select 1 from reward_redemption_items where batch_id = v_batch_id and reward_id = v_reward.id) then
       raise exception 'DUPLICATE_REWARD_ITEM';
     end if;
-    v_quantity := greatest(1, coalesce((v_item->>'quantity')::integer, 0));
+    if not (v_item ? 'quantity')
+       or jsonb_typeof(v_item->'quantity') <> 'number'
+       or (v_item->>'quantity') !~ '^[1-9][0-9]*$' then
+      raise exception 'INVALID_REWARD_QUANTITY';
+    end if;
+    begin
+      v_quantity := (v_item->>'quantity')::integer;
+    exception when invalid_text_representation or numeric_value_out_of_range then
+      raise exception 'INVALID_REWARD_QUANTITY';
+    end;
+    if v_quantity <= 0 then raise exception 'INVALID_REWARD_QUANTITY'; end if;
     if v_reward.stock is not null and v_reward.stock < v_quantity then raise exception 'REWARD_OUT_OF_STOCK'; end if;
     insert into reward_redemption_items (id, batch_id, reward_id, reward_title, quantity, points_each, points_total)
     values (gen_random_uuid()::text, v_batch_id, v_reward.id, v_reward.title, v_quantity, v_reward.cost_points, v_quantity * v_reward.cost_points);
@@ -376,20 +400,33 @@ begin
   if v_batch.status <> 'pending' then raise exception 'REWARD_BATCH_ALREADY_PROCESSED'; end if;
   if v_batch.expires_at <= now() then
     update reward_redemption_batches set status = 'expired', updated_at = now() where id = v_batch.id;
-    raise exception 'REWARD_BATCH_EXPIRED';
+    return jsonb_build_object('error', 'REWARD_BATCH_EXPIRED', 'id', v_batch.id, 'status', 'expired');
   end if;
   select points into v_balance from users where id = v_batch.student_id for update;
-  for v_item in select * from reward_redemption_items where batch_id = v_batch.id loop
+  for v_item in
+    select i.*, r.stock as current_stock
+    from reward_redemption_items i
+    join rewards r on r.id = i.reward_id
+    where i.batch_id = v_batch.id
+    order by i.reward_id
+    for update of r
+  loop
+    if v_item.current_stock is not null and v_item.current_stock < v_item.quantity then
+      raise exception 'REWARD_OUT_OF_STOCK';
+    end if;
     v_points := v_points + v_item.points_total;
   end loop;
   if v_balance < v_points then raise exception 'INSUFFICIENT_POINTS'; end if;
   update users set points = points - v_points, updated_at = now() where id = v_batch.student_id;
   update rewards r set stock = case when r.stock is null then null else r.stock - i.quantity end, updated_at = now()
   from reward_redemption_items i where i.batch_id = v_batch.id and r.id = i.reward_id;
-  update reward_redemption_batches set status = 'scanned', scanned_by = p_actor_id, scanned_at = now(), updated_at = now() where id = v_batch.id;
+  update reward_redemption_batches
+  set status = 'fulfilled', scanned_by = p_actor_id, scanned_at = now(),
+      fulfilled_at = now(), updated_at = now()
+  where id = v_batch.id;
   insert into point_history (user_id, class, bin_group, action, points, source, description, status, reference_type, reference_id)
   values (v_batch.student_id, 'reward', 'Đổi thưởng', 'Đổi phần thưởng', -v_points, 'reward_redemption', 'Trừ điểm khi xác nhận đổi thưởng', 'confirmed', 'reward_redemption_batch', v_batch.id);
-  return jsonb_build_object('id', v_batch.id, 'status', 'scanned', 'pointsSpent', v_points, 'studentId', v_batch.student_id);
+  return jsonb_build_object('id', v_batch.id, 'status', 'fulfilled', 'pointsSpent', v_points, 'studentId', v_batch.student_id);
 end;
 $$;
 
@@ -409,20 +446,20 @@ begin
   if not exists (select 1 from users where id = p_actor_id and role = 'admin' and status = 'active') then
     raise exception 'INVALID_REDEMPTION_ACTOR';
   end if;
-  if p_status not in ('fulfilled', 'rejected', 'cancelled') then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
+  if p_status <> 'cancelled' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
   select * into v_batch from reward_redemption_batches where id = p_batch_id for update;
   if not found then raise exception 'REWARD_BATCH_NOT_FOUND'; end if;
-  if p_status = 'fulfilled' then
-    if v_batch.status <> 'scanned' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
-    update reward_redemption_batches set status = 'fulfilled', fulfilled_at = now(), updated_at = now() where id = p_batch_id;
-  else
-    if v_batch.status <> 'scanned' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
-    select coalesce(sum(points_total), 0)::integer into v_points from reward_redemption_items where batch_id = p_batch_id;
-    update users set points = points + v_points, updated_at = now() where id = v_batch.student_id;
-    insert into point_history (user_id, class, bin_group, action, points, source, description, admin_note, status, reference_type, reference_id)
-    values (v_batch.student_id, 'reward', 'Đổi thưởng', 'Hoàn điểm đổi thưởng', v_points, 'reward_refund', 'Hoàn điểm do hủy/từ chối đổi thưởng', p_note, 'confirmed', 'reward_redemption_batch', p_batch_id);
-    update reward_redemption_batches set status = p_status, updated_at = now() where id = p_batch_id;
-  end if;
+  if v_batch.status <> 'fulfilled' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
+  select coalesce(sum(points_total), 0)::integer into v_points from reward_redemption_items where batch_id = p_batch_id;
+  update users set points = points + v_points, updated_at = now() where id = v_batch.student_id;
+  update rewards r
+  set stock = case when r.stock is null then null else r.stock + i.quantity end,
+      updated_at = now()
+  from reward_redemption_items i
+  where i.batch_id = p_batch_id and r.id = i.reward_id;
+  insert into point_history (user_id, class, bin_group, action, points, source, description, admin_note, status, reference_type, reference_id)
+  values (v_batch.student_id, 'reward', 'Đổi thưởng', 'Hoàn điểm đổi thưởng', v_points, 'reward_refund', 'Hoàn điểm và tồn kho do hủy đổi thưởng', p_note, 'confirmed', 'reward_redemption_batch', p_batch_id);
+  update reward_redemption_batches set status = 'cancelled', updated_at = now() where id = p_batch_id;
   return jsonb_build_object('id', p_batch_id, 'status', p_status, 'studentId', v_batch.student_id);
 end;
 $$;

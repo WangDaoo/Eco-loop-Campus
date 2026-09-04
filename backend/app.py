@@ -639,6 +639,11 @@ CAMEL_ALIASES = {
     "bin_id": "binId",
     "reward_id": "rewardId",
     "reward_label": "rewardLabel",
+    "reward_title": "rewardTitle",
+    "student_id": "studentId",
+    "batch_id": "batchId",
+    "points_each": "pointsEach",
+    "points_total": "pointsTotal",
     "waste_type_id": "wasteTypeId",
     "qr_token": "qrToken",
     "qr_signature": "qrSignature",
@@ -660,6 +665,8 @@ CAMEL_ALIASES = {
     "scanned_by": "scannedBy",
     "station_id": "stationId",
     "scanned_at": "scannedAt",
+    "expires_at": "expiresAt",
+    "fulfilled_at": "fulfilledAt",
     "image_hash": "imageHash",
     "captured_at": "capturedAt",
     "verification_code": "verificationCode",
@@ -812,18 +819,74 @@ def list_rows_from_config(config, where_sql="", params=()):
             cursor.execute(query, params)
             return [admin_row_to_json(config["columns"], row) for row in cursor.fetchall()]
 
+REWARD_BATCH_ITEM_COLUMNS = [
+    "id",
+    "batch_id",
+    "reward_id",
+    "reward_title",
+    "quantity",
+    "points_each",
+    "points_total",
+]
+
+
+def attach_reward_batch_items(rows):
+    if not rows:
+        return rows
+    batch_ids = [row["id"] for row in rows]
+    placeholders = ", ".join(["%s"] * len(batch_ids))
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"select {', '.join(REWARD_BATCH_ITEM_COLUMNS)} "
+                f"from reward_redemption_items where batch_id in ({placeholders}) order by id",
+                batch_ids,
+            )
+            item_rows = cursor.fetchall()
+    items = [
+        admin_row_to_json(REWARD_BATCH_ITEM_COLUMNS, row) for row in item_rows
+    ]
+    for row in rows:
+        row["items"] = [item for item in items if item["batchId"] == row["id"]]
+    return rows
+
+
+def mobile_reward_batch_row(batch):
+    items = batch.get("items") or []
+    total_points = sum(int(item.get("pointsTotal") or 0) for item in items)
+    return {
+        **batch,
+        "userId": batch.get("studentId"),
+        "rewardId": items[0].get("rewardId") if items else "",
+        "rewardLabel": ", ".join(
+            f"{item.get('rewardTitle') or item.get('rewardId')} x{item.get('quantity')}"
+            for item in items
+        ),
+        "costPoints": total_points,
+        "totalPoints": total_points,
+        "requestedAt": batch.get("createdAt"),
+        "reviewedAt": batch.get("fulfilledAt"),
+    }
+
+
+def list_mobile_reward_batches(user_id=None):
+    if user_id:
+        rows = list_rows_from_config(
+            ADMIN_RESOURCES["reward-redemption-batches"],
+            "student_id = %s",
+            (user_id,),
+        )
+    else:
+        rows = list_rows_from_config(ADMIN_RESOURCES["reward-redemption-batches"])
+    return [mobile_reward_batch_row(row) for row in attach_reward_batch_items(rows)]
+
+
 def list_admin_resource(resource):
     config = admin_resource_config(resource)
     rows = list_rows_from_config(config)
     if resource == "reward-redemption-batches":
-        database_url = require_database_url()
-        with psycopg.connect(database_url) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("select id, batch_id, reward_id, reward_title, quantity, points_each, points_total from reward_redemption_items order by id")
-                item_rows = cursor.fetchall()
-        items = [admin_row_to_json(["id", "batch_id", "reward_id", "reward_title", "quantity", "points_each", "points_total"], row) for row in item_rows]
-        for row in rows:
-            row["items"] = [item for item in items if item["batch_id"] == row["id"]]
+        attach_reward_batch_items(rows)
     return rows
 
 def generated_admin_id(payload):
@@ -962,6 +1025,7 @@ def load_mobile_initial_data(user):
         point_transactions = list_rows_from_config(POINT_HISTORY_CONFIG, "user_id = %s", (user_id,))
         feedbacks = list_rows_from_config(ADMIN_RESOURCES["feedback"], "user_id = %s", (user_id,))
         reward_redemptions = list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"], "user_id = %s", (user_id,))
+        reward_redemptions.extend(list_mobile_reward_batches(user_id))
         proof_images = list_rows_from_config(
             ADMIN_RESOURCES["proof-images"],
             "submission_id in (select id from recycling_submissions where user_id = %s)",
@@ -990,6 +1054,7 @@ def load_mobile_initial_data(user):
         point_transactions = list_rows_from_config(POINT_HISTORY_CONFIG)
         feedbacks = list_rows_from_config(ADMIN_RESOURCES["feedback"])
         reward_redemptions = list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"])
+        reward_redemptions.extend(list_mobile_reward_batches())
         proof_images = list_rows_from_config(ADMIN_RESOURCES["proof-images"])
         qr_scan_logs = list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"])
 
@@ -1263,6 +1328,7 @@ POSTGRES_BUSINESS_ERROR_STATUS = {
     "REWARD_OUT_OF_STOCK": 409,
     "DUPLICATE_REWARD_ITEM": 400,
     "REWARD_TOTAL_INVALID": 400,
+    "INVALID_REWARD_QUANTITY": 400,
     "INVALID_REDEMPTION_ACTOR": 403,
     "REWARD_BATCH_NOT_FOUND": 404,
     "REWARD_BATCH_ALREADY_PROCESSED": 409,
@@ -1330,7 +1396,11 @@ def create_reward_redemption_batch_account(user_id, payload):
     return normalize_json_result(row[0])
 
 def scan_reward_redemption_batch_account(actor_id, payload):
-    return call_postgres_json_function("scan_reward_redemption_batch", [qr_payload_value(payload, "qrToken", "qr_token"), actor_id])
+    result = call_postgres_json_function("scan_reward_redemption_batch", [qr_payload_value(payload, "qrToken", "qr_token"), actor_id])
+    error_code = result.get("error") if isinstance(result, dict) else None
+    if error_code in POSTGRES_BUSINESS_ERROR_STATUS:
+        raise HTTPException(status_code=POSTGRES_BUSINESS_ERROR_STATUS[error_code], detail=error_code)
+    return result
 
 def finalize_reward_redemption_batch_account(actor_id, batch_id, payload):
     return call_postgres_json_function("finalize_reward_redemption_batch", [batch_id, actor_id, payload.get("status"), payload.get("note", "")])

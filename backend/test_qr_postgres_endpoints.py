@@ -74,9 +74,10 @@ def test_student_creates_reward_batch_without_spending_points(client, monkeypatc
 
 def test_volunteer_scans_reward_batch(client, monkeypatch):
     patch_current_user(monkeypatch, "volunteer")
-    monkeypatch.setattr(app, "scan_reward_redemption_batch_account", lambda actor_id, payload: {"status": "scanned", "pointsSpent": 20}, raising=False)
+    monkeypatch.setattr(app, "scan_reward_redemption_batch_account", lambda actor_id, payload: {"status": "fulfilled", "pointsSpent": 20}, raising=False)
     response = client.post("/api/mobile/reward-redemptions/scan", json={"qrToken": "ECL-REWARD-1"}, headers=bearer("volunteer"))
     assert response.status_code == 200
+    assert response.json()["data"]["status"] == "fulfilled"
     assert response.json()["data"]["pointsSpent"] == 20
 
 def test_only_admin_can_finalize_reward_batch(client, monkeypatch):

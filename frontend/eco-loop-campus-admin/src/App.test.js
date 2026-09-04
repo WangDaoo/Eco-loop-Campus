@@ -3331,8 +3331,8 @@ test("ecopoints page treats malformed user points as zero for reward requests", 
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ user_id: "SV-BAD-POINTS" }));
 });
 
-test("admins can reject scanned reward batches", async () => {
-  mockTables.reward_redemption_batches = [{ id: "BATCH-REJECT", student_id: "SV001", status: "scanned", created_at: "2026-07-07T10:00:00.000Z" }];
+test("admins can cancel fulfilled reward batches", async () => {
+  mockTables.reward_redemption_batches = [{ id: "BATCH-REJECT", student_id: "SV001", status: "fulfilled", created_at: "2026-07-07T10:00:00.000Z" }];
   mockTables.reward_redemption_items = [{ id: "ITEM-REJECT", batch_id: "BATCH-REJECT", reward_title: "Voucher căn tin 100 điểm", quantity: 1 }];
   window.location.hash = "#/ecopoints";
 
@@ -3340,10 +3340,10 @@ test("admins can reject scanned reward batches", async () => {
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
   expect((await screen.findAllByText("BATCH-REJECT")).length).toBeGreaterThan(0);
-  fireEvent.click(screen.getByRole("button", { name: /hoàn điểm/i }));
+  fireEvent.click(screen.getByRole("button", { name: /hoàn tác đổi thưởng/i }));
 
   await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/reward-redemption-batches/BATCH-REJECT/finalize"), expect.objectContaining({ method: "POST" })));
-  expect(await screen.findByText("rejected")).toBeInTheDocument();
+  expect(await screen.findByText("cancelled")).toBeInTheDocument();
 });
 
 test("ecopoints page keeps reward actions for dirty pending statuses", async () => {

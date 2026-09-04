@@ -609,9 +609,9 @@ export default function EcoPointsPage() {
         <div className="eg-card-head"><h2>Mã QR đổi thưởng</h2></div>
         {rewardBatches.length === 0 ? <p>Chưa có mã QR đổi thưởng.</p> : rewardBatches.map(batch => (
           <div key={batch.id} className="eg-list-row">
-            <div><strong>{batch.id}</strong><p>{batch.items?.map(item => `${item.reward_title} x${item.quantity}`).join(', ')}</p></div>
+            <div><strong>{batch.id}</strong><p>{batch.items?.map(item => `${item.rewardTitle} x${item.quantity}`).join(', ')}</p></div>
             <div><StatusBadge group={batch.status}>{batch.status}</StatusBadge><div className="eg-button-row">
-              {batch.status === "scanned" && <><button type="button" className="eg-primary-btn" onClick={() => void finalizeBatch(batch, "fulfilled")}>Hoàn tất</button><button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "rejected")}>Hoàn điểm</button></>}
+              {batch.status === "fulfilled" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "cancelled")}>Hoàn tác đổi thưởng</button>}
             </div></div>
           </div>
         ))}

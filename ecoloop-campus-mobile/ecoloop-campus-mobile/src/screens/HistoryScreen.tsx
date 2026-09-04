@@ -24,6 +24,16 @@ function pointStatusText(status: 'pending' | 'confirmed' | 'rejected') {
 
 function redemptionStatusText(status: RewardRedemption['status']) {
   switch (status) {
+    case 'pending':
+      return 'Chờ quét mã';
+    case 'fulfilled':
+      return 'Đã nhận quà';
+    case 'cancelled':
+      return 'Đã hoàn tác';
+    case 'expired':
+      return 'Mã đã hết hạn';
+    case 'scanned':
+      return 'Đã quét mã';
     case 'approved':
       return 'Đã duyệt';
     case 'delivered':
