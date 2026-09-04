@@ -26,6 +26,8 @@ test("admin surfaces malformed JSON and offline backend errors", async () => {
   await expect(__testing.requestBackend("/bad-json")).rejects.toThrow(/503/);
   global.fetch = jest.fn().mockRejectedValue(new Error("network offline"));
   await expect(__testing.requestBackend("/offline")).rejects.toThrow("network offline");
+  global.fetch = jest.fn().mockRejectedValue(new Error("request timeout"));
+  await expect(__testing.requestBackend("/timeout")).rejects.toThrow("request timeout");
 });
 
 test("admin submission review uses state-machine endpoints, not generic resource writes", () => {

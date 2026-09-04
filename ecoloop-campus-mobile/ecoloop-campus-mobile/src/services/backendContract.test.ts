@@ -47,4 +47,10 @@ test('mobile backend errors never become local success', async () => {
     storage: { getItem: async () => null, setItem: async () => {}, removeItem: async () => {} },
   });
   await assert.rejects(() => offline.checkSchema(), /network offline/);
+
+  const timedOut = createBackendMobileStore({
+    fetcher: async () => { throw new Error('request timeout'); },
+    storage: { getItem: async () => null, setItem: async () => {}, removeItem: async () => {} },
+  });
+  await assert.rejects(() => timedOut.checkSchema(), /request timeout/);
 });

@@ -15,6 +15,7 @@ build/
 dist/
 coverage/
 .cache/
+.test-results/
 
 .env
 .env.*
