@@ -10,6 +10,7 @@ import time
 import uuid
 import re
 import unicodedata
+from decimal import Decimal, InvalidOperation
 from urllib.parse import unquote, urlparse
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -642,6 +643,8 @@ CAMEL_ALIASES = {
     "reward_title": "rewardTitle",
     "student_id": "studentId",
     "batch_id": "batchId",
+    "submission_id": "submissionId",
+    "mission_id": "missionId",
     "points_each": "pointsEach",
     "points_total": "pointsTotal",
     "waste_type_id": "wasteTypeId",
@@ -670,6 +673,8 @@ CAMEL_ALIASES = {
     "image_hash": "imageHash",
     "captured_at": "capturedAt",
     "verification_code": "verificationCode",
+    "reference_type": "referenceType",
+    "reference_id": "referenceId",
 }
 
 ADMIN_RESOURCES = {
@@ -1319,6 +1324,8 @@ POSTGRES_BUSINESS_ERROR_STATUS = {
     "INVALID_STUDENT": 400,
     "INVALID_VOLUNTEER": 400,
     "INVALID_QUANTITY": 400,
+    "INVALID_STATION": 400,
+    "INVALID_WASTE_TYPE": 400,
     "INVALID_SUBMISSION_STATUS": 400,
     "SUBMISSION_ACTOR_MISMATCH": 403,
     "PROOF_IMAGE_REQUIRED": 400,
@@ -1368,14 +1375,27 @@ def qr_payload_value(payload, camel_name, snake_name=None, default=None):
         return payload[snake_name]
     return default
 
+
+def require_positive_decimal(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        raise HTTPException(status_code=400, detail="INVALID_QUANTITY")
+    try:
+        quantity = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise HTTPException(status_code=400, detail="INVALID_QUANTITY")
+    if not quantity.is_finite() or quantity <= 0:
+        raise HTTPException(status_code=400, detail="INVALID_QUANTITY")
+    return quantity
+
 def create_recycling_submission_account(user_id, payload):
+    quantity = require_positive_decimal(qr_payload_value(payload, "quantity"))
     return call_postgres_json_function(
         "create_recycling_submission",
         [
             user_id,
             qr_payload_value(payload, "binId", "bin_id"),
             qr_payload_value(payload, "wasteTypeId", "waste_type_id"),
-            qr_payload_value(payload, "quantity"),
+            quantity,
         ],
     )
 
@@ -1419,12 +1439,15 @@ def scan_recycling_submission_account(volunteer_id, payload):
     )
 
 def confirm_recycling_submission_account(volunteer_id, submission_id, payload):
+    actual_quantity = require_positive_decimal(
+        qr_payload_value(payload, "actualQuantity", "actual_quantity")
+    )
     return call_postgres_json_function(
         "confirm_recycling_submission",
         [
             submission_id,
             volunteer_id,
-            qr_payload_value(payload, "actualQuantity", "actual_quantity"),
+            actual_quantity,
             qr_payload_value(payload, "note", default=""),
         ],
     )

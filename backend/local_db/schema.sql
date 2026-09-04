@@ -613,7 +613,7 @@ begin
   if not exists (select 1 from users where id = p_user_id and role = 'student' and status = 'active') then
     raise exception 'INVALID_STUDENT';
   end if;
-  if not exists (select 1 from bins where id = p_bin_id and status in ('active', 'full')) then
+  if not exists (select 1 from bins where id = p_bin_id and status = 'active') then
     raise exception 'INVALID_STATION';
   end if;
   select * into v_waste from waste_types where id = p_waste_type_id and status = 'active';
@@ -709,6 +709,9 @@ begin
   end if;
   if v_submission.status <> 'QR_SCANNED' then
     raise exception 'INVALID_SUBMISSION_STATUS';
+  end if;
+  if p_actual_quantity is null or p_actual_quantity <= 0 then
+    raise exception 'INVALID_QUANTITY';
   end if;
   if v_actor_role <> 'admin' and v_submission.verified_by is distinct from p_volunteer_id then
     raise exception 'SUBMISSION_ACTOR_MISMATCH';

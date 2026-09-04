@@ -162,7 +162,7 @@ def test_student_initial_data_contains_only_owned_private_rows(
     payload = response.json()
     assert ids(payload["predictions"]) == {"PRIVATE-PRED-A"}
     assert ids(payload["submissions"]) == {"PRIVATE-SUB-A"}
-    assert ids(payload["pointTransactions"], "reference_id") == {"PRIVATE-SUB-A"}
+    assert ids(payload["pointTransactions"], "referenceId") == {"PRIVATE-SUB-A"}
     assert ids(payload["feedbacks"]) == {"PRIVATE-FEEDBACK-A"}
     assert ids(payload["rewardRedemptions"]) == {"PRIVATE-REWARD-A"}
     assert ids(payload["proofImages"]) == {"PRIVATE-PROOF-A"}
