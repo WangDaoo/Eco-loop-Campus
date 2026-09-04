@@ -1909,26 +1909,29 @@ test("bins page creates a station and exposes QR scan link", async () => {
   expect(await screen.findByRole("heading", { name: /thùng rác \/ trạm qr/i })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /thêm trạm/i }));
 
-  fireEvent.change(screen.getByLabelText(/mã thùng/i), { target: { value: "BIN-B2-ORGANIC" } });
-  fireEvent.change(screen.getByLabelText(/tên trạm/i), { target: { value: "Thùng hữu cơ B2" } });
-  fireEvent.change(screen.getByLabelText(/nhóm rác/i), { target: { value: "Hữu cơ" } });
-  fireEvent.change(screen.getByLabelText(/vị trí/i), { target: { value: "Nhà B2 - tầng 1" } });
-  fireEvent.change(screen.getByLabelText(/tòa nhà/i), { target: { value: "B2" } });
-  fireEvent.change(screen.getByLabelText(/tầng/i), { target: { value: "1" } });
-  expect(screen.getByLabelText(/mã qr chuẩn/i)).toHaveValue("ECL-ST-BIN-B2-ORGANIC");
-  fireEvent.change(screen.getByLabelText(/sức chứa/i), { target: { value: "21" } });
-  fireEvent.change(screen.getByLabelText(/tọa độ x/i), { target: { value: "44" } });
-  fireEvent.change(screen.getByLabelText(/tọa độ y/i), { target: { value: "68" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu trạm/i }));
+  const dialog = await screen.findByRole("dialog", { name: /thêm trạm qr/i });
+  const generatedId = within(dialog).getByLabelText("Mã thùng tự sinh").value;
+  expect(generatedId).toBe("ECL-BIN-0001");
+  expect(within(dialog).getByLabelText("Mã thùng tự sinh")).toHaveAttribute("readonly");
+  fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "Thùng hữu cơ B2" } });
+  fireEvent.change(within(dialog).getByLabelText(/nhóm rác/i), { target: { value: "Hữu cơ" } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "Nhà B2 - tầng 1" } });
+  fireEvent.change(within(dialog).getByLabelText(/tòa nhà/i), { target: { value: "B2" } });
+  fireEvent.change(within(dialog).getByLabelText(/tầng/i), { target: { value: "1" } });
+  expect(within(dialog).getByLabelText("Mã QR tự sinh")).toHaveValue(`ECL-ST-${generatedId}`);
+  fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "21" } });
+  fireEvent.change(within(dialog).getByLabelText(/tọa độ x/i), { target: { value: "44" } });
+  fireEvent.change(within(dialog).getByLabelText(/tọa độ y/i), { target: { value: "68" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
   await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
-    id: "BIN-B2-ORGANIC",
+    id: generatedId,
     name: "Thùng hữu cơ B2",
     bin_group: "Hữu cơ",
     location: "Nhà B2 - tầng 1",
     building: "B2",
     floor: "1",
-    qr_code: "ECL-ST-BIN-B2-ORGANIC",
+    qr_code: `ECL-ST-${generatedId}`,
     status: "active",
     capacity: 21,
     map_x: 44,
@@ -1936,31 +1939,36 @@ test("bins page creates a station and exposes QR scan link", async () => {
   })));
 
   expect(await screen.findByText("Thùng hữu cơ B2")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /qr bin-b2-organic/i }));
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`qr ${generatedId}`, "i") }));
 
   expect(await screen.findByText(/eco-loop-station/)).toBeInTheDocument();
-  expect(screen.getAllByText(/ECL-ST-BIN-B2-ORGANIC/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(new RegExp(`ECL-ST-${generatedId}`)).length).toBeGreaterThan(0);
 });
 
-test("bins page rejects duplicate station ids when creating a station", async () => {
+test("bins page generates the next station id without reusing existing sequences", async () => {
+  mockTables.bins = [
+    ...mockTables.bins,
+    { id: "ECL-BIN-0002", name: "Trạm mã 2", bin_group: "Tái chế", location: "Nhà A", building: "A", floor: "1", qr_code: "ECL-ST-ECL-BIN-0002", status: "active", capacity: 20, map_x: 20, map_y: 20 },
+    { id: "ECL-BIN-0007", name: "Trạm mã 7", bin_group: "Tái chế", location: "Nhà B", building: "B", floor: "1", qr_code: "ECL-ST-ECL-BIN-0007", status: "active", capacity: 30, map_x: 30, map_y: 30 },
+  ];
   window.location.hash = "#/bins";
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /thùng rác \/ trạm qr/i })).toBeInTheDocument();
+  expect(await screen.findByText("Trạm mã 7")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /thêm trạm/i }));
 
-  fireEvent.change(screen.getByLabelText(/mã thùng/i), { target: { value: "BIN-A1-RECYCLE" } });
-  fireEvent.change(screen.getByLabelText(/tên trạm/i), { target: { value: "Trạm ghi đè không hợp lệ" } });
-  fireEvent.change(screen.getByLabelText(/vị trí/i), { target: { value: "Nhà A1 - vị trí trùng" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu trạm/i }));
+  const dialog = await screen.findByRole("dialog", { name: /thêm trạm qr/i });
+  expect(within(dialog).getByLabelText("Mã thùng tự sinh")).toHaveValue("ECL-BIN-0008");
+  expect(within(dialog).getByLabelText("Mã QR tự sinh")).toHaveValue("ECL-ST-ECL-BIN-0008");
+  fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "Trạm mã 8" } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "Nhà C" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
-  expect(await screen.findByText(/mã thùng đã tồn tại/i)).toBeInTheDocument();
-  expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({
-    id: "BIN-A1-RECYCLE",
-    name: "Trạm ghi đè không hợp lệ",
-  }));
-  expect(screen.getByRole("dialog", { name: /thêm trạm qr/i })).toBeInTheDocument();
-  expect(screen.getByText("Thùng tái chế A1")).toBeInTheDocument();
+  await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
+    id: "ECL-BIN-0008",
+    qr_code: "ECL-ST-ECL-BIN-0008",
+  })));
 });
 test("bins page rejects blank required station fields after trimming", async () => {
   window.location.hash = "#/bins";
@@ -1970,12 +1978,11 @@ test("bins page rejects blank required station fields after trimming", async () 
   fireEvent.click(screen.getByRole("button", { name: /thêm trạm/i }));
 
   const dialog = await screen.findByRole("dialog", { name: /thêm trạm qr/i });
-  fireEvent.change(within(dialog).getByLabelText(/mã thùng/i), { target: { value: "   " } });
   fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "   " } });
-  fireEvent.change(within(dialog).getByLabelText(/vị trí/i), { target: { value: "   " } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "   " } });
   fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
-  expect(await screen.findByText(/nhập đầy đủ mã thùng, tên trạm và vị trí/i)).toBeInTheDocument();
+  expect(await screen.findByText(/nhập đầy đủ tên trạm và vị trí/i)).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveClass("tone-danger");
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ id: "" }));
   expect(screen.getByRole("dialog", { name: /thêm trạm qr/i })).toBeInTheDocument();
@@ -1990,15 +1997,15 @@ test("bins page edits a station without changing its id", async () => {
   fireEvent.click(within(row).getByRole("button", { name: /sửa bin-a1-recycle/i }));
 
   const dialog = await screen.findByRole("dialog", { name: /sửa trạm qr/i });
-  expect(within(dialog).getByLabelText(/mã thùng/i)).toBeDisabled();
-  expect(within(dialog).getByLabelText(/mã thùng/i)).toHaveValue("BIN-A1-RECYCLE");
+  expect(within(dialog).getByLabelText("Mã thùng tự sinh")).toHaveAttribute("readonly");
+  expect(within(dialog).getByLabelText("Mã thùng tự sinh")).toHaveValue("BIN-A1-RECYCLE");
 
   fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "Thùng tái chế A1 cập nhật" } });
   fireEvent.change(within(dialog).getByLabelText(/nhóm rác/i), { target: { value: "Hữu cơ" } });
-  fireEvent.change(within(dialog).getByLabelText(/vị trí/i), { target: { value: "Nhà A1 - tầng 2" } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "Nhà A1 - tầng 2" } });
   fireEvent.change(within(dialog).getByLabelText(/tòa nhà/i), { target: { value: "A1" } });
   fireEvent.change(within(dialog).getByLabelText(/tầng/i), { target: { value: "2" } });
-  expect(within(dialog).getByLabelText(/mã qr chuẩn/i)).toHaveValue("ECL-ST-BIN-A1-RECYCLE");
+  expect(within(dialog).getByLabelText("Mã QR tự sinh")).toHaveValue("ECL-ST-BIN-A1-RECYCLE");
   fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "86" } });
   fireEvent.change(within(dialog).getByLabelText(/trạng thái/i), { target: { value: "full" } });
   fireEvent.change(within(dialog).getByLabelText(/tọa độ x/i), { target: { value: "31" } });
@@ -2078,7 +2085,7 @@ test("bins page allows editing a station while keeping its own QR code", async (
   fireEvent.click(within(row).getByRole("button", { name: /sửa bin-a1-recycle/i }));
 
   const dialog = await screen.findByRole("dialog", { name: /sửa trạm qr/i });
-  expect(within(dialog).getByLabelText(/mã qr chuẩn/i)).toHaveValue("ECL-ST-BIN-A1-RECYCLE");
+  expect(within(dialog).getByLabelText("Mã QR tự sinh")).toHaveValue("ECL-ST-BIN-A1-RECYCLE");
   fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "64" } });
   fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
@@ -2096,16 +2103,17 @@ test("bins page clamps invalid capacity and map coordinates before saving", asyn
   expect(await screen.findByRole("heading", { name: /thùng rác \/ trạm qr/i })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /thêm trạm/i }));
 
-  fireEvent.change(screen.getByLabelText(/mã thùng/i), { target: { value: "BIN-INVALID-RANGE" } });
-  fireEvent.change(screen.getByLabelText(/tên trạm/i), { target: { value: "Thùng kiểm tra biên" } });
-  fireEvent.change(screen.getByLabelText(/vị trí/i), { target: { value: "Nhà D - tầng 1" } });
-  fireEvent.change(screen.getByLabelText(/sức chứa/i), { target: { value: "150" } });
-  fireEvent.change(screen.getByLabelText(/tọa độ x/i), { target: { value: "-10" } });
-  fireEvent.change(screen.getByLabelText(/tọa độ y/i), { target: { value: "140" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu trạm/i }));
+  const dialog = await screen.findByRole("dialog", { name: /thêm trạm qr/i });
+  const generatedId = within(dialog).getByLabelText("Mã thùng tự sinh").value;
+  fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "Thùng kiểm tra biên" } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "Nhà D - tầng 1" } });
+  fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "150" } });
+  fireEvent.change(within(dialog).getByLabelText(/tọa độ x/i), { target: { value: "-10" } });
+  fireEvent.change(within(dialog).getByLabelText(/tọa độ y/i), { target: { value: "140" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
   await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
-    id: "BIN-INVALID-RANGE",
+    id: generatedId,
     capacity: 100,
     map_x: 0,
     map_y: 100,
