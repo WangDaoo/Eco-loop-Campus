@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -167,14 +168,15 @@ on conflict (id) do update set
   color = excluded.color,
   updated_at = now();
 
-insert into rewards (id, title, description, category_id, category_name, cost_points, status, color, updated_at)
-values (%(id)s, %(title)s, %(description)s, %(category_id)s, %(category_name)s, %(cost_points)s, %(status)s, %(color)s, now())
+insert into rewards (id, title, description, category_id, category_name, cost_points, stock, status, color, updated_at)
+values (%(id)s, %(title)s, %(description)s, %(category_id)s, %(category_name)s, %(cost_points)s, %(stock)s, %(status)s, %(color)s, now())
 on conflict (id) do update set
   title = excluded.title,
   description = excluded.description,
   category_id = excluded.category_id,
   category_name = excluded.category_name,
   cost_points = excluded.cost_points,
+  stock = excluded.stock,
   status = excluded.status,
   color = excluded.color,
   updated_at = now();
@@ -206,8 +208,12 @@ def _ts(hours_ago=0, minutes_ago=0, minutes_ahead=0):
     return datetime.now(timezone.utc) - timedelta(hours=hours_ago, minutes=minutes_ago) + timedelta(minutes=minutes_ahead)
 
 
+def demo_password():
+    return os.getenv("ECOLOOP_DEMO_PASSWORD", TEMPORARY_PASSWORD)
+
+
 def _password_hash():
-    return app.hash_password(TEMPORARY_PASSWORD)
+    return app.hash_password(demo_password())
 
 
 def build_demo_dataset():
@@ -307,12 +313,12 @@ def build_demo_dataset():
     ]
 
     rewards = [
-        {"id": "UTEHY_REWARD_CANTEEN_20K", "title": "Voucher căng tin 20.000đ", "description": "Áp dụng tại căng tin sinh viên UTEHY.", "category_id": "UTEHY_REWARD_CAT_FOOD", "category_name": "Ăn uống", "cost_points": 160, "status": "active", "color": "#2F8F5B"},
-        {"id": "UTEHY_REWARD_PARKING", "title": "Vé gửi xe 1 tuần", "description": "Đổi phiếu hỗ trợ gửi xe trong khuôn viên.", "category_id": "UTEHY_REWARD_CAT_TRANSPORT", "category_name": "Di chuyển", "cost_points": 220, "status": "active", "color": "#1D4ED8"},
-        {"id": "UTEHY_REWARD_NOTEBOOK", "title": "Sổ tay Eco-loop", "description": "Sổ tay giấy tái chế dùng cho học tập.", "category_id": "UTEHY_REWARD_CAT_STUDY", "category_name": "Học tập", "cost_points": 90, "status": "active", "color": "#8B5CF6"},
-        {"id": "UTEHY_REWARD_BOTTLE", "title": "Bình nước UTEHY", "description": "Bình nước cá nhân giảm chai nhựa dùng một lần.", "category_id": "UTEHY_REWARD_CAT_GREEN", "category_name": "Đồ dùng xanh", "cost_points": 380, "status": "active", "color": "#0F766E"},
-        {"id": "UTEHY_REWARD_BADGE", "title": "Huy hiệu Sinh viên xanh", "description": "Huy hiệu ghi nhận hoạt động phân loại rác.", "category_id": "UTEHY_REWARD_CAT_BADGE", "category_name": "Ghi nhận", "cost_points": 60, "status": "active", "color": "#D97706"},
-        {"id": "UTEHY_REWARD_BOOKSTORE", "title": "Phiếu nhà sách 30.000đ", "description": "Đổi tại quầy sách và văn phòng phẩm trong trường.", "category_id": "UTEHY_REWARD_CAT_STUDY", "category_name": "Học tập", "cost_points": 250, "status": "inactive", "color": "#BE123C"},
+        {"id": "UTEHY_REWARD_CANTEEN_20K", "title": "Voucher căng tin 20.000đ", "description": "Áp dụng tại căng tin sinh viên UTEHY.", "category_id": "UTEHY_REWARD_CAT_FOOD", "category_name": "Ăn uống", "cost_points": 160, "stock": 12, "status": "active", "color": "#2F8F5B"},
+        {"id": "UTEHY_REWARD_PARKING", "title": "Vé gửi xe 1 tuần", "description": "Đổi phiếu hỗ trợ gửi xe trong khuôn viên.", "category_id": "UTEHY_REWARD_CAT_TRANSPORT", "category_name": "Di chuyển", "cost_points": 220, "stock": 8, "status": "active", "color": "#1D4ED8"},
+        {"id": "UTEHY_REWARD_NOTEBOOK", "title": "Sổ tay Eco-loop", "description": "Sổ tay giấy tái chế dùng cho học tập.", "category_id": "UTEHY_REWARD_CAT_STUDY", "category_name": "Học tập", "cost_points": 90, "stock": 20, "status": "active", "color": "#8B5CF6"},
+        {"id": "UTEHY_REWARD_BOTTLE", "title": "Bình nước UTEHY", "description": "Bình nước cá nhân giảm chai nhựa dùng một lần.", "category_id": "UTEHY_REWARD_CAT_GREEN", "category_name": "Đồ dùng xanh", "cost_points": 380, "stock": 5, "status": "active", "color": "#0F766E"},
+        {"id": "UTEHY_REWARD_BADGE", "title": "Huy hiệu Sinh viên xanh", "description": "Huy hiệu ghi nhận hoạt động phân loại rác.", "category_id": "UTEHY_REWARD_CAT_BADGE", "category_name": "Ghi nhận", "cost_points": 60, "stock": 30, "status": "active", "color": "#D97706"},
+        {"id": "UTEHY_REWARD_BOOKSTORE", "title": "Phiếu nhà sách 30.000đ", "description": "Đổi tại quầy sách và văn phòng phẩm trong trường.", "category_id": "UTEHY_REWARD_CAT_STUDY", "category_name": "Học tập", "cost_points": 250, "stock": 0, "status": "inactive", "color": "#BE123C"},
     ]
 
     missions = [
@@ -559,9 +565,9 @@ def seed_database(database_url=None, dry_run=False):
                 on conflict (id) do update set name = excluded.name, description = excluded.description, status = excluded.status, color = excluded.color, updated_at = now()
             """, dataset["reward_categories"])
             _upsert_many(cursor, """
-                insert into rewards (id, title, description, category_id, category_name, cost_points, status, color, updated_at)
-                values (%(id)s, %(title)s, %(description)s, %(category_id)s, %(category_name)s, %(cost_points)s, %(status)s, %(color)s, now())
-                on conflict (id) do update set title = excluded.title, description = excluded.description, category_id = excluded.category_id, category_name = excluded.category_name, cost_points = excluded.cost_points, status = excluded.status, color = excluded.color, updated_at = now()
+                insert into rewards (id, title, description, category_id, category_name, cost_points, stock, status, color, updated_at)
+                values (%(id)s, %(title)s, %(description)s, %(category_id)s, %(category_name)s, %(cost_points)s, %(stock)s, %(status)s, %(color)s, now())
+                on conflict (id) do update set title = excluded.title, description = excluded.description, category_id = excluded.category_id, category_name = excluded.category_name, cost_points = excluded.cost_points, stock = excluded.stock, status = excluded.status, color = excluded.color, updated_at = now()
             """, dataset["rewards"])
             _upsert_many(cursor, """
                 insert into missions (id, title, description, target, reward_points, action_label, event_type, filter_waste_type_id, status, updated_at)
@@ -645,7 +651,7 @@ def main():
     print(f"{mode} UTEHY demo data")
     for key in sorted(summary):
         print(f"- {key}: {summary[key]}")
-    print(f"Temporary password for demo accounts: {TEMPORARY_PASSWORD}")
+    print("Demo account password configured (value hidden).")
 
 
 if __name__ == "__main__":

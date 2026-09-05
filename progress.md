@@ -44,3 +44,19 @@
 - Task 8 hoàn tất và commit `1c470378`: canonical fixtures, error envelope và client contract khóa user/faculty/submission/point/reward items; Web Admin submission review dùng state-machine endpoint.
 - Task 9 bổ sung ba E2E xuyên vai trò, runner có guard database `_test`, JUnit từng tầng, ma trận test và mẫu defect.
 - Full gate chạy hai lượt liên tiếp trên database test sạch: mỗi lượt Backend unit 78/78, PostgreSQL integration 71/71, Mobile 223/223, typecheck pass, Web Admin 273/273 với 16 fallback legacy skip; exit code chung 0.
+- Bắt đầu UAT APK hai thiết bị: người dùng xác nhận điện thoại không cùng Wi-Fi và duyệt phương án APK standalone dùng public tunnel.
+- Đã xác định `assembleDebug` phụ thuộc Metro; chọn build type `uat` kế thừa release và ký debug key để cài/test độc lập.
+- TDD RED: `scripts/uat_setup.test.ps1` exit 1 đúng lý do thiếu `scripts/setup_uat.ps1`; test cũng khóa database `_uat`, tunnel, JS bundle, checksum, tài khoản UAT và cleanup theo PID.
+- TDD GREEN: thêm build type Android `uat`, URL file PostgreSQL tùy chọn có chặn path traversal, mật khẩu seed override từ runtime, setup/stop script và hướng dẫn test hai thiết bị.
+- Systematic debugging xác định JDK lỗi do workspace Unicode, không phải phiên bản/corrupt archive; regression guard buộc UAT bootstrap dùng ổ `subst` ASCII.
+- Đã tạo `ecoloop_campus_uat`, seed 18 users và dữ liệu nghiệp vụ, khởi chạy backend port 8010 cùng Cloudflare Quick Tunnel.
+- Build `createBundleUatJsAndAssets` thành công trong 6m40s; `assembleUat` thành công trong 15m03s với 1098 task.
+- Bản APK pre-review có SHA-256 `a3508f386d7f1b8ea066564e6acf131d6c46c5d94ae968419cf1db570868bc75`; đã được thay thế sau hardening vòng đời UAT.
+- Code review UAT phát hiện các rủi ro cleanup không tới được, wrapper PID thay vì child PID, PID reuse, port bị chiếm, health nhầm database, dùng chung auth secret, stock seed vô hạn và restart reset dữ liệu.
+- TDD hardening: thêm process identity gồm executable/start time, kiểm tra tương thích Windows PowerShell/PowerShell 7, port guard, exact database health, auth secret UAT riêng, seed marker/`-ResetData`, tồn kho hữu hạn và cleanup khi tunnel lỗi.
+- Re-review phát hiện health timeout có thể xảy ra trước khi lưu service PID; đã lưu identity launcher ngay sau launch và cleanup cả cây process đã xác thực. Test parent→child pass trên PowerShell 7 và Windows PowerShell; outer environment restore nay bao trùm cả bootstrap/init sớm.
+- Seed CLI không còn in runtime password; regression mới chứng minh secret override không xuất hiện trong stdout.
+- Behavioral lifecycle verification: stop chỉ dừng đúng backend/cloudflared đã ghi nhận; identity giả bị từ chối; setup thất bại dọn sạch listener/PID; restart không `-ResetData` giữ stock đã đổi từ 30 xuống 29.
+- APK UAT cuối 116093416 bytes; SHA-256 `367d9025badd3ba54dbbc4eb3446951e57d858614b31154f9f156c6befe6f6d8`.
+- Artifact verification cuối: checksum khớp, chữ ký APK v1/v2 hợp lệ, package `com.ecoloopcampus.mobile.uat`, nhãn `Eco-loop Campus UAT`, version `1.0.0-uat`, bundle chứa public API URL, public database health `ok` trên `ecoloop_campus_uat`, auth secret tách biệt và stock badge bằng 30.
+- Full gate cuối exit 0: Backend unit 80/80; PostgreSQL integration 71/71; Mobile 223/223 và typecheck pass; Web Admin 273/273 với 16 legacy fallback skip.

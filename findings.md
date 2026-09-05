@@ -53,3 +53,21 @@ Các mục 1–9 là phát hiện tĩnh cần được khóa bằng test đỏ t
 - FastAPI trả error envelope ổn định `{detail, code}`; Mobile/Web Admin giữ lỗi HTTP, malformed JSON, timeout và offline thay vì báo local success.
 - E2E Scenario A/B/C trên PostgreSQL thật chứng minh submission chỉ cộng một lần, reward debit/refund/stock nguyên tử và actor pending/locked/non-owner không tạo mutation.
 - Full gate hai lượt liên tiếp đều exit `0`; không còn P0/P1 mở trong phạm vi 12 defect đã kiểm kê.
+
+## Khảo sát UAT APK hai thiết bị
+
+- Mobile mặc định dùng `10.0.2.2:8000`, chỉ phù hợp Android emulator; thiết bị ở mạng khác cần API public.
+- `assembleDebug` là debuggable variant nên React Native bỏ bước bundle JS và đòi Metro; không phù hợp artifact gửi cho hai điện thoại từ xa.
+- Android hiện có debug keystore và release đang ký bằng debug key. Biến thể `uat` kế thừa release, không minify và thêm application id suffix sẽ cho APK standalone nhưng vẫn tách khỏi app production.
+- Repo đã có Cloudflare quick tunnel và ghi URL vào `.runtime/api_public_url.txt`; URL thay đổi khi tunnel restart.
+- `setup_public_release.bat` đang gộp production/public release. UAT cần wrapper riêng với database hậu tố `_uat`, test accounts và artifact/checksum riêng.
+- Seed demo mặc định dùng mật khẩu `123456`; public UAT phải override bằng mật khẩu sinh ngẫu nhiên và chỉ lưu trong `.runtime/uat_accounts.txt` đã gitignore.
+- `init_local_postgres.ps1` đã nhận `DatabaseName` nhưng luôn ghi đè `.runtime/DATABASE_URL.txt`; cần tham số filename được kiểm tra để UAT dùng `UAT_DATABASE_URL.txt` mà không đụng runtime database mặc định.
+- JDK Temurin 17 hợp lệ nhưng Java không khởi động được trực tiếp từ đường dẫn workspace chứa ký tự tiếng Việt; cùng binary chạy qua ổ `subst` ASCII hoạt động bình thường. UAT bootstrap và Gradle vì vậy đều dùng đường dẫn ASCII tạm.
+- UAT runtime được tách vào `ecoloop_campus_uat`, dùng `UAT_DATABASE_URL.txt` và mật khẩu seed sinh ngẫu nhiên trong `.runtime/uat_accounts.txt`.
+- APK UAT dùng package `com.ecoloopcampus.mobile.uat`, version `1.0.0-uat`, chứa JS bundle và URL Cloudflare thay vì phụ thuộc Metro.
+- Cloudflare Quick Tunnel không có cam kết uptime và URL thay đổi sau khi restart; APK phải build/cài lại nếu tunnel được tạo lại.
+- Không thể quản lý UAT an toàn bằng PID trần hoặc PID của wrapper PowerShell: phải lưu PID, executable và start time của chính Python listener/cloudflared rồi xác thực cả ba trước khi stop.
+- PowerShell 7 tự chuyển ISO date trong JSON thành `DateTime`, còn Windows PowerShell giữ string; process identity phải xử lý cả hai kiểu để không diễn giải sai ngày/tháng theo locale.
+- Health UAT phải xác nhận đồng thời `configured=true`, `status=ok` và database đúng `ecoloop_campus_uat`; chỉ nhận HTTP 200 có thể vô tình trỏ APK vào backend/database khác.
+- Normal restart phải giữ nguyên điểm và tồn kho phục vụ test xuyên thiết bị; chỉ `-ResetData` mới seed lại. Reward badge UAT có stock khởi tạo 30 để kiểm chứng debit/refund thật.

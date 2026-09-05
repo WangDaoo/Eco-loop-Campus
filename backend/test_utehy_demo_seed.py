@@ -43,6 +43,39 @@ def test_utehy_demo_seed_uses_prefix_and_hashed_passwords():
             assert user["group"].startswith("Khoa ")
 
 
+def test_utehy_demo_seed_accepts_runtime_password_override(monkeypatch):
+    from local_db import seed_utehy_demo_data
+
+    uat_password = "Uat-Only-Password-2026"
+    monkeypatch.setenv("ECOLOOP_DEMO_PASSWORD", uat_password)
+
+    dataset = seed_utehy_demo_data.build_demo_dataset()
+
+    assert all(app.verify_password(uat_password, user["password_hash"]) for user in dataset["users"])
+    assert all(not app.verify_password(seed_utehy_demo_data.TEMPORARY_PASSWORD, user["password_hash"]) for user in dataset["users"])
+
+
+def test_utehy_demo_seed_does_not_print_runtime_password(monkeypatch, capsys):
+    from local_db import seed_utehy_demo_data
+
+    uat_password = "Uat-Secret-Must-Not-Appear"
+    monkeypatch.setenv("ECOLOOP_DEMO_PASSWORD", uat_password)
+    monkeypatch.setattr("sys.argv", ["seed_utehy_demo_data.py", "--dry-run"])
+
+    seed_utehy_demo_data.main()
+
+    assert uat_password not in capsys.readouterr().out
+
+
+def test_utehy_demo_seed_has_finite_reward_stock_for_uat_inventory_flow():
+    from local_db.seed_utehy_demo_data import build_demo_dataset
+
+    rewards = {reward["id"]: reward for reward in build_demo_dataset()["rewards"]}
+
+    assert rewards["UTEHY_REWARD_BADGE"]["stock"] == 30
+    assert all(isinstance(reward["stock"], int) and reward["stock"] >= 0 for reward in rewards.values())
+
+
 def test_utehy_demo_seed_cleanup_sql_targets_only_e2e_data():
     from local_db.seed_utehy_demo_data import E2E_CLEANUP_SQL
 

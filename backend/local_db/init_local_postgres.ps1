@@ -3,7 +3,8 @@ param(
     [string] $AppUser = "ecoloop_app",
     [string] $HostName = "127.0.0.1",
     [int] $Port = 5432,
-    [string] $PostgresBin = ""
+    [string] $PostgresBin = "",
+    [string] $DatabaseUrlFileName = "DATABASE_URL.txt"
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,7 +15,10 @@ $SchemaPath = Join-Path $PSScriptRoot "schema.sql"
 $SmokePath = Join-Path $PSScriptRoot "smoke_qr_flow.sql"
 $PostgresPasswordPath = Join-Path $RuntimeDir "postgres_password.txt"
 $AppPasswordPath = Join-Path $RuntimeDir "ecoloop_db_password.txt"
-$DatabaseUrlPath = Join-Path $RuntimeDir "DATABASE_URL.txt"
+if ([IO.Path]::GetFileName($DatabaseUrlFileName) -ne $DatabaseUrlFileName) {
+    throw "DatabaseUrlFileName must be a filename, not a path."
+}
+$DatabaseUrlPath = Join-Path $RuntimeDir $DatabaseUrlFileName
 
 function Get-SecureRandomBytes([int] $Count) {
     $Bytes = New-Object byte[] $Count

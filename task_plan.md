@@ -45,3 +45,19 @@ Tạo một kế hoạch kiểm thử tự động bám sát code hiện tại, 
 - Sửa logic sản phẩm theo chu trình test đỏ → sửa tối thiểu → regression test; mỗi nhóm lỗi có checkpoint riêng.
 - Mỗi lỗi phải có mã, mức độ, bước tái hiện, expected/actual, lớp gây lỗi và test hồi quy đề xuất.
 - Ưu tiên test PostgreSQL/FastAPI thật; mock chỉ dùng cho UI và lỗi mạng có kiểm soát.
+
+## UAT APK hai thiết bị — 2026-09-05
+
+- [complete] UAT-1. Khóa contract build `uat` standalone, ký debug key và không phụ thuộc Metro.
+- [complete] UAT-2. Tạo PostgreSQL UAT riêng, seed tài khoản theo vai trò và guard hậu tố `_uat`.
+- [complete] UAT-3. Khởi chạy backend UAT cùng public tunnel, nhúng URL API vào APK.
+- [complete] UAT-4. Build, checksum và kiểm tra APK cài đặt được.
+- [complete] UAT-5. Viết hướng dẫn test chi tiết cho hai điện thoại và Web Admin.
+- [complete] UAT-6. Chạy regression/build verification và bàn giao artifact.
+
+### Quyết định UAT
+
+- Hai điện thoại không cần cùng Wi-Fi với máy phát triển.
+- APK UAT phải chứa JavaScript bundle và chạy không cần Metro.
+- Dùng Cloudflare quick tunnel hiện có cho lần test đầu; tunnel phải còn chạy trong suốt buổi test.
+- Không dùng database test tự động hoặc database sản xuất; database UAT phải có hậu tố `_uat`.
