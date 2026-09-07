@@ -1133,6 +1133,11 @@ def admin_list_resource(resource: str, authorization: str | None = Header(defaul
     require_admin_user(authorization)
     return {"data": list_admin_resource(resource)}
 
+@app.post("/api/admin/point-adjustments")
+def admin_adjust_points(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": adjust_manual_points_account(user["id"], payload)}
+
 @app.post("/api/admin/{resource}")
 def admin_save_resource(resource: str, payload: dict, authorization: str | None = Header(default=None)):
     require_admin_user(authorization)
@@ -1465,12 +1470,6 @@ def mobile_scan_reward_redemption(payload: dict, authorization: str | None = Hea
 def admin_finalize_reward_redemption(batch_id: str, payload: dict, authorization: str | None = Header(default=None)):
     user = require_admin_user(authorization)
     return {"data": finalize_reward_redemption_batch_account(user["id"], batch_id, payload)}
-
-@app.post("/api/admin/point-adjustments")
-def admin_adjust_points(payload: dict, authorization: str | None = Header(default=None)):
-    user = require_admin_user(authorization)
-    return {"data": adjust_manual_points_account(user["id"], payload)}
-
 
 def normalize_json_result(value):
     if isinstance(value, str):

@@ -232,6 +232,16 @@ export default function BinsPage() {
     if (statusFilter === "attention") return needsAttention(bin);
     return statusCode(bin.status) === statusFilter;
   }), [bins, statusFilter]);
+  const binGroupOptions = useMemo(() => {
+    const labels = new Set(BIN_GROUPS.map(group => group.label));
+    bins.forEach(bin => {
+      const label = typeof bin.binGroup === "string" ? bin.binGroup.trim() : "";
+      if (label) labels.add(label);
+    });
+    const formLabel = typeof form.binGroup === "string" ? form.binGroup.trim() : "";
+    if (formLabel) labels.add(formLabel);
+    return Array.from(labels);
+  }, [bins, form.binGroup]);
 
   const updateStatusFilter = value => {
     const nextValue = normalizeStatusFilter(value);
@@ -325,7 +335,7 @@ export default function BinsPage() {
             <small>Mỗi trạm dùng một mã chuẩn duy nhất theo dạng ECL-BIN-0001.</small>
           </label>
           <label>Tên trạm<input required value={form.name} onChange={event => updateForm("name", event.target.value)} placeholder="Thùng tái chế A1" /></label>
-          <label>Nhóm rác<select value={form.binGroup} onChange={event => updateForm("binGroup", event.target.value)}>{BIN_GROUPS.map(group => <option key={group.id} value={group.label}>{group.label}</option>)}</select></label>
+          <label>Nhóm rác<select value={form.binGroup} onChange={event => updateForm("binGroup", event.target.value)}>{binGroupOptions.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
           <label>Vị trí<input required value={form.location} onChange={event => updateForm("location", event.target.value)} placeholder="Nhà A1 - tầng 1" /></label>
           <label>Tòa nhà<input value={form.building} onChange={event => updateForm("building", event.target.value)} placeholder="A1" /></label>
           <label>Tầng<input value={form.floor} onChange={event => updateForm("floor", event.target.value)} placeholder="1" /></label>

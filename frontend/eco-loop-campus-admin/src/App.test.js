@@ -757,26 +757,27 @@ test("saveBin rejects unsupported statuses before writing bins", async () => {
   expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
 });
 
-test("saveBin rejects unsupported bin groups before writing bins", async () => {
+test("saveBin rejects blank bin groups before writing bins", async () => {
   const store = require("./admin/services/supabaseStore");
   const existingBins = JSON.stringify(mockTables.bins);
-  const invalidBins = [
-    { id: "BIN-BLANK-GROUP", name: "Trạm thiếu nhóm", binGroup: "   ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 },
-    { id: "BIN-UNKNOWN-GROUP", name: "Trạm nhóm lạ", binGroup: "Nhóm lạ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 },
-  ];
 
-  const results = [];
-  for (const bin of invalidBins) {
-    results.push(await store.saveBin(bin));
-  }
+  const response = await store.saveBin({ id: "BIN-BLANK-GROUP", name: "Trạm thiếu nhóm", binGroup: "   ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 });
 
-  results.forEach(response => {
-    expect(response.data).toBeNull();
-    expect(response.error).toEqual(expect.any(Error));
-  });
+  expect(response.data).toBeNull();
+  expect(response.error).toEqual(expect.any(Error));
   expect(mockSupabaseFrom).not.toHaveBeenCalledWith("bins");
   expect(JSON.stringify(mockTables.bins)).toBe(existingBins);
   expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
+});
+
+test("saveBin preserves detailed bin groups before writing bins", async () => {
+  const store = require("./admin/services/supabaseStore");
+
+  const response = await store.saveBin({ id: "BIN-PLASTIC", name: "Trạm nhựa", binGroup: " Nhựa ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 });
+
+  expect(response.error).toBeNull();
+  expect(response.data).toEqual(expect.objectContaining({ binGroup: "Nhựa" }));
+  expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({ bin_group: "Nhựa" }));
 });
 
 test("savePredictionRecord rejects invalid scan fields before writing predictions", async () => {
@@ -2038,6 +2039,30 @@ test("bins page edits a station without changing its id", async () => {
   expect(screen.getByText("BIN-A1-RECYCLE")).toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: /sửa trạm qr/i })).not.toBeInTheDocument();
 });
+
+test("bins page preserves detailed bin groups when editing a station", async () => {
+  mockTables.bins = [
+    { id: "UTEHY_BIN_GATE_A", name: "Cổng chính UTEHY", bin_group: "Nhựa", location: "Cổng chính", building: "Cổng", floor: "Ngoài trời", qr_code: "ECL-ST-UTEHY-GATE-A", status: "active", capacity: 42, map_x: 15, map_y: 78 },
+  ];
+  window.location.hash = "#/bins";
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /thùng rác \/ trạm qr/i })).toBeInTheDocument();
+  const row = (await screen.findByText("Cổng chính UTEHY")).closest("tr");
+  fireEvent.click(within(row).getByRole("button", { name: /sửa utehy_bin_gate_a/i }));
+
+  const dialog = await screen.findByRole("dialog", { name: /sửa trạm qr/i });
+  expect(within(dialog).getByLabelText(/nhóm rác/i)).toHaveValue("Nhựa");
+  fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "43" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
+
+  await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
+    id: "UTEHY_BIN_GATE_A",
+    bin_group: "Nhựa",
+    capacity: 43,
+  })));
+});
+
 test("bins page attention filter shows full maintenance and high-capacity stations", async () => {
   mockTables.bins = [
     { id: "BIN-ACTIVE-LOW", name: "Trạm đang ổn", bin_group: "Tái chế", location: "Nhà A", building: "A", floor: "1", qr_code: "ECL-ST-BIN-ACTIVE-LOW", status: "active", capacity: 30, map_x: 20, map_y: 20 },
@@ -3226,6 +3251,25 @@ test("ecopoints page shows filters and leaderboards", async () => {
   expect((await screen.findAllByText("Nguyễn Minh Anh")).length).toBeGreaterThan(0);
 });
 
+test("ecopoints page uses searchable user pickers and exposes refresh", async () => {
+  window.location.hash = "#/ecopoints";
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /tải lại dữ liệu/i })).toBeInTheDocument();
+
+  const manualSearch = screen.getByRole("searchbox", { name: /tìm người nhận điểm/i });
+  fireEvent.change(manualSearch, { target: { value: "Minh Anh" } });
+  expect(await screen.findByRole("option", { name: /nguyễn minh anh/i })).toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: /^người nhận điểm$/i })).not.toBeInTheDocument();
+
+  const rewardSearch = screen.getByRole("searchbox", { name: /tìm người đổi thưởng/i });
+  fireEvent.change(rewardSearch, { target: { value: "SV001" } });
+  expect((await screen.findAllByRole("option", { name: /nguyễn minh anh/i })).length).toBeGreaterThan(0);
+  expect(screen.queryByRole("combobox", { name: /^người đổi thưởng$/i })).not.toBeInTheDocument();
+});
+
 test("ecopoints page normalizes dirty group and bin group query filters in the UI", async () => {
   window.location.hash = "#/ecopoints?group=%20cntt%20k18%20&binGroup=%20T%C3%81I%20CH%E1%BA%BE%20";
 
@@ -3250,6 +3294,9 @@ test("admins can add manual Ecopoint adjustments", async () => {
 
   await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/point-adjustments"), expect.objectContaining({ method: "POST" })));
   expect(mockTables.users.find(user => user.id === "SV001").points).toBe(255);
+  expect(await screen.findByText("Nộp rác sự kiện xanh")).toBeInTheDocument();
+  expect(screen.getByText("+10")).toBeInTheDocument();
+  expect(screen.queryByText("Không rõ")).not.toBeInTheDocument();
 });
 
 test("ecopoints page rejects invalid manual point adjustments", async () => {

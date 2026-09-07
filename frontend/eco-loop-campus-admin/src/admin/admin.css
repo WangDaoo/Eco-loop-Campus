@@ -2042,6 +2042,51 @@ a.eg-priority-item:focus-visible {
   align-items: end;
 }
 
+.eg-user-picker {
+  position: relative;
+  display: grid;
+  gap: 6px;
+}
+
+.eg-user-picker-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius);
+  background: #ffffff;
+  box-shadow: var(--eg-shadow);
+}
+
+.eg-user-picker-option {
+  width: 100%;
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--eg-radius-sm);
+  background: transparent;
+  color: var(--eg-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.eg-user-picker-option:hover,
+.eg-user-picker-option[aria-selected="true"] {
+  background: #ecfdf5;
+}
+
+.eg-user-picker-option span {
+  color: var(--eg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .eg-avatar-command {
   grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.55fr);
 }

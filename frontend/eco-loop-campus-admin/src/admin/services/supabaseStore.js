@@ -119,8 +119,10 @@ function normalizePercent(value, fallback = null) {
 }
 
 function normalizedBinGroup(value) {
-  const normalized = typeof value === "string" ? value.trim().toLocaleLowerCase("vi-VN") : "";
-  return (BIN_GROUPS.find(group => group.label.toLocaleLowerCase("vi-VN") === normalized) || {}).label || "";
+  const label = typeof value === "string" ? value.trim() : "";
+  if (!label) return "";
+  const normalized = label.toLocaleLowerCase("vi-VN");
+  return (BIN_GROUPS.find(group => group.label.toLocaleLowerCase("vi-VN") === normalized) || {}).label || label;
 }
 
 function normalizedPredictionStatusAction(value) {
