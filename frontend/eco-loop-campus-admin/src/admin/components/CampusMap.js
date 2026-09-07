@@ -157,7 +157,9 @@ function addStationMarkers(layerGroup, stations, options = {}) {
     });
 
     marker.on("click", () => onSelect?.(station));
-    marker.on("dragstart", () => onSelect?.(station));
+    marker.on("dragstart", () => {
+      if (editingStationId !== station.id) onSelect?.(station);
+    });
     marker.on("dragend", event => onDraftPosition?.(station.id, latLngToStationPosition(event.target.getLatLng())));
     marker.addTo(layerGroup);
   });
