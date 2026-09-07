@@ -1372,6 +1372,19 @@ a.eg-priority-item:focus-visible {
   padding: 0 10px;
 }
 
+.eg-map-drag-hint {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px dashed var(--eg-primary);
+  border-radius: var(--eg-radius);
+  padding: 0 10px;
+  background: var(--eg-primary-soft);
+  color: var(--eg-primary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .eg-inline-error {
   margin: 10px 0 0;
   color: var(--eg-danger);

@@ -65,13 +65,6 @@ function positionsDiffer(a, b) {
   return roundedPercent(a.x) !== roundedPercent(b.x) || roundedPercent(a.y) !== roundedPercent(b.y);
 }
 
-function movePosition(position, dx, dy) {
-  return {
-    x: roundedPercent((position?.x || 0) + dx),
-    y: roundedPercent((position?.y || 0) + dy),
-  };
-}
-
 const fixedPositions = {
   A1: { x: 30, y: 78, label: "Nhà A1", zone: "Khu mô phỏng - cổng chính" },
   Canteen: { x: 54, y: 72, label: "Căn tin", zone: "Khu mô phỏng - dịch vụ" },
@@ -389,12 +382,6 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
     setPositionError("");
   };
 
-  const moveDraftPosition = (dx, dy) => {
-    if (!selectedStation) return;
-    setEditingPosition(true);
-    setDraftPosition(current => movePosition(current || selectedStation, dx, dy));
-  };
-
   const cancelPositionEdit = () => {
     if (!selectedStation) return;
     setDraftPosition({ x: selectedStation.x, y: selectedStation.y });
@@ -548,10 +535,7 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
                   </button>
                 ) : (
                   <>
-                    <button type="button" className="eg-secondary-btn" aria-label="Di chuyển sang trái" onClick={() => moveDraftPosition(-5, 0)}>Trái</button>
-                    <button type="button" className="eg-secondary-btn" aria-label="Di chuyển lên trên" onClick={() => moveDraftPosition(0, -5)}>Lên</button>
-                    <button type="button" className="eg-secondary-btn" aria-label="Di chuyển xuống dưới" onClick={() => moveDraftPosition(0, 5)}>Xuống</button>
-                    <button type="button" className="eg-secondary-btn" aria-label="Di chuyển sang phải" onClick={() => moveDraftPosition(5, 0)}>Phải</button>
+                    <span className="eg-map-drag-hint">Kéo marker trên bản đồ để chỉnh vị trí thùng.</span>
                     <button type="button" className="eg-primary-btn" aria-label="Xác nhận vị trí" disabled={savingPosition || !hasPositionChanges} onClick={confirmPositionEdit}>
                       <CheckCircle size={16} weight="bold" aria-hidden="true" />
                       {savingPosition ? "Đang lưu..." : "Xác nhận vị trí"}

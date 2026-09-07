@@ -17,3 +17,11 @@ test("CampusMap keeps reset bounds separate from station focus", () => {
   expect(source).toMatch(/if \(!hasFitInitialBoundsRef\.current\)/);
   expect(source).toMatch(/fitBounds\(latestBoundsRef\.current/);
 });
+
+test("CampusMap edits bin position by dragging the selected map marker instead of arrow buttons", () => {
+  expect(source).toMatch(/draggable: editingStationId === station\.id/);
+  expect(source).toMatch(/marker\.on\("dragend", event => onDraftPosition\?\.\(station\.id, latLngToStationPosition\(event\.target\.getLatLng\(\)\)\)\)/);
+  expect(source).toMatch(/Kéo marker trên bản đồ/);
+  expect(source).not.toMatch(/Di chuyển sang trái|Di chuyển lên trên|Di chuyển xuống dưới|Di chuyển sang phải/);
+  expect(source).not.toMatch(/moveDraftPosition/);
+});

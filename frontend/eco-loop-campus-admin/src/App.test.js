@@ -2455,7 +2455,7 @@ test("dashboard map highlights bins that have open feedback", async () => {
   expect(screen.getByText(/1 phản hồi mở/i)).toBeInTheDocument();
 });
 
-test("dashboard map opens bin details and saves draggable position after confirmation", async () => {
+test("dashboard map opens bin details and switches position editing to direct marker drag", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /bản đồ gis campus/i })).toBeInTheDocument();
@@ -2466,21 +2466,12 @@ test("dashboard map opens bin details and saves draggable position after confirm
   expect(screen.getByText(/thùng tái chế A1 gần đầy/i)).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /chỉnh vị trí/i }));
-  fireEvent.click(screen.getByRole("button", { name: /di chuyển sang phải/i }));
-  expect(screen.getByText(/có thay đổi vị trí/i)).toBeInTheDocument();
+  expect(screen.getByText(/kéo marker trên bản đồ để chỉnh vị trí thùng/i)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /di chuyển sang phải/i })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /xác nhận vị trí/i })).toBeDisabled();
 
   fireEvent.click(screen.getByRole("button", { name: /hủy thay đổi vị trí/i }));
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ id: "BIN-A1-RECYCLE", map_x: expect.any(Number) }));
-
-  fireEvent.click(screen.getByRole("button", { name: /chỉnh vị trí/i }));
-  fireEvent.click(screen.getByRole("button", { name: /di chuyển sang phải/i }));
-  fireEvent.click(screen.getByRole("button", { name: /xác nhận vị trí/i }));
-
-  await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
-    id: "BIN-A1-RECYCLE",
-    map_x: 35,
-    map_y: 78,
-  })));
 });
 
 test.skip("dashboard map save failure falls back to localStorage and warns admins", async () => {
