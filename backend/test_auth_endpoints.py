@@ -48,6 +48,9 @@ def test_register_student_creates_active_account(client, monkeypatch):
             "email": "student@school.edu.vn",
             "password": "123456",
             "role": "student",
+            "studentCode": "SV20260001",
+            "facultyCode": "information-technology",
+            "phoneNumber": "0912345678",
         },
     )
 
@@ -78,6 +81,9 @@ def test_register_volunteer_creates_pending_account(client, monkeypatch):
             "email": "volunteer@school.edu.vn",
             "password": "123456",
             "role": "volunteer",
+            "studentCode": "SV20260002",
+            "facultyCode": "information-technology",
+            "phoneNumber": "0912345679",
         },
     )
 

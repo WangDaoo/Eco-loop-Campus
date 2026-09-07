@@ -2,6 +2,7 @@ export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
   Register: undefined;
+  CompleteProfile: undefined;
   MainTabs: undefined;
   History: undefined;
   Rewards: undefined;
@@ -38,6 +39,25 @@ export type UserProfile = {
   status: 'active' | 'locked' | 'pending' | 'rejected';
   avatarKey?: string;
   avatarUrl?: string;
+  studentCode?: string;
+  facultyCode?: string;
+  facultyName?: string;
+  phoneNumber?: string;
+  profileCompleted?: boolean;
+  requiresProfileCompletion?: boolean;
+};
+
+export type Faculty = {
+  code: string;
+  name: string;
+  status: 'active' | 'inactive';
+  sortOrder: number;
+};
+
+export type StudentProfileInput = {
+  studentCode: string;
+  facultyCode: string;
+  phoneNumber: string;
 };
 
 export type AvatarPreset = {
@@ -211,10 +231,14 @@ export type RewardRedemption = {
   rewardId: string;
   rewardLabel: string;
   costPoints: number;
-  status: 'requested' | 'approved' | 'rejected' | 'delivered';
+  status: 'requested' | 'approved' | 'rejected' | 'delivered' | 'pending' | 'scanned' | 'fulfilled' | 'expired' | 'cancelled';
   requestedAt: Date;
   reviewedAt?: Date;
   adminNote?: string;
+  qrToken?: string;
+  expiresAt?: Date;
+  totalPoints?: number;
+  items?: Array<{ rewardId: string; rewardLabel: string; quantity: number; pointsEach: number; pointsTotal: number }>;
 };
 
 export type Feedback = {

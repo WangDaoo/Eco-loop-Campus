@@ -4,17 +4,21 @@ import hashlib
 import hmac
 import io
 import json
+import shutil
 import secrets
 import time
 import uuid
 import re
 import unicodedata
+from decimal import Decimal, InvalidOperation
 from urllib.parse import unquote, urlparse
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 import tensorflow as tf
 import numpy as np
@@ -31,6 +35,31 @@ except Exception:
 
 app = FastAPI()
 
+
+def error_code_for(status_code, detail):
+    if isinstance(detail, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", detail):
+        return detail
+    if status_code == 422 and detail == "Dữ liệu đầu vào không hợp lệ":
+        return "VALIDATION_ERROR"
+    return f"HTTP_{status_code}"
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_response(_request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "code": error_code_for(exc.status_code, exc.detail)},
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_response(_request: Request, _exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Dữ liệu đầu vào không hợp lệ", "code": "VALIDATION_ERROR"},
+    )
+
 AI_QUEUE_WORKERS = int(os.getenv("AI_QUEUE_WORKERS", "1"))
 AI_QUEUE_MAX_SIZE = int(os.getenv("AI_QUEUE_MAX_SIZE", "50"))
 AI_JOB_TTL_SECONDS = int(os.getenv("AI_JOB_TTL_SECONDS", "900"))
@@ -45,7 +74,7 @@ ai_worker_tasks = []
 
 def parse_cors_origins(raw_origins):
     if not raw_origins or not raw_origins.strip():
-        return ["*"]
+        return ["http://127.0.0.1:3002", "http://localhost:3002", "http://127.0.0.1:3000", "http://localhost:3000"]
 
     origins = [origin.strip() for origin in raw_origins.split(",")]
     return [origin for origin in origins if origin] or ["*"]
@@ -67,7 +96,14 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     role: str = "student"
-    group: str | None = None
+    studentCode: str
+    facultyCode: str
+    phoneNumber: str
+
+class ProfileUpdateRequest(BaseModel):
+    studentCode: str
+    facultyCode: str
+    phoneNumber: str
 
 class LoginRequest(BaseModel):
     email: str
@@ -134,9 +170,18 @@ UPLOADS_DIR = Path(BASE_DIR) / "uploads"
 AVATAR_UPLOADS_DIR = UPLOADS_DIR / "avatars"
 PROOF_UPLOADS_DIR = UPLOADS_DIR / "proofs"
 PREDICTION_UPLOADS_DIR = UPLOADS_DIR / "predictions"
+TRAINING_DATASET_DIR = Path(__file__).resolve().parent / "model_training" / "dataset"
 
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+
+async def read_limited_upload(file):
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File vượt quá giới hạn kích thước cho phép")
+    return content
 
 
 def get_windows_short_path(path):
@@ -399,6 +444,27 @@ def validate_password(password):
     if len(str(password or "")) < 6:
         raise AuthError(400, "Mật khẩu phải có ít nhất 6 ký tự")
 
+def normalize_student_code(value):
+    student_code = str(value or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{6,20}", student_code):
+        raise AuthError(400, "INVALID_STUDENT_CODE")
+    return student_code
+
+def normalize_phone_number(value):
+    phone_number = re.sub(r"[\s.\-]", "", str(value or "").strip())
+    if not re.fullmatch(r"0\d{9}", phone_number):
+        raise AuthError(400, "INVALID_PHONE_NUMBER")
+    return phone_number
+
+def validate_school_email(email):
+    if not re.fullmatch(r"[A-Z0-9._%+\-]+@(utehy|hyute)\.edu\.vn", email, re.IGNORECASE):
+        raise AuthError(400, "INVALID_SCHOOL_EMAIL")
+
+def profile_is_complete(role, student_code, faculty_code, phone_number):
+    if role not in {"student", "volunteer"}:
+        return True
+    return all((student_code, faculty_code, phone_number))
+
 def to_user_profile(row):
     (
         user_id,
@@ -412,7 +478,12 @@ def to_user_profile(row):
         avatar_url,
         created_at,
         updated_at,
+        student_code,
+        faculty_code,
+        faculty_name,
+        phone_number,
     ) = row
+    profile_completed = profile_is_complete(role, student_code, faculty_code, phone_number)
     return {
         "id": user_id,
         "name": name,
@@ -425,18 +496,27 @@ def to_user_profile(row):
         "avatarUrl": avatar_url,
         "createdAt": created_at.isoformat() if created_at else None,
         "updatedAt": updated_at.isoformat() if updated_at else None,
+        "studentCode": student_code,
+        "facultyCode": faculty_code,
+        "facultyName": faculty_name,
+        "phoneNumber": phone_number,
+        "profileCompleted": profile_completed,
+        "requiresProfileCompletion": not profile_completed,
     }
 
 USER_SELECT = """
-select id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
-from users
+select u.id, u.name, u.email, u.role, u."group", u.points, u.status,
+       u.avatar_key, u.avatar_url, u.created_at, u.updated_at,
+       u.student_code, u.faculty_code, f.name, u.phone_number
+from users u
+left join faculties f on f.code = u.faculty_code
 """
 
 def get_user_account(user_id):
     database_url = require_database_url()
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
-            cursor.execute(USER_SELECT + " where id = %s", (user_id,))
+            cursor.execute(USER_SELECT + " where u.id = %s", (user_id,))
             row = cursor.fetchone()
     if not row:
         raise AuthError(404, "Không tìm thấy tài khoản")
@@ -447,11 +527,14 @@ def register_user_account(payload):
     email = clean_email(payload.get("email"))
     password = payload.get("password")
     role = str(payload.get("role") or "student").strip().lower()
-    group_name = str(payload.get("group") or "").strip() or None
     if not name or not email:
         raise AuthError(400, "Thiếu tên hoặc email")
     if role not in {"student", "volunteer"}:
-        raise AuthError(400, "Vai trò đăng ký không hợp lệ")
+        raise AuthError(400, "INVALID_REGISTRATION_ROLE")
+    validate_school_email(email)
+    student_code = normalize_student_code(payload.get("studentCode"))
+    faculty_code = str(payload.get("facultyCode") or "").strip().lower()
+    phone_number = normalize_phone_number(payload.get("phoneNumber"))
     validate_password(password)
 
     status = "pending" if role == "volunteer" else "active"
@@ -461,17 +544,29 @@ def register_user_account(payload):
             cursor.execute("select 1 from users where lower(email) = lower(%s)", (email,))
             if cursor.fetchone():
                 raise AuthError(409, "Email đã tồn tại")
+            cursor.execute("select name from faculties where code = %s and status = 'active'", (faculty_code,))
+            faculty = cursor.fetchone()
+            if not faculty:
+                raise AuthError(400, "INVALID_FACULTY")
+            cursor.execute("select 1 from users where lower(student_code) = lower(%s)", (student_code,))
+            if cursor.fetchone():
+                raise AuthError(409, "STUDENT_CODE_EXISTS")
+            user_id = str(uuid.uuid4())
             cursor.execute(
                 """
-                insert into users (id, name, email, password_hash, role, "group", status, points, updated_at)
-                values (%s, %s, %s, %s, %s, %s, %s, 0, now())
-                returning id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                insert into users (
+                    id, name, email, password_hash, role, "group", status, points,
+                    student_code, faculty_code, phone_number, updated_at
+                )
+                values (%s, %s, %s, %s, %s, %s, %s, 0, %s, %s, %s, now())
                 """,
-                (str(uuid.uuid4()), name, email, hash_password(password), role, group_name, status),
+                (
+                    user_id, name, email, hash_password(password), role, faculty[0], status,
+                    student_code, faculty_code, phone_number,
+                ),
             )
-            row = cursor.fetchone()
         connection.commit()
-    return to_user_profile(row)
+    return get_user_account(user_id)
 
 def login_user_account(email, password):
     database_url = require_database_url()
@@ -479,21 +574,21 @@ def login_user_account(email, password):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                select id, name, email, password_hash, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                select id, password_hash, status
                 from users
                 where lower(email) = lower(%s)
                 """,
                 (clean_email(email),),
             )
             row = cursor.fetchone()
-    if not row or not verify_password(password, row[3]):
+    if not row or not verify_password(password, row[1]):
         raise AuthError(401, "Email hoặc mật khẩu không đúng")
-    status = row[7]
+    status = row[2]
     if status == "pending":
         raise AuthError(403, "Tài khoản tình nguyện viên đang chờ duyệt")
     if status != "active":
         raise AuthError(403, "Tài khoản không được phép đăng nhập")
-    return to_user_profile((row[0], row[1], row[2], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11]))
+    return get_user_account(row[0])
 
 def change_user_password(user_id, current_password, new_password):
     validate_password(new_password)
@@ -524,7 +619,7 @@ def update_user_account_status(user_id, status):
                 """
                 update users set status = %s, updated_at = now()
                 where id = %s
-                returning id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                returning id
                 """,
                 (cleaned, user_id),
             )
@@ -532,7 +627,58 @@ def update_user_account_status(user_id, status):
         connection.commit()
     if not row:
         raise AuthError(404, "Không tìm thấy tài khoản")
-    return to_user_profile(row)
+    return get_user_account(row[0])
+
+def list_active_faculties():
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select code, name, status, sort_order
+                from faculties
+                where status = 'active'
+                order by sort_order asc
+                """
+            )
+            rows = cursor.fetchall()
+    return [
+        {"code": row[0], "name": row[1], "status": row[2], "sortOrder": row[3]}
+        for row in rows
+    ]
+
+def update_user_profile(user_id, payload):
+    student_code = normalize_student_code(payload.get("studentCode"))
+    faculty_code = str(payload.get("facultyCode") or "").strip().lower()
+    phone_number = normalize_phone_number(payload.get("phoneNumber"))
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select name from faculties where code = %s and status = 'active'", (faculty_code,))
+            faculty = cursor.fetchone()
+            if not faculty:
+                raise AuthError(400, "INVALID_FACULTY")
+            cursor.execute(
+                "select 1 from users where lower(student_code) = lower(%s) and id <> %s",
+                (student_code, user_id),
+            )
+            if cursor.fetchone():
+                raise AuthError(409, "STUDENT_CODE_EXISTS")
+            cursor.execute(
+                """
+                update users
+                set student_code = %s, faculty_code = %s, phone_number = %s,
+                    "group" = %s, updated_at = now()
+                where id = %s and role in ('student', 'volunteer')
+                returning id
+                """,
+                (student_code, faculty_code, phone_number, faculty[0], user_id),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    if not row:
+        raise AuthError(404, "Không tìm thấy tài khoản sinh viên")
+    return get_user_account(row[0])
 
 def raise_auth_error(error):
     if isinstance(error, AuthError):
@@ -546,9 +692,12 @@ def current_user_from_authorization(authorization):
     if not payload or not payload.get("sub"):
         raise HTTPException(status_code=401, detail="Token đăng nhập không hợp lệ")
     try:
-        return get_user_account(payload["sub"])
+        user = get_user_account(payload["sub"])
     except AuthError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail)
+    if str(user.get("status") or "").strip().lower() != "active":
+        raise HTTPException(status_code=403, detail="Tài khoản không hoạt động")
+    return user
 
 def require_admin_user(authorization):
     user = current_user_from_authorization(authorization)
@@ -560,14 +709,23 @@ def require_role_user(authorization, allowed_roles):
     user = current_user_from_authorization(authorization)
     if user.get("role") not in allowed_roles:
         raise HTTPException(status_code=403, detail="Tài khoản không có quyền thực hiện thao tác này")
+    if user.get("role") in {"student", "volunteer"} and user.get("requiresProfileCompletion"):
+        raise HTTPException(status_code=403, detail="PROFILE_INCOMPLETE")
     return user
 
 @app.post("/api/auth/register", status_code=201)
 def auth_register(request: RegisterRequest):
     try:
-        return {"user": register_user_account(request.dict())}
+        user = register_user_account(request.dict())
     except AuthError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail)
+    response = {"user": user}
+    if user["status"] == "active":
+        response.update({
+            "token": create_auth_token({"sub": user["id"], "role": user["role"]}),
+            "tokenType": "Bearer",
+        })
+    return response
 
 @app.post("/api/auth/login")
 def auth_login(request: LoginRequest):
@@ -581,6 +739,18 @@ def auth_login(request: LoginRequest):
 @app.get("/api/auth/me")
 def auth_me(authorization: str | None = Header(default=None)):
     return {"user": current_user_from_authorization(authorization)}
+
+@app.get("/api/catalog/faculties")
+def catalog_faculties():
+    return {"data": list_active_faculties()}
+
+@app.patch("/api/users/me/profile")
+def users_update_own_profile(request: ProfileUpdateRequest, authorization: str | None = Header(default=None)):
+    user = current_user_from_authorization(authorization)
+    try:
+        return {"user": update_user_profile(user["id"], request.dict())}
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
 
 @app.post("/api/auth/change-password")
 def auth_change_password(request: ChangePasswordRequest, authorization: str | None = Header(default=None)):
@@ -606,6 +776,10 @@ def users_update_status(user_id: str, request: UserStatusRequest, authorization:
 CAMEL_ALIASES = {
     "avatar_key": "avatarKey",
     "avatar_url": "avatarUrl",
+    "student_code": "studentCode",
+    "faculty_code": "facultyCode",
+    "phone_number": "phoneNumber",
+    "sort_order": "sortOrder",
     "bin_group": "binGroup",
     "qr_code": "qrCode",
     "map_x": "mapX",
@@ -617,6 +791,8 @@ CAMEL_ALIASES = {
     "category_name": "categoryName",
     "reward_points": "rewardPoints",
     "action_label": "actionLabel",
+    "event_type": "eventType",
+    "filter_waste_type_id": "filterWasteTypeId",
     "class_keys": "classKeys",
     "model_name": "modelName",
     "class_count": "classCount",
@@ -624,6 +800,13 @@ CAMEL_ALIASES = {
     "bin_id": "binId",
     "reward_id": "rewardId",
     "reward_label": "rewardLabel",
+    "reward_title": "rewardTitle",
+    "student_id": "studentId",
+    "batch_id": "batchId",
+    "submission_id": "submissionId",
+    "mission_id": "missionId",
+    "points_each": "pointsEach",
+    "points_total": "pointsTotal",
     "waste_type_id": "wasteTypeId",
     "qr_token": "qrToken",
     "qr_signature": "qrSignature",
@@ -645,16 +828,20 @@ CAMEL_ALIASES = {
     "scanned_by": "scannedBy",
     "station_id": "stationId",
     "scanned_at": "scannedAt",
+    "expires_at": "expiresAt",
+    "fulfilled_at": "fulfilledAt",
     "image_hash": "imageHash",
     "captured_at": "capturedAt",
     "verification_code": "verificationCode",
+    "reference_type": "referenceType",
+    "reference_id": "referenceId",
 }
 
 ADMIN_RESOURCES = {
     "users": {
         "table": "users",
-        "columns": ["id", "name", "email", "role", "group", "points", "status", "avatar_key", "avatar_url", "created_at", "updated_at"],
-        "writable": ["name", "email", "role", "group", "points", "status", "avatar_key", "avatar_url"],
+        "columns": ["id", "name", "email", "role", "group", "points", "status", "student_code", "faculty_code", "phone_number", "avatar_key", "avatar_url", "created_at", "updated_at"],
+        "writable": ["name", "email", "role", "group", "points", "status", "student_code", "faculty_code", "phone_number", "avatar_key", "avatar_url"],
         "order": "created_at desc",
     },
     "bins": {
@@ -671,8 +858,8 @@ ADMIN_RESOURCES = {
     },
     "rewards": {
         "table": "rewards",
-        "columns": ["id", "title", "description", "category_id", "category_name", "cost_points", "status", "color", "created_at", "updated_at"],
-        "writable": ["id", "title", "description", "category_id", "category_name", "cost_points", "status", "color"],
+        "columns": ["id", "title", "description", "category_id", "category_name", "cost_points", "stock", "status", "color", "created_at", "updated_at"],
+        "writable": ["id", "title", "description", "category_id", "category_name", "cost_points", "stock", "status", "color"],
         "order": "cost_points asc",
     },
     "reward-categories": {
@@ -683,8 +870,8 @@ ADMIN_RESOURCES = {
     },
     "missions": {
         "table": "missions",
-        "columns": ["id", "title", "description", "target", "reward_points", "action_label", "status", "created_at", "updated_at"],
-        "writable": ["id", "title", "description", "target", "reward_points", "action_label", "status"],
+        "columns": ["id", "title", "description", "target", "reward_points", "action_label", "event_type", "filter_waste_type_id", "status", "created_at", "updated_at"],
+        "writable": ["id", "title", "description", "target", "reward_points", "action_label", "event_type", "filter_waste_type_id", "status"],
         "order": "created_at desc",
     },
     "point-rules": {
@@ -717,6 +904,12 @@ ADMIN_RESOURCES = {
         "writable": ["id", "user_id", "reward_id", "reward_label", "cost_points", "status", "reviewed_at", "admin_note"],
         "order": "requested_at desc",
     },
+    "reward-redemption-batches": {
+        "table": "reward_redemption_batches",
+        "columns": ["id", "student_id", "qr_token", "created_at", "expires_at", "status", "scanned_by", "scanned_at", "fulfilled_at", "updated_at"],
+        "writable": [],
+        "order": "created_at desc",
+    },
     "recycling-submissions": {
         "table": "recycling_submissions",
         "columns": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "created_at", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
@@ -737,8 +930,8 @@ ADMIN_RESOURCES = {
     },
     "point-history": {
         "table": "point_history",
-        "columns": ["id", "prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "created_at", "admin_note", "source", "description", "status"],
-        "writable": ["prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "admin_note", "source", "description", "status"],
+        "columns": ["id", "prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "created_at", "admin_note", "source", "description", "status", "reference_type", "reference_id"],
+        "writable": ["prediction_id", "submission_id", "user_id", "bin_id", "class", "bin_group", "action", "points", "timestamp", "admin_note", "source", "description", "status", "reference_type", "reference_id"],
         "order": "timestamp desc",
     },
 }
@@ -791,9 +984,75 @@ def list_rows_from_config(config, where_sql="", params=()):
             cursor.execute(query, params)
             return [admin_row_to_json(config["columns"], row) for row in cursor.fetchall()]
 
+REWARD_BATCH_ITEM_COLUMNS = [
+    "id",
+    "batch_id",
+    "reward_id",
+    "reward_title",
+    "quantity",
+    "points_each",
+    "points_total",
+]
+
+
+def attach_reward_batch_items(rows):
+    if not rows:
+        return rows
+    batch_ids = [row["id"] for row in rows]
+    placeholders = ", ".join(["%s"] * len(batch_ids))
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"select {', '.join(REWARD_BATCH_ITEM_COLUMNS)} "
+                f"from reward_redemption_items where batch_id in ({placeholders}) order by id",
+                batch_ids,
+            )
+            item_rows = cursor.fetchall()
+    items = [
+        admin_row_to_json(REWARD_BATCH_ITEM_COLUMNS, row) for row in item_rows
+    ]
+    for row in rows:
+        row["items"] = [item for item in items if item["batchId"] == row["id"]]
+    return rows
+
+
+def mobile_reward_batch_row(batch):
+    items = batch.get("items") or []
+    total_points = sum(int(item.get("pointsTotal") or 0) for item in items)
+    return {
+        **batch,
+        "userId": batch.get("studentId"),
+        "rewardId": items[0].get("rewardId") if items else "",
+        "rewardLabel": ", ".join(
+            f"{item.get('rewardTitle') or item.get('rewardId')} x{item.get('quantity')}"
+            for item in items
+        ),
+        "costPoints": total_points,
+        "totalPoints": total_points,
+        "requestedAt": batch.get("createdAt"),
+        "reviewedAt": batch.get("fulfilledAt"),
+    }
+
+
+def list_mobile_reward_batches(user_id=None):
+    if user_id:
+        rows = list_rows_from_config(
+            ADMIN_RESOURCES["reward-redemption-batches"],
+            "student_id = %s",
+            (user_id,),
+        )
+    else:
+        rows = list_rows_from_config(ADMIN_RESOURCES["reward-redemption-batches"])
+    return [mobile_reward_batch_row(row) for row in attach_reward_batch_items(rows)]
+
+
 def list_admin_resource(resource):
     config = admin_resource_config(resource)
-    return list_rows_from_config(config)
+    rows = list_rows_from_config(config)
+    if resource == "reward-redemption-batches":
+        attach_reward_batch_items(rows)
+    return rows
 
 def generated_admin_id(payload):
     base = payload.get("id") or payload.get("key") or payload.get("name") or payload.get("title") or payload.get("label") or "item"
@@ -831,6 +1090,25 @@ def save_admin_resource(resource, payload):
         connection.commit()
     return admin_row_to_json(config["columns"], row)
 
+
+TRANSACTION_ONLY_ADMIN_RESOURCES = {
+    "point-history",
+    "recycling-submissions",
+}
+
+
+def validate_admin_resource_write(resource, payload):
+    if resource in TRANSACTION_ONLY_ADMIN_RESOURCES:
+        raise HTTPException(
+            status_code=405,
+            detail="Dữ liệu nghiệp vụ này chỉ được cập nhật qua transaction endpoint",
+        )
+    if resource == "users" and any(field in payload for field in {"points", "status"}):
+        raise HTTPException(
+            status_code=400,
+            detail="Điểm và trạng thái tài khoản phải cập nhật qua endpoint chuyên dụng",
+        )
+
 def delete_admin_resource(resource, item_id):
     config = admin_resource_config(resource)
     database_url = require_database_url()
@@ -855,9 +1133,15 @@ def admin_list_resource(resource: str, authorization: str | None = Header(defaul
     require_admin_user(authorization)
     return {"data": list_admin_resource(resource)}
 
+@app.post("/api/admin/point-adjustments")
+def admin_adjust_points(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": adjust_manual_points_account(user["id"], payload)}
+
 @app.post("/api/admin/{resource}")
 def admin_save_resource(resource: str, payload: dict, authorization: str | None = Header(default=None)):
     require_admin_user(authorization)
+    validate_admin_resource_write(resource, payload)
     return {"data": save_admin_resource(resource, payload)}
 
 @app.delete("/api/admin/{resource}/{item_id}")
@@ -879,6 +1163,22 @@ def mission_with_progress(mission, progress):
         "actionLabel": "Xong" if completed else mission.get("actionLabel", "Tiếp tục"),
     }
 
+def list_mobile_leaderboard_users():
+    columns = ["id", "name", "group", "points", "avatar_key", "avatar_url"]
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select id, name, "group", points, avatar_key, avatar_url
+                from users
+                where role = 'student' and status = 'active'
+                order by points desc, name asc
+                """
+            )
+            return [admin_row_to_json(columns, row) for row in cursor.fetchall()]
+
+
 def load_mobile_initial_data(user):
     progress_rows = list_rows_from_config(USER_MISSIONS_CONFIG, "user_id = %s", (user["id"],))
     progress_by_mission = {row["missionId"]: row for row in progress_rows}
@@ -886,20 +1186,62 @@ def load_mobile_initial_data(user):
         mission_with_progress(mission, progress_by_mission.get(mission["id"]))
         for mission in list_rows_from_config(ADMIN_RESOURCES["missions"])
     ]
+    role = str(user.get("role") or "").strip().lower()
+    user_id = user["id"]
+
+    if role == "student":
+        predictions = list_rows_from_config(ADMIN_RESOURCES["predictions"], "user_id = %s", (user_id,))
+        submissions = list_rows_from_config(ADMIN_RESOURCES["recycling-submissions"], "user_id = %s", (user_id,))
+        point_transactions = list_rows_from_config(POINT_HISTORY_CONFIG, "user_id = %s", (user_id,))
+        feedbacks = list_rows_from_config(ADMIN_RESOURCES["feedback"], "user_id = %s", (user_id,))
+        reward_redemptions = list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"], "user_id = %s", (user_id,))
+        reward_redemptions.extend(list_mobile_reward_batches(user_id))
+        proof_images = list_rows_from_config(
+            ADMIN_RESOURCES["proof-images"],
+            "submission_id in (select id from recycling_submissions where user_id = %s)",
+            (user_id,),
+        )
+        qr_scan_logs = []
+    elif role == "volunteer":
+        predictions = []
+        submissions = list_rows_from_config(
+            ADMIN_RESOURCES["recycling-submissions"],
+            "status = 'CREATED' or verified_by = %s",
+            (user_id,),
+        )
+        point_transactions = []
+        feedbacks = []
+        reward_redemptions = []
+        proof_images = list_rows_from_config(
+            ADMIN_RESOURCES["proof-images"],
+            "submission_id in (select id from recycling_submissions where verified_by = %s)",
+            (user_id,),
+        )
+        qr_scan_logs = list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"], "scanned_by = %s", (user_id,))
+    else:
+        predictions = list_rows_from_config(ADMIN_RESOURCES["predictions"])
+        submissions = list_rows_from_config(ADMIN_RESOURCES["recycling-submissions"])
+        point_transactions = list_rows_from_config(POINT_HISTORY_CONFIG)
+        feedbacks = list_rows_from_config(ADMIN_RESOURCES["feedback"])
+        reward_redemptions = list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"])
+        reward_redemptions.extend(list_mobile_reward_batches())
+        proof_images = list_rows_from_config(ADMIN_RESOURCES["proof-images"])
+        qr_scan_logs = list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"])
+
     return {
-        "users": list_rows_from_config(ADMIN_RESOURCES["users"]),
+        "users": list_mobile_leaderboard_users() if role in {"student", "volunteer"} else list_rows_from_config(ADMIN_RESOURCES["users"]),
         "stations": list_rows_from_config(ADMIN_RESOURCES["bins"]),
         "wasteTypes": list_rows_from_config(ADMIN_RESOURCES["waste-types"]),
-        "predictions": list_rows_from_config(ADMIN_RESOURCES["predictions"]),
-        "submissions": list_rows_from_config(ADMIN_RESOURCES["recycling-submissions"]),
-        "pointTransactions": list_rows_from_config(POINT_HISTORY_CONFIG),
-        "feedbacks": list_rows_from_config(ADMIN_RESOURCES["feedback"]),
+        "predictions": predictions,
+        "submissions": submissions,
+        "pointTransactions": point_transactions,
+        "feedbacks": feedbacks,
         "missions": missions,
         "rewards": list_rows_from_config(ADMIN_RESOURCES["rewards"]),
         "rewardCategories": list_rows_from_config(ADMIN_RESOURCES["reward-categories"]),
-        "rewardRedemptions": list_rows_from_config(ADMIN_RESOURCES["reward-redemptions"]),
-        "proofImages": list_rows_from_config(ADMIN_RESOURCES["proof-images"]),
-        "qrScanLogs": list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"]),
+        "rewardRedemptions": reward_redemptions,
+        "proofImages": proof_images,
+        "qrScanLogs": qr_scan_logs,
         "avatarOptions": list_avatar_presets(),
     }
 
@@ -916,7 +1258,7 @@ def update_mobile_user_avatar(user_id, avatar_key):
                 update users
                 set avatar_key = %s, avatar_url = %s, updated_at = now()
                 where id = %s
-                returning id, name, email, role, "group", points, status, avatar_key, avatar_url, created_at, updated_at
+                returning id
                 """,
                 (avatar[0], avatar[1], user_id),
             )
@@ -924,7 +1266,7 @@ def update_mobile_user_avatar(user_id, avatar_key):
         connection.commit()
     if not row:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
-    return to_user_profile(row)
+    return get_user_account(row[0])
 
 def prediction_bin_group(class_name, fallback="Khác"):
     groups = {
@@ -994,69 +1336,68 @@ def save_mobile_feedback(user, payload):
                 (str(uuid.uuid4()), user["id"], user.get("name") or "Eco-loop user", category, message, payload.get("stationId") or payload.get("binId")),
             )
             row = cursor.fetchone()
+            cursor.execute(
+                "select apply_mission_event(%s, 'feedback_created', %s, null, 1)",
+                (user["id"], row[0]),
+            )
         connection.commit()
     return admin_row_to_json(ADMIN_RESOURCES["feedback"]["columns"], row)
 
-def advance_mobile_mission(user_id, mission_id):
+def correct_prediction(prediction_id, admin_id, payload):
+    corrected_class = str(payload.get("correctedClass") or payload.get("corrected_class") or "").strip()
+    if not corrected_class or not re.fullmatch(r"[A-Za-z0-9_-]+", corrected_class):
+        raise HTTPException(status_code=400, detail="Nhãn AI không hợp lệ")
     database_url = require_database_url()
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                select id, title, description, target, reward_points, action_label, status, created_at, updated_at
-                from missions
-                where id = %s and status = 'active'
-                for update
-                """,
-                (mission_id,),
-            )
-            mission_row = cursor.fetchone()
-            if not mission_row:
-                raise HTTPException(status_code=404, detail="Không tìm thấy nhiệm vụ")
-            mission = admin_row_to_json(ADMIN_RESOURCES["missions"]["columns"], mission_row)
-            target = max(1, int(mission["target"] or 1))
-            cursor.execute(
-                """
-                insert into user_missions (user_id, mission_id, current, completed, status)
-                values (%s, %s, 1, false, 'active')
-                on conflict (user_id, mission_id) do update
-                set current = least(%s, user_missions.current + 1),
-                    updated_at = now()
-                returning id, user_id, mission_id, current, completed, status, updated_at
-                """,
-                (user_id, mission_id, target),
-            )
-            progress = admin_row_to_json(USER_MISSIONS_CONFIG["columns"], cursor.fetchone())
-            completed_now = int(progress["current"] or 0) >= target
-            if completed_now and not progress.get("completed"):
-                cursor.execute(
-                    """
-                    update user_missions
-                    set completed = true, status = 'completed', updated_at = now()
-                    where user_id = %s and mission_id = %s
-                    returning id, user_id, mission_id, current, completed, status, updated_at
-                    """,
-                    (user_id, mission_id),
-                )
-                progress = admin_row_to_json(USER_MISSIONS_CONFIG["columns"], cursor.fetchone())
-                reward_points = int(mission.get("rewardPoints") or 0)
-                if reward_points > 0:
-                    cursor.execute("update users set points = points + %s, updated_at = now() where id = %s", (reward_points, user_id))
-                    cursor.execute(
-                        """
-                        insert into point_history (user_id, class, bin_group, action, points, source, description, status)
-                        values (%s, 'mission', 'Nhiệm vụ', %s, %s, 'mission_reward', %s, 'confirmed')
-                        """,
-                        (user_id, mission.get("title") or "Hoàn thành nhiệm vụ", reward_points, f"Hoàn thành nhiệm vụ {mission.get('title') or mission_id}"),
-                    )
-        connection.commit()
-    return mission_with_progress(mission, progress)
+            cursor.execute("select id, image_url, class, user_id, bin_id from predictions where id=%s", (prediction_id,))
+            prediction = cursor.fetchone()
+            if not prediction:
+                raise HTTPException(status_code=404, detail="Không tìm thấy prediction")
+            sample_id = str(uuid.uuid4())
+            image_url = str(prediction[1] or "")
+            source = (UPLOADS_DIR / image_url.removeprefix("/uploads/")).resolve() if image_url.startswith("/uploads/") else None
+            if not source or not source.is_file() or source.is_relative_to(TRAINING_DATASET_DIR):
+                raise HTTPException(status_code=400, detail="Prediction chưa có ảnh server hợp lệ để export")
+            destination_dir = (TRAINING_DATASET_DIR / corrected_class).resolve()
+            if not destination_dir.is_relative_to(TRAINING_DATASET_DIR.resolve()):
+                raise HTTPException(status_code=400, detail="Đường dẫn dataset không hợp lệ")
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
+            destination = destination_dir / f"reviewed-{digest}{source.suffix.lower()}"
+            cursor.execute("insert into ai_training_samples (id, prediction_id, original_class, corrected_class, corrected_by, note, annotation_status, image_path, export_class) values (%s,%s,%s,%s,%s,%s,'reviewed',%s,%s) returning id", (sample_id, prediction[0], prediction[2] or "", corrected_class, admin_id, str(payload.get("note") or "").strip(), str(source), corrected_class))
+            if not destination.exists():
+                destination_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+                cursor.execute("update ai_training_samples set annotation_status='exported', exported_at=now(), image_path=%s where id=%s", (str(destination), sample_id))
+            connection.commit()
+    return {"id": sample_id, "predictionId": prediction_id, "originalClass": prediction[2], "correctedClass": corrected_class, "exportedPath": str(destination)}
+
+def update_feedback_status(feedback_id, payload, admin_id):
+    status = str(payload.get("status") or "").strip().lower()
+    if status not in {"unread", "in_progress", "resolved", "rejected"}:
+        raise HTTPException(status_code=400, detail="Trạng thái phản hồi không hợp lệ")
+    note = str(payload.get("adminNote") or payload.get("admin_note") or "").strip()
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("update feedback set status=%s, admin_note=%s, resolved_at=case when %s='resolved' then now() else resolved_at end where id=%s returning id, user_id, user_name, category, message, status, priority, bin_id, admin_note, resolved_at, timestamp, created_at", (status, note, status, feedback_id))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Không tìm thấy phản hồi")
+            connection.commit()
+    return admin_row_to_json(ADMIN_RESOURCES["feedback"]["columns"], row)
+
+def advance_mobile_mission(user_id, mission_id):
+    raise HTTPException(
+        status_code=405,
+        detail="Tiến độ nhiệm vụ chỉ được cập nhật từ sự kiện nghiệp vụ backend",
+    )
 
 def request_mobile_reward(user_id, reward_id):
     database_url = require_database_url()
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("select title, cost_points from rewards where id = %s and status = 'active'", (reward_id,))
+            cursor.execute("select title, cost_points, stock from rewards where id = %s and status = 'active'", (reward_id,))
             reward = cursor.fetchone()
             if not reward:
                 raise HTTPException(status_code=404, detail="Không tìm thấy phần thưởng")
@@ -1064,6 +1405,8 @@ def request_mobile_reward(user_id, reward_id):
             user_points = cursor.fetchone()
             if not user_points:
                 raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+            if reward[2] is not None and int(reward[2]) < 1:
+                raise HTTPException(status_code=409, detail="Phần thưởng đã hết hàng")
             if int(user_points[0] or 0) < int(reward[1] or 0):
                 raise HTTPException(status_code=400, detail="Không đủ Ecopoint để đổi phần thưởng")
             cursor.execute(
@@ -1098,6 +1441,16 @@ def mobile_save_feedback(payload: dict, authorization: str | None = Header(defau
     user = require_role_user(authorization, {"student", "volunteer", "admin"})
     return {"data": save_mobile_feedback(user, payload)}
 
+@app.patch("/api/admin/feedback/{feedback_id}")
+def admin_update_feedback(feedback_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": update_feedback_status(feedback_id, payload, user["id"])}
+
+@app.post("/api/admin/predictions/{prediction_id}/correct")
+def admin_correct_prediction(prediction_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": correct_prediction(prediction_id, user["id"], payload)}
+
 @app.post("/api/mobile/missions/{mission_id}/advance")
 def mobile_advance_mission(mission_id: str, authorization: str | None = Header(default=None)):
     user = require_role_user(authorization, {"student"})
@@ -1106,8 +1459,17 @@ def mobile_advance_mission(mission_id: str, authorization: str | None = Header(d
 @app.post("/api/mobile/reward-redemptions", status_code=201)
 def mobile_request_reward(payload: dict, authorization: str | None = Header(default=None)):
     user = require_role_user(authorization, {"student"})
-    return {"data": request_mobile_reward(user["id"], payload.get("rewardId") or payload.get("reward_id"))}
+    return {"data": create_reward_redemption_batch_account(user["id"], payload)}
 
+@app.post("/api/mobile/reward-redemptions/scan")
+def mobile_scan_reward_redemption(payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"volunteer", "admin"})
+    return {"data": scan_reward_redemption_batch_account(user["id"], payload)}
+
+@app.post("/api/admin/reward-redemption-batches/{batch_id}/finalize")
+def admin_finalize_reward_redemption(batch_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": finalize_reward_redemption_batch_account(user["id"], batch_id, payload)}
 
 def normalize_json_result(value):
     if isinstance(value, str):
@@ -1121,8 +1483,28 @@ POSTGRES_BUSINESS_ERROR_STATUS = {
     "INVALID_STUDENT": 400,
     "INVALID_VOLUNTEER": 400,
     "INVALID_QUANTITY": 400,
+    "INVALID_STATION": 400,
+    "INVALID_WASTE_TYPE": 400,
     "INVALID_SUBMISSION_STATUS": 400,
+    "SUBMISSION_ACTOR_MISMATCH": 403,
     "PROOF_IMAGE_REQUIRED": 400,
+    "REWARD_ITEMS_REQUIRED": 400,
+    "ACTIVE_REWARD_BATCH_EXISTS": 409,
+    "REWARD_NOT_FOUND": 404,
+    "REWARD_OUT_OF_STOCK": 409,
+    "DUPLICATE_REWARD_ITEM": 400,
+    "REWARD_TOTAL_INVALID": 400,
+    "INVALID_REWARD_QUANTITY": 400,
+    "INVALID_REDEMPTION_ACTOR": 403,
+    "REWARD_BATCH_NOT_FOUND": 404,
+    "REWARD_BATCH_ALREADY_PROCESSED": 409,
+    "REWARD_BATCH_EXPIRED": 409,
+    "INSUFFICIENT_POINTS": 400,
+    "INVALID_REDEMPTION_STATUS": 400,
+    "INVALID_MANUAL_POINT_ACTOR": 403,
+    "INVALID_MANUAL_POINT": 400,
+    "USER_NOT_FOUND": 404,
+    "POINT_BALANCE_WOULD_BE_NEGATIVE": 400,
 }
 
 def postgres_business_error_code(error):
@@ -1152,16 +1534,58 @@ def qr_payload_value(payload, camel_name, snake_name=None, default=None):
         return payload[snake_name]
     return default
 
+
+def require_positive_decimal(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        raise HTTPException(status_code=400, detail="INVALID_QUANTITY")
+    try:
+        quantity = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise HTTPException(status_code=400, detail="INVALID_QUANTITY")
+    if not quantity.is_finite() or quantity <= 0:
+        raise HTTPException(status_code=400, detail="INVALID_QUANTITY")
+    return quantity
+
 def create_recycling_submission_account(user_id, payload):
+    quantity = require_positive_decimal(qr_payload_value(payload, "quantity"))
     return call_postgres_json_function(
         "create_recycling_submission",
         [
             user_id,
             qr_payload_value(payload, "binId", "bin_id"),
             qr_payload_value(payload, "wasteTypeId", "waste_type_id"),
-            qr_payload_value(payload, "quantity"),
+            quantity,
         ],
     )
+
+def create_reward_redemption_batch_account(user_id, payload):
+    items = payload.get("items") or [{"rewardId": payload.get("rewardId"), "quantity": payload.get("quantity", 1)}]
+    database_url = require_database_url()
+    try:
+        with psycopg.connect(database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select create_reward_redemption_batch(%s, %s::jsonb, %s)", [user_id, json.dumps(items), 15])
+                row = cursor.fetchone()
+            connection.commit()
+    except Exception as error:
+        error_code = postgres_business_error_code(error)
+        if error_code in POSTGRES_BUSINESS_ERROR_STATUS:
+            raise HTTPException(status_code=POSTGRES_BUSINESS_ERROR_STATUS[error_code], detail=error_code) from error
+        raise
+    return normalize_json_result(row[0])
+
+def scan_reward_redemption_batch_account(actor_id, payload):
+    result = call_postgres_json_function("scan_reward_redemption_batch", [qr_payload_value(payload, "qrToken", "qr_token"), actor_id])
+    error_code = result.get("error") if isinstance(result, dict) else None
+    if error_code in POSTGRES_BUSINESS_ERROR_STATUS:
+        raise HTTPException(status_code=POSTGRES_BUSINESS_ERROR_STATUS[error_code], detail=error_code)
+    return result
+
+def finalize_reward_redemption_batch_account(actor_id, batch_id, payload):
+    return call_postgres_json_function("finalize_reward_redemption_batch", [batch_id, actor_id, payload.get("status"), payload.get("note", "")])
+
+def adjust_manual_points_account(admin_id, payload):
+    return call_postgres_json_function("adjust_manual_points", [payload.get("userId") or payload.get("user_id"), admin_id, payload.get("points"), payload.get("reason"), payload.get("referenceType", "manual_point"), payload.get("referenceId", "")])
 
 def scan_recycling_submission_account(volunteer_id, payload):
     return call_postgres_json_function(
@@ -1174,12 +1598,15 @@ def scan_recycling_submission_account(volunteer_id, payload):
     )
 
 def confirm_recycling_submission_account(volunteer_id, submission_id, payload):
+    actual_quantity = require_positive_decimal(
+        qr_payload_value(payload, "actualQuantity", "actual_quantity")
+    )
     return call_postgres_json_function(
         "confirm_recycling_submission",
         [
             submission_id,
             volunteer_id,
-            qr_payload_value(payload, "actualQuantity", "actual_quantity"),
+            actual_quantity,
             qr_payload_value(payload, "note", default=""),
         ],
     )
@@ -1209,11 +1636,29 @@ def to_proof_image(row):
         "note": note,
     }
 
-def save_submission_proof_image(submission_id, file_name, content_type, content, note=""):
+def require_submission_actor(submission_id, actor):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "select status, verified_by from recycling_submissions where id = %s",
+                (submission_id,),
+            )
+            submission = cursor.fetchone()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch rác")
+    if actor.get("role") != "admin" and submission[1] != actor.get("id"):
+        raise HTTPException(status_code=403, detail="SUBMISSION_ACTOR_MISMATCH")
+    if submission[0] not in {"QR_SCANNED", "PENDING_REVIEW"}:
+        raise HTTPException(status_code=400, detail="INVALID_SUBMISSION_STATUS")
+
+
+def save_submission_proof_image(submission_id, file_name, content_type, content, note="", actor=None):
     if not str(content_type or "").startswith("image/"):
         raise HTTPException(status_code=400, detail="File minh chứng phải là ảnh")
     if not content:
         raise HTTPException(status_code=400, detail="File minh chứng trống")
+    require_submission_actor(submission_id, actor or {})
 
     PROOF_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     proof_dir = PROOF_UPLOADS_DIR / slugify(submission_id, "submission")
@@ -1274,9 +1719,9 @@ async def mobile_upload_recycling_proof(
     file: UploadFile = File(...),
     authorization: str | None = Header(default=None),
 ):
-    require_role_user(authorization, {"volunteer", "admin"})
-    content = await file.read()
-    return {"data": save_submission_proof_image(submission_id, file.filename, file.content_type, content, note)}
+    user = require_role_user(authorization, {"volunteer", "admin"})
+    content = await read_limited_upload(file)
+    return {"data": save_submission_proof_image(submission_id, file.filename, file.content_type, content, note, user)}
 
 @app.post("/api/uploads/predictions", status_code=201)
 async def upload_prediction_image(file: UploadFile = File(...), authorization: str | None = Header(default=None)):
@@ -1423,7 +1868,8 @@ def delete_avatar_preset(key):
 
 
 @app.get("/api/avatar-presets")
-def avatar_presets_index():
+def avatar_presets_index(authorization: str | None = Header(default=None)):
+    require_role_user(authorization, {"student", "volunteer", "admin"})
     return list_avatar_presets()
 
 
@@ -1432,24 +1878,29 @@ async def avatar_presets_create(
     key: str = Form(...),
     label: str = Form(...),
     file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
 ):
-    content = await file.read()
+    require_admin_user(authorization)
+    content = await read_limited_upload(file)
     return save_avatar_preset(key, label, file.filename, file.content_type, content)
 
 
 @app.delete("/api/avatar-presets/{key}")
-def avatar_presets_delete(key: str):
+def avatar_presets_delete(key: str, authorization: str | None = Header(default=None)):
+    require_admin_user(authorization)
     return delete_avatar_preset(key)
 
 
 # ---------------- PREDICTION ROUTE ----------------
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    image_bytes = await file.read()
+async def predict(file: UploadFile = File(...), authorization: str | None = Header(default=None)):
+    require_role_user(authorization, {"student", "volunteer", "admin"})
+    image_bytes = await read_limited_upload(file)
     return predict_image_bytes(image_bytes)
 
 @app.post("/predict/jobs")
-async def create_prediction_job(file: UploadFile = File(...)):
+async def create_prediction_job(file: UploadFile = File(...), authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student", "volunteer", "admin"})
     cleanup_ai_jobs()
     ensure_ai_workers()
     if ai_queue.full():
@@ -1460,9 +1911,10 @@ async def create_prediction_job(file: UploadFile = File(...)):
     ai_jobs[job_id] = {
         "job_id": job_id,
         "status": "queued",
-        "image_bytes": await file.read(),
+        "image_bytes": await read_limited_upload(file),
         "created_at": now,
         "updated_at": now,
+        "user_id": user["id"],
     }
     position = ai_queue.qsize() + 1
     await ai_queue.put(job_id)
@@ -1474,11 +1926,14 @@ async def create_prediction_job(file: UploadFile = File(...)):
     })
 
 @app.get("/predict/jobs/{job_id}")
-async def get_prediction_job(job_id: str):
+async def get_prediction_job(job_id: str, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student", "volunteer", "admin"})
     cleanup_ai_jobs()
     job = ai_jobs.get(job_id)
     if not job:
         return JSONResponse(status_code=404, content={"error": "AI job not found"})
+    if job.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Không có quyền xem AI job này")
 
     payload = {"job_id": job_id, "status": job["status"]}
     if job["status"] == "done":

@@ -8,6 +8,7 @@ import {
 describe("backendAvatarStore", () => {
   beforeEach(() => {
     global.fetch = jest.fn();
+    localStorage.setItem("ecoloop_admin_token", "test-admin-token");
   });
 
   afterEach(() => {
@@ -24,7 +25,10 @@ describe("backendAvatarStore", () => {
 
     const response = await listAvatarPresets();
 
-    expect(global.fetch).toHaveBeenCalledWith("http://127.0.0.1:8000/api/avatar-presets");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/avatar-presets",
+      { headers: { Authorization: "Bearer test-admin-token" } },
+    );
     expect(response).toEqual({
       data: [
         {
@@ -51,7 +55,11 @@ describe("backendAvatarStore", () => {
 
     expect(global.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:8000/api/avatar-presets",
-      expect.objectContaining({ method: "POST", body: expect.any(FormData) }),
+      expect.objectContaining({
+        method: "POST",
+        body: expect.any(FormData),
+        headers: { Authorization: "Bearer test-admin-token" },
+      }),
     );
     const formData = global.fetch.mock.calls[0][1].body;
     expect(formData.get("key")).toBe("mam-xanh");
@@ -88,7 +96,7 @@ describe("backendAvatarStore", () => {
 
     expect(global.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:8000/api/avatar-presets/mam-xanh",
-      expect.objectContaining({ method: "DELETE" }),
+      expect.objectContaining({ method: "DELETE", headers: { Authorization: "Bearer test-admin-token" } }),
     );
     expect(response).toEqual({ data: { ok: true }, source: "backend", error: null });
   });

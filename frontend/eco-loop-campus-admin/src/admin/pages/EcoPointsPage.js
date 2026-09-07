@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import DataTable from "../components/DataTable";
 import StatusBadge from "../components/StatusBadge";
@@ -12,6 +12,8 @@ import {
   listRewards,
   listRewardCategories,
   listRewardRedemptions,
+  listRewardRedemptionBatches,
+  finalizeRewardRedemptionBatch,
   listUsers,
   deleteRewardCategory,
   saveManualPointHistory,
@@ -70,12 +72,72 @@ const formatSubmissionQuantity = row => {
   return `${quantity}${unit}`;
 };
 
+const userSearchText = user => [user.name, user.email, user.studentCode, user.id, user.group].filter(Boolean).join(" ");
+
+function SearchableUserPicker({ label, searchLabel, users, value, query, onQueryChange, onSelect }) {
+  const selectedUser = users.find(user => user.id === value);
+  const normalizedQuery = labelCode(query);
+  const visibleUsers = useMemo(() => {
+    const source = normalizedQuery
+      ? users.filter(user => labelCode(userSearchText(user)).includes(normalizedQuery))
+      : users;
+    return source.slice(0, 8);
+  }, [normalizedQuery, users]);
+
+  const updateQuery = nextValue => {
+    onQueryChange(nextValue);
+    const exactUser = users.find(user => {
+      const terms = [user.id, user.studentCode, user.email, user.name].map(item => labelCode(item));
+      return terms.includes(labelCode(nextValue));
+    });
+    if (exactUser) onSelect(exactUser);
+  };
+
+  return (
+    <div className="eg-user-picker">
+      <label>
+        {label}
+        <input
+          aria-label={searchLabel}
+          type="search"
+          value={query}
+          onChange={event => updateQuery(event.target.value)}
+          placeholder="Tìm theo tên, mã, email"
+          autoComplete="off"
+        />
+      </label>
+      {selectedUser && <span className="eg-muted-block">Đã chọn: {selectedUser.name} · {selectedUser.studentCode || selectedUser.email}</span>}
+      {query && visibleUsers.length > 0 && (
+        <div className="eg-user-picker-list" role="listbox" aria-label={`${label} gợi ý`}>
+          {visibleUsers.map(user => (
+            <button
+              key={user.id}
+              type="button"
+              role="option"
+              aria-selected={user.id === value}
+              className="eg-user-picker-option"
+              onClick={() => {
+                onSelect(user);
+                onQueryChange(`${user.name} · ${user.studentCode || user.email}`);
+              }}
+            >
+              <strong>{user.name}</strong>
+              <span>{user.studentCode || user.email} · {user.group || "Không rõ"}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EcoPointsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [rules, setRules] = useState([]);
   const [history, setHistory] = useState([]);
   const [users, setUsers] = useState([]);
   const [rewardRequests, setRewardRequests] = useState([]);
+  const [rewardBatches, setRewardBatches] = useState([]);
   const [rewardProducts, setRewardProducts] = useState([]);
   const [rewardCategories, setRewardCategories] = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -83,6 +145,8 @@ export default function EcoPointsPage() {
   const [rewardForm, setRewardForm] = useState(initialRewardForm);
   const [rewardCategoryForm, setRewardCategoryForm] = useState(initialRewardCategoryForm);
   const [rewardProductForm, setRewardProductForm] = useState(initialRewardProductForm);
+  const [manualUserQuery, setManualUserQuery] = useState("");
+  const [rewardUserQuery, setRewardUserQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState("");
@@ -93,27 +157,44 @@ export default function EcoPointsPage() {
     setToast(message);
   };
 
-  useEffect(() => {
-    let active = true;
-    async function loadData() {
+  const loadData = useCallback(async (active = true) => {
       setLoading(true);
-      const [rulesResponse, historyResponse, usersResponse, rewardRequestsResponse, rewardProductsResponse, rewardCategoriesResponse, submissionsResponse] = await Promise.all([listPointRules(), listPointHistory(), listUsers(), listRewardRedemptions(), listRewards(), listRewardCategories(), listRecyclingSubmissions()]);
+      const [rulesResponse, historyResponse, usersResponse, rewardRequestsResponse, rewardProductsResponse, rewardCategoriesResponse, submissionsResponse, rewardBatchesResponse] = await Promise.all([listPointRules(), listPointHistory(), listUsers(), listRewardRedemptions(), listRewards(), listRewardCategories(), listRecyclingSubmissions(), listRewardRedemptionBatches()]);
       if (!active) return;
       setRules(rulesResponse.data);
       setHistory(historyResponse.data);
       setUsers(usersResponse.data);
       setRewardRequests(rewardRequestsResponse.data);
+      setRewardBatches(rewardBatchesResponse.data);
       setRewardProducts(rewardProductsResponse.data);
       setRewardCategories(rewardCategoriesResponse.data);
       setSubmissions(submissionsResponse.data);
-      setError(rulesResponse.error || historyResponse.error || usersResponse.error || rewardRequestsResponse.error || rewardProductsResponse.error || rewardCategoriesResponse.error || submissionsResponse.error);
+      setError(rulesResponse.error || historyResponse.error || usersResponse.error || rewardRequestsResponse.error || rewardProductsResponse.error || rewardCategoriesResponse.error || submissionsResponse.error || rewardBatchesResponse.error);
       setLoading(false);
-    }
-    loadData();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    loadData(active);
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadData]);
+
+  const refreshData = async () => {
+    await loadData(true);
+    showToast("Đã tải lại dữ liệu Ecopoint");
+  };
+
+  const finalizeBatch = async (batch, status) => {
+    const response = await finalizeRewardRedemptionBatch(batch.id, status);
+    if (response.error || !response.data) {
+      showToast(response.error?.message || "Không thể cập nhật đổi thưởng", "danger");
+      return;
+    }
+    setRewardBatches(current => current.map(item => item.id === batch.id ? { ...item, ...response.data } : item));
+    showToast(status === "fulfilled" ? "Đã hoàn tất đổi thưởng" : "Đã hoàn điểm đổi thưởng");
+  };
 
   const userGroups = useMemo(() => Array.from(new Set(users.map(user => String(user.group || "").trim()).filter(Boolean))).sort(), [users]);
   const binGroupOptions = useMemo(() => BIN_GROUPS.map(group => group.label), []);
@@ -187,9 +268,23 @@ export default function EcoPointsPage() {
       action: manualForm.action.trim(),
       adminNote: manualForm.action.trim(),
     });
+    if (response.error || !response.data) {
+      setError(response.error);
+      showToast(response.error?.message || "Không thể điều chỉnh Ecopoint", "danger");
+      return;
+    }
     const user = users.find(item => item.id === response.data.userId);
-    setHistory(current => [{ ...response.data, userName: user?.name || response.data.userId, binName: "Điều chỉnh thủ công" }, ...current]);
-    setUsers(current => current.map(item => item.id === response.data.userId ? { ...item, points: Number(item.points || 0) + Number(response.data.points || 0) } : item));
+    setHistory(current => [{
+      id: response.data.historyId || `manual-${Date.now()}`,
+      ...response.data,
+      action: manualForm.action.trim(),
+      timestamp: new Date().toISOString(),
+      source: "manual_adjustment",
+      status: "confirmed",
+      userName: user?.name || response.data.userId,
+      binName: "Chưa gắn thùng",
+    }, ...current]);
+    setUsers(current => current.map(item => item.id === response.data.userId ? { ...item, points: Number(response.data.balanceAfter ?? (Number(item.points || 0) + Number(response.data.points || 0))) } : item));
     setError(response.error);
     showToast("Đã cộng điểm thủ công");
   };
@@ -390,6 +485,7 @@ export default function EcoPointsPage() {
           <h1>Ecopoint</h1>
         </div>
         <div className="eg-button-row">
+          <button type="button" className="eg-secondary-btn" onClick={refreshData}>Tải lại dữ liệu</button>
           <button type="button" className="eg-primary-btn" onClick={saveRules}>Lưu quy tắc điểm</button>
         </div>
       </div>
@@ -426,13 +522,15 @@ export default function EcoPointsPage() {
         <section className="eg-card">
           <div className="eg-card-head"><h2>Điểm thủ công</h2></div>
           <form className="eg-form eg-inline-form" onSubmit={submitManualPoint}>
-            <label>
-              Người nhận điểm
-              <select aria-label="Người nhận điểm" value={manualForm.userId} onChange={event => setManualForm(current => ({ ...current, userId: event.target.value }))}>
-                <option value="">Chọn người dùng</option>
-                {users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
-              </select>
-            </label>
+            <SearchableUserPicker
+              label="Người nhận điểm"
+              searchLabel="Tìm người nhận điểm"
+              users={users}
+              value={manualForm.userId}
+              query={manualUserQuery}
+              onQueryChange={setManualUserQuery}
+              onSelect={user => setManualForm(current => ({ ...current, userId: user.id }))}
+            />
             <label>
               Số điểm
               <input aria-label="Số điểm" type="number" value={manualForm.points} onChange={event => setManualForm(current => ({ ...current, points: event.target.value }))} />
@@ -448,13 +546,15 @@ export default function EcoPointsPage() {
         <section className="eg-card">
           <div className="eg-card-head"><h2>Quy đổi phần thưởng</h2></div>
           <form className="eg-form eg-reward-redemption-form" onSubmit={submitReward}>
-            <label>
-              Người đổi thưởng
-              <select aria-label="Người đổi thưởng" value={rewardForm.userId} onChange={event => setRewardForm(current => ({ ...current, userId: event.target.value }))}>
-                <option value="">Chọn người dùng</option>
-                {users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
-              </select>
-            </label>
+            <SearchableUserPicker
+              label="Người đổi thưởng"
+              searchLabel="Tìm người đổi thưởng"
+              users={users}
+              value={rewardForm.userId}
+              query={rewardUserQuery}
+              onQueryChange={setRewardUserQuery}
+              onSelect={user => setRewardForm(current => ({ ...current, userId: user.id }))}
+            />
             <label>
               Mốc phần thưởng
               <select aria-label="Mốc phần thưởng" value={rewardSelectValue} onChange={event => setRewardForm(current => ({ ...current, rewardLabel: event.target.value }))}>
@@ -585,6 +685,17 @@ export default function EcoPointsPage() {
       <section className="eg-card">
         <div className="eg-card-head"><h2>Yêu cầu đổi thưởng</h2></div>
         <DataTable columns={rewardColumns} rows={rewardRequests} emptyText="Chưa có yêu cầu đổi thưởng." />
+      </section>
+      <section className="eg-card">
+        <div className="eg-card-head"><h2>Mã QR đổi thưởng</h2></div>
+        {rewardBatches.length === 0 ? <p>Chưa có mã QR đổi thưởng.</p> : rewardBatches.map(batch => (
+          <div key={batch.id} className="eg-list-row">
+            <div><strong>{batch.id}</strong><p>{batch.items?.map(item => `${item.rewardTitle} x${item.quantity}`).join(', ')}</p></div>
+            <div><StatusBadge group={batch.status}>{batch.status}</StatusBadge><div className="eg-button-row">
+              {batch.status === "fulfilled" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "cancelled")}>Hoàn tác đổi thưởng</button>}
+            </div></div>
+          </div>
+        ))}
       </section>
       <Toast message={toast} tone={toastTone} onClose={() => setToast("")} />
     </div>

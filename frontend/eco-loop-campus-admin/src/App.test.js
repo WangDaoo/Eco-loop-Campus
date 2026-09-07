@@ -33,6 +33,7 @@ const resourceTables = {
   feedback: "feedback",
   rewards: "rewards",
   "reward-redemptions": "reward_redemptions",
+  "reward-redemption-batches": "reward_redemption_batches",
   "recycling-submissions": "recycling_submissions",
   "proof-images": "proof_images",
   "waste-types": "waste_types",
@@ -111,6 +112,46 @@ function mockBackendFetch(rawUrl, init = {}) {
   if (path === "/api/auth/logout") {
     if (mockBackendLogoutError) return jsonResponse({ detail: mockBackendLogoutError.message }, 500);
     return jsonResponse({ ok: true });
+  }
+  if (path === "/api/admin/point-adjustments" && method === "POST") {
+    const body = readRequestBody(init);
+    const user = (mockTables.users || []).find(item => item.id === body.userId);
+    if (!user) return jsonResponse({ detail: "USER_NOT_FOUND" }, 404);
+    const points = Number(body.points || 0);
+    const next = Number(user.points || 0) + points;
+    if (next < 0) return jsonResponse({ detail: "POINT_BALANCE_WOULD_BE_NEGATIVE" }, 400);
+    mockTables.users = mockTables.users.map(item => item.id === user.id ? { ...item, points: next } : item);
+    const duplicate = body.referenceId && (mockTables.point_history || []).some(item => item.reference_type === body.referenceType && item.reference_id === body.referenceId);
+    if (duplicate) return jsonResponse({ data: { userId: user.id, points: 0, duplicate: true } });
+    const history = { id: `manual-${Date.now()}`, user_id: user.id, points, action: body.reason, source: "manual_adjustment", status: "confirmed", reference_type: body.referenceType, reference_id: body.referenceId };
+    mockTables.point_history = [...(mockTables.point_history || []), history];
+    return jsonResponse({ data: { userId: user.id, points, balanceBefore: user.points, balanceAfter: next, historyId: history.id } });
+  }
+  if (path.startsWith("/api/admin/feedback/") && method === "PATCH") {
+    const id = decodeURIComponent(path.split("/").pop());
+    const body = readRequestBody(init);
+    const current = (mockTables.feedback || []).find(item => item.id === id);
+    if (!current) return jsonResponse({ detail: "Không tìm thấy phản hồi" }, 404);
+    const next = { ...current, status: body.status, admin_note: body.adminNote || "", resolved_at: body.status === "resolved" ? new Date().toISOString() : current.resolved_at };
+    mockTables.feedback = mockTables.feedback.map(item => item.id === id ? next : item);
+    return jsonResponse({ data: next });
+  }
+  if (path.startsWith("/api/admin/reward-redemption-batches/") && path.endsWith("/finalize") && method === "POST") {
+    const id = path.split("/")[4];
+    const body = readRequestBody(init);
+    const next = (mockTables.reward_redemption_batches || []).find(item => item.id === id);
+    if (!next) return jsonResponse({ detail: "Không tìm thấy batch" }, 404);
+    next.status = body.status;
+    return jsonResponse({ data: next });
+  }
+  if (path.startsWith("/api/mobile/recycling-submissions/") && path.endsWith("/reject") && method === "POST") {
+    const id = decodeURIComponent(path.split("/")[4]);
+    const body = readRequestBody(init);
+    const current = (mockTables.recycling_submissions || []).find(item => item.id === id);
+    if (!current) return jsonResponse({ detail: "SUBMISSION_NOT_FOUND" }, 404);
+    const next = { ...current, status: "REJECTED", volunteer_note: body.note || "" };
+    mockTables.recycling_submissions = mockTables.recycling_submissions.map(item => item.id === id ? next : item);
+    return jsonResponse({ data: next });
   }
   if (path.startsWith("/api/users/") && path.endsWith("/status") && method === "PATCH") {
     const id = decodeURIComponent(path.split("/")[3]);
@@ -394,10 +435,10 @@ test("setPredictionStatus awards points once when approval is repeated", async (
   await store.setPredictionStatus(scan, "approved");
   await store.setPredictionStatus(scan, "approved");
 
-  const awardedRows = (mockTables.point_history || []).filter(row => row.prediction_id === "scan-low");
+  const awardedRows = (mockTables.point_history || []).filter(row => row.source === "manual_adjustment" && row.points === 8);
   const student = mockTables.users.find(user => user.id === "SV001");
   expect(awardedRows).toHaveLength(1);
-  expect(student.points).toBe(253);
+  expect(student.points).toBe(261);
 });
 
 test("setPredictionStatus rejects unsupported statuses before writing predictions", async () => {
@@ -716,26 +757,27 @@ test("saveBin rejects unsupported statuses before writing bins", async () => {
   expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
 });
 
-test("saveBin rejects unsupported bin groups before writing bins", async () => {
+test("saveBin rejects blank bin groups before writing bins", async () => {
   const store = require("./admin/services/supabaseStore");
   const existingBins = JSON.stringify(mockTables.bins);
-  const invalidBins = [
-    { id: "BIN-BLANK-GROUP", name: "Trạm thiếu nhóm", binGroup: "   ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 },
-    { id: "BIN-UNKNOWN-GROUP", name: "Trạm nhóm lạ", binGroup: "Nhóm lạ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 },
-  ];
 
-  const results = [];
-  for (const bin of invalidBins) {
-    results.push(await store.saveBin(bin));
-  }
+  const response = await store.saveBin({ id: "BIN-BLANK-GROUP", name: "Trạm thiếu nhóm", binGroup: "   ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 });
 
-  results.forEach(response => {
-    expect(response.data).toBeNull();
-    expect(response.error).toEqual(expect.any(Error));
-  });
+  expect(response.data).toBeNull();
+  expect(response.error).toEqual(expect.any(Error));
   expect(mockSupabaseFrom).not.toHaveBeenCalledWith("bins");
   expect(JSON.stringify(mockTables.bins)).toBe(existingBins);
   expect(localStorage.getItem("ecoGuardianBins")).toBeNull();
+});
+
+test("saveBin preserves detailed bin groups before writing bins", async () => {
+  const store = require("./admin/services/supabaseStore");
+
+  const response = await store.saveBin({ id: "BIN-PLASTIC", name: "Trạm nhựa", binGroup: " Nhựa ", location: "Nhà D", status: "active", capacity: 40, mapX: 45, mapY: 55 });
+
+  expect(response.error).toBeNull();
+  expect(response.data).toEqual(expect.objectContaining({ binGroup: "Nhựa" }));
+  expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({ bin_group: "Nhựa" }));
 });
 
 test("savePredictionRecord rejects invalid scan fields before writing predictions", async () => {
@@ -903,8 +945,12 @@ test("shows backend login errors from Auth", async () => {
   mockAuthUser = null;
   mockBackendLoginError = new Error("Invalid login credentials");
 
+  window.location.hash = "#/dashboard";
   render(<App />);
 
+  await screen.findByRole("heading", { name: /đăng nhập quản trị/i });
+  fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "admin@school.edu.vn" } });
+  fireEvent.change(screen.getByLabelText(/mật khẩu/i), { target: { value: "admin-demo" } });
   fireEvent.click(await screen.findByRole("button", { name: /đăng nhập/i }));
 
   expect(await screen.findByText(/Invalid login credentials/i)).toBeInTheDocument();
@@ -915,6 +961,9 @@ test("loads admin dashboard after login even when auth listener has not fired ye
 
   render(<App />);
 
+  await screen.findByRole("heading", { name: /đăng nhập quản trị/i });
+  fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "admin@school.edu.vn" } });
+  fireEvent.change(screen.getByLabelText(/mật khẩu/i), { target: { value: "admin-demo" } });
   fireEvent.click(await screen.findByRole("button", { name: /đăng nhập/i }));
 
   expect(await screen.findByRole("heading", { name: /tổng quan quản trị/i })).toBeInTheDocument();
@@ -927,6 +976,9 @@ test("blocks successful backend login when profile is not admin", async () => {
 
   render(<App />);
 
+  await screen.findByRole("heading", { name: /đăng nhập quản trị/i });
+  fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "admin@school.edu.vn" } });
+  fireEvent.change(screen.getByLabelText(/mật khẩu/i), { target: { value: "admin-demo" } });
   fireEvent.click(await screen.findByRole("button", { name: /đăng nhập/i }));
 
   expect(await screen.findByText(/tài khoản chưa có quyền admin/i)).toBeInTheDocument();
@@ -1128,8 +1180,8 @@ test("users page searches by user id", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
-  fireEvent.change(screen.getByPlaceholderText(/tên, email, lớp/i), { target: { value: "SV001" } });
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
+  fireEvent.change(screen.getByPlaceholderText(/mã sinh viên, tên, email, số điện thoại/i), { target: { value: "SV001" } });
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Nguyễn Minh Anh")).toBeInTheDocument();
@@ -1141,8 +1193,8 @@ test("users page trims search text before filtering", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
-  fireEvent.change(screen.getByPlaceholderText(/tên, email, lớp/i), { target: { value: "  SV001  " } });
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
+  fireEvent.change(screen.getByPlaceholderText(/mã sinh viên, tên, email, số điện thoại/i), { target: { value: "  SV001  " } });
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Nguyễn Minh Anh")).toBeInTheDocument();
@@ -1154,7 +1206,7 @@ test("users page filters Supabase role codes with Vietnamese role labels", async
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText(/vai trò/i), { target: { value: "admin" } });
 
   const usersTable = screen.getByRole("table");
@@ -1167,7 +1219,7 @@ test("users page does not expose manual user creation from admin", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /thêm người dùng/i })).not.toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: /thêm người dùng/i })).not.toBeInTheDocument();
 });
@@ -1177,7 +1229,7 @@ test("users page rejects blank required user fields when editing", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
 
@@ -1195,7 +1247,7 @@ test("users page rejects invalid email format when editing", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
 
@@ -1217,7 +1269,7 @@ test("users page filters users by account status", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText(/trạng thái/i), { target: { value: "locked" } });
 
   const usersTable = screen.getByRole("table");
@@ -1234,7 +1286,7 @@ test("users page lets admins approve or reject pending volunteer accounts", asyn
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText(/trạng thái/i), { target: { value: "pending" } });
 
   const usersTable = screen.getByRole("table");
@@ -1258,7 +1310,7 @@ test("users page normalizes dirty account status values", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText(/trạng thái/i), { target: { value: "locked" } });
 
   const usersTable = screen.getByRole("table");
@@ -1276,9 +1328,9 @@ test("users page filters users by class or faculty group", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   expect(await screen.findByText("Nguyễn Minh Anh")).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText(/lớp \/ khoa/i), { target: { value: "CNTT K19" } });
+  fireEvent.change(screen.getByLabelText(/khoa/i), { target: { value: "CNTT K19" } });
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Trần Hoàng Nam")).toBeInTheDocument();
@@ -1295,9 +1347,9 @@ test("users page normalizes dirty class or faculty group labels", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   expect(await screen.findByText("Sinh viên nhóm bẩn")).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText(/lớp \/ khoa/i), { target: { value: "CNTT K19" } });
+  fireEvent.change(screen.getByLabelText(/khoa/i), { target: { value: "CNTT K19" } });
 
   const usersTable = screen.getByRole("table");
   expect(await within(usersTable).findByText("Sinh viên nhóm bẩn")).toBeInTheDocument();
@@ -1309,7 +1361,7 @@ test("users page only edits existing user profiles from the table", async () => 
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /thêm người dùng/i })).not.toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
@@ -1324,11 +1376,11 @@ test.skip("users create failure saves the new user to local fallback", async () 
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /thêm người dùng/i }));
   fireEvent.change(screen.getByLabelText(/họ tên/i), { target: { value: "Sinh viên fallback" } });
   fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "fallback@school.edu.vn" } });
-  fireEvent.change(screen.getAllByLabelText(/lớp \/ khoa/i).at(-1), { target: { value: "CNTT K21" } });
+  fireEvent.change(screen.getAllByLabelText(/khoa/i).at(-1), { target: { value: "CNTT K21" } });
 
   mockSupabaseFailure = true;
   fireEvent.click(screen.getByRole("button", { name: /lưu người dùng/i }));
@@ -1361,7 +1413,7 @@ test("users page edits user details without changing id points or status", async
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
 
@@ -1369,7 +1421,7 @@ test("users page edits user details without changing id points or status", async
   fireEvent.change(within(dialog).getByLabelText(/họ tên/i), { target: { value: "Nguyễn Minh Anh Eco" } });
   fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: "minhanh.eco@school.edu.vn" } });
   fireEvent.change(within(dialog).getByLabelText(/vai trò/i), { target: { value: "volunteer" } });
-  fireEvent.change(within(dialog).getByLabelText(/lớp \/ khoa/i), { target: { value: "CLB Môi trường" } });
+  fireEvent.change(within(dialog).getByLabelText(/khoa/i), { target: { value: "CLB Môi trường" } });
   fireEvent.click(within(dialog).getByRole("button", { name: /lưu thay đổi/i }));
 
   await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
@@ -1391,7 +1443,7 @@ test("users page rejects duplicate email when editing another user", async () =>
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: /sửa sv001/i }));
 
@@ -1412,7 +1464,7 @@ test("users page locks and unlocks a user account", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(studentRow).getByRole("button", { name: "Khóa" }));
 
@@ -1430,7 +1482,7 @@ test("users page resets toast tone after a successful status update", async () =
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const initialStudentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
   fireEvent.click(within(initialStudentRow).getByRole("button", { name: /sửa sv001/i }));
   const dialog = await screen.findByRole("dialog", { name: /sửa người dùng/i });
@@ -1460,7 +1512,7 @@ test.skip("users status update failure persists live users to local fallback", a
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const liveRow = (await screen.findByText("Sinh viên Supabase Live")).closest("tr");
   fireEvent.click(within(liveRow).getByRole("button", { name: "Khóa" }));
 
@@ -1484,7 +1536,7 @@ test("users page displays malformed point values as zero", async () => {
 
   render(<App />);
 
-  expect(await screen.findByRole("heading", { name: /người dùng \/ lớp \/ khoa/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /người dùng \/ khoa/i })).toBeInTheDocument();
   const studentRow = (await screen.findByText("Nguyễn Minh Anh")).closest("tr");
 
   expect(within(studentRow).getByText("0")).toBeInTheDocument();
@@ -1867,26 +1919,29 @@ test("bins page creates a station and exposes QR scan link", async () => {
   expect(await screen.findByRole("heading", { name: /thùng rác \/ trạm qr/i })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /thêm trạm/i }));
 
-  fireEvent.change(screen.getByLabelText(/mã thùng/i), { target: { value: "BIN-B2-ORGANIC" } });
-  fireEvent.change(screen.getByLabelText(/tên trạm/i), { target: { value: "Thùng hữu cơ B2" } });
-  fireEvent.change(screen.getByLabelText(/nhóm rác/i), { target: { value: "Hữu cơ" } });
-  fireEvent.change(screen.getByLabelText(/vị trí/i), { target: { value: "Nhà B2 - tầng 1" } });
-  fireEvent.change(screen.getByLabelText(/tòa nhà/i), { target: { value: "B2" } });
-  fireEvent.change(screen.getByLabelText(/tầng/i), { target: { value: "1" } });
-  expect(screen.getByLabelText(/mã qr chuẩn/i)).toHaveValue("ECL-ST-BIN-B2-ORGANIC");
-  fireEvent.change(screen.getByLabelText(/sức chứa/i), { target: { value: "21" } });
-  fireEvent.change(screen.getByLabelText(/tọa độ x/i), { target: { value: "44" } });
-  fireEvent.change(screen.getByLabelText(/tọa độ y/i), { target: { value: "68" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu trạm/i }));
+  const dialog = await screen.findByRole("dialog", { name: /thêm trạm qr/i });
+  const generatedId = within(dialog).getByLabelText("Mã thùng tự sinh").value;
+  expect(generatedId).toBe("ECL-BIN-0001");
+  expect(within(dialog).getByLabelText("Mã thùng tự sinh")).toHaveAttribute("readonly");
+  fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "Thùng hữu cơ B2" } });
+  fireEvent.change(within(dialog).getByLabelText(/nhóm rác/i), { target: { value: "Hữu cơ" } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "Nhà B2 - tầng 1" } });
+  fireEvent.change(within(dialog).getByLabelText(/tòa nhà/i), { target: { value: "B2" } });
+  fireEvent.change(within(dialog).getByLabelText(/tầng/i), { target: { value: "1" } });
+  expect(within(dialog).getByLabelText("Mã QR tự sinh")).toHaveValue(`ECL-ST-${generatedId}`);
+  fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "21" } });
+  fireEvent.change(within(dialog).getByLabelText(/tọa độ x/i), { target: { value: "44" } });
+  fireEvent.change(within(dialog).getByLabelText(/tọa độ y/i), { target: { value: "68" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
   await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
-    id: "BIN-B2-ORGANIC",
+    id: generatedId,
     name: "Thùng hữu cơ B2",
     bin_group: "Hữu cơ",
     location: "Nhà B2 - tầng 1",
     building: "B2",
     floor: "1",
-    qr_code: "ECL-ST-BIN-B2-ORGANIC",
+    qr_code: `ECL-ST-${generatedId}`,
     status: "active",
     capacity: 21,
     map_x: 44,
@@ -1894,31 +1949,36 @@ test("bins page creates a station and exposes QR scan link", async () => {
   })));
 
   expect(await screen.findByText("Thùng hữu cơ B2")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /qr bin-b2-organic/i }));
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`qr ${generatedId}`, "i") }));
 
   expect(await screen.findByText(/eco-loop-station/)).toBeInTheDocument();
-  expect(screen.getAllByText(/ECL-ST-BIN-B2-ORGANIC/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(new RegExp(`ECL-ST-${generatedId}`)).length).toBeGreaterThan(0);
 });
 
-test("bins page rejects duplicate station ids when creating a station", async () => {
+test("bins page generates the next station id without reusing existing sequences", async () => {
+  mockTables.bins = [
+    ...mockTables.bins,
+    { id: "ECL-BIN-0002", name: "Trạm mã 2", bin_group: "Tái chế", location: "Nhà A", building: "A", floor: "1", qr_code: "ECL-ST-ECL-BIN-0002", status: "active", capacity: 20, map_x: 20, map_y: 20 },
+    { id: "ECL-BIN-0007", name: "Trạm mã 7", bin_group: "Tái chế", location: "Nhà B", building: "B", floor: "1", qr_code: "ECL-ST-ECL-BIN-0007", status: "active", capacity: 30, map_x: 30, map_y: 30 },
+  ];
   window.location.hash = "#/bins";
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /thùng rác \/ trạm qr/i })).toBeInTheDocument();
+  expect(await screen.findByText("Trạm mã 7")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /thêm trạm/i }));
 
-  fireEvent.change(screen.getByLabelText(/mã thùng/i), { target: { value: "BIN-A1-RECYCLE" } });
-  fireEvent.change(screen.getByLabelText(/tên trạm/i), { target: { value: "Trạm ghi đè không hợp lệ" } });
-  fireEvent.change(screen.getByLabelText(/vị trí/i), { target: { value: "Nhà A1 - vị trí trùng" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu trạm/i }));
+  const dialog = await screen.findByRole("dialog", { name: /thêm trạm qr/i });
+  expect(within(dialog).getByLabelText("Mã thùng tự sinh")).toHaveValue("ECL-BIN-0008");
+  expect(within(dialog).getByLabelText("Mã QR tự sinh")).toHaveValue("ECL-ST-ECL-BIN-0008");
+  fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "Trạm mã 8" } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "Nhà C" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
-  expect(await screen.findByText(/mã thùng đã tồn tại/i)).toBeInTheDocument();
-  expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({
-    id: "BIN-A1-RECYCLE",
-    name: "Trạm ghi đè không hợp lệ",
-  }));
-  expect(screen.getByRole("dialog", { name: /thêm trạm qr/i })).toBeInTheDocument();
-  expect(screen.getByText("Thùng tái chế A1")).toBeInTheDocument();
+  await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
+    id: "ECL-BIN-0008",
+    qr_code: "ECL-ST-ECL-BIN-0008",
+  })));
 });
 test("bins page rejects blank required station fields after trimming", async () => {
   window.location.hash = "#/bins";
@@ -1928,12 +1988,11 @@ test("bins page rejects blank required station fields after trimming", async () 
   fireEvent.click(screen.getByRole("button", { name: /thêm trạm/i }));
 
   const dialog = await screen.findByRole("dialog", { name: /thêm trạm qr/i });
-  fireEvent.change(within(dialog).getByLabelText(/mã thùng/i), { target: { value: "   " } });
   fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "   " } });
-  fireEvent.change(within(dialog).getByLabelText(/vị trí/i), { target: { value: "   " } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "   " } });
   fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
-  expect(await screen.findByText(/nhập đầy đủ mã thùng, tên trạm và vị trí/i)).toBeInTheDocument();
+  expect(await screen.findByText(/nhập đầy đủ tên trạm và vị trí/i)).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveClass("tone-danger");
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ id: "" }));
   expect(screen.getByRole("dialog", { name: /thêm trạm qr/i })).toBeInTheDocument();
@@ -1948,15 +2007,15 @@ test("bins page edits a station without changing its id", async () => {
   fireEvent.click(within(row).getByRole("button", { name: /sửa bin-a1-recycle/i }));
 
   const dialog = await screen.findByRole("dialog", { name: /sửa trạm qr/i });
-  expect(within(dialog).getByLabelText(/mã thùng/i)).toBeDisabled();
-  expect(within(dialog).getByLabelText(/mã thùng/i)).toHaveValue("BIN-A1-RECYCLE");
+  expect(within(dialog).getByLabelText("Mã thùng tự sinh")).toHaveAttribute("readonly");
+  expect(within(dialog).getByLabelText("Mã thùng tự sinh")).toHaveValue("BIN-A1-RECYCLE");
 
   fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "Thùng tái chế A1 cập nhật" } });
   fireEvent.change(within(dialog).getByLabelText(/nhóm rác/i), { target: { value: "Hữu cơ" } });
-  fireEvent.change(within(dialog).getByLabelText(/vị trí/i), { target: { value: "Nhà A1 - tầng 2" } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "Nhà A1 - tầng 2" } });
   fireEvent.change(within(dialog).getByLabelText(/tòa nhà/i), { target: { value: "A1" } });
   fireEvent.change(within(dialog).getByLabelText(/tầng/i), { target: { value: "2" } });
-  expect(within(dialog).getByLabelText(/mã qr chuẩn/i)).toHaveValue("ECL-ST-BIN-A1-RECYCLE");
+  expect(within(dialog).getByLabelText("Mã QR tự sinh")).toHaveValue("ECL-ST-BIN-A1-RECYCLE");
   fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "86" } });
   fireEvent.change(within(dialog).getByLabelText(/trạng thái/i), { target: { value: "full" } });
   fireEvent.change(within(dialog).getByLabelText(/tọa độ x/i), { target: { value: "31" } });
@@ -1980,6 +2039,30 @@ test("bins page edits a station without changing its id", async () => {
   expect(screen.getByText("BIN-A1-RECYCLE")).toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: /sửa trạm qr/i })).not.toBeInTheDocument();
 });
+
+test("bins page preserves detailed bin groups when editing a station", async () => {
+  mockTables.bins = [
+    { id: "UTEHY_BIN_GATE_A", name: "Cổng chính UTEHY", bin_group: "Nhựa", location: "Cổng chính", building: "Cổng", floor: "Ngoài trời", qr_code: "ECL-ST-UTEHY-GATE-A", status: "active", capacity: 42, map_x: 15, map_y: 78 },
+  ];
+  window.location.hash = "#/bins";
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /thùng rác \/ trạm qr/i })).toBeInTheDocument();
+  const row = (await screen.findByText("Cổng chính UTEHY")).closest("tr");
+  fireEvent.click(within(row).getByRole("button", { name: /sửa utehy_bin_gate_a/i }));
+
+  const dialog = await screen.findByRole("dialog", { name: /sửa trạm qr/i });
+  expect(within(dialog).getByLabelText(/nhóm rác/i)).toHaveValue("Nhựa");
+  fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "43" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
+
+  await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
+    id: "UTEHY_BIN_GATE_A",
+    bin_group: "Nhựa",
+    capacity: 43,
+  })));
+});
+
 test("bins page attention filter shows full maintenance and high-capacity stations", async () => {
   mockTables.bins = [
     { id: "BIN-ACTIVE-LOW", name: "Trạm đang ổn", bin_group: "Tái chế", location: "Nhà A", building: "A", floor: "1", qr_code: "ECL-ST-BIN-ACTIVE-LOW", status: "active", capacity: 30, map_x: 20, map_y: 20 },
@@ -2036,7 +2119,7 @@ test("bins page allows editing a station while keeping its own QR code", async (
   fireEvent.click(within(row).getByRole("button", { name: /sửa bin-a1-recycle/i }));
 
   const dialog = await screen.findByRole("dialog", { name: /sửa trạm qr/i });
-  expect(within(dialog).getByLabelText(/mã qr chuẩn/i)).toHaveValue("ECL-ST-BIN-A1-RECYCLE");
+  expect(within(dialog).getByLabelText("Mã QR tự sinh")).toHaveValue("ECL-ST-BIN-A1-RECYCLE");
   fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "64" } });
   fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
@@ -2054,16 +2137,17 @@ test("bins page clamps invalid capacity and map coordinates before saving", asyn
   expect(await screen.findByRole("heading", { name: /thùng rác \/ trạm qr/i })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /thêm trạm/i }));
 
-  fireEvent.change(screen.getByLabelText(/mã thùng/i), { target: { value: "BIN-INVALID-RANGE" } });
-  fireEvent.change(screen.getByLabelText(/tên trạm/i), { target: { value: "Thùng kiểm tra biên" } });
-  fireEvent.change(screen.getByLabelText(/vị trí/i), { target: { value: "Nhà D - tầng 1" } });
-  fireEvent.change(screen.getByLabelText(/sức chứa/i), { target: { value: "150" } });
-  fireEvent.change(screen.getByLabelText(/tọa độ x/i), { target: { value: "-10" } });
-  fireEvent.change(screen.getByLabelText(/tọa độ y/i), { target: { value: "140" } });
-  fireEvent.click(screen.getByRole("button", { name: /lưu trạm/i }));
+  const dialog = await screen.findByRole("dialog", { name: /thêm trạm qr/i });
+  const generatedId = within(dialog).getByLabelText("Mã thùng tự sinh").value;
+  fireEvent.change(within(dialog).getByLabelText(/tên trạm/i), { target: { value: "Thùng kiểm tra biên" } });
+  fireEvent.change(within(dialog).getByLabelText("Vị trí"), { target: { value: "Nhà D - tầng 1" } });
+  fireEvent.change(within(dialog).getByLabelText(/sức chứa/i), { target: { value: "150" } });
+  fireEvent.change(within(dialog).getByLabelText(/tọa độ x/i), { target: { value: "-10" } });
+  fireEvent.change(within(dialog).getByLabelText(/tọa độ y/i), { target: { value: "140" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: /lưu trạm/i }));
 
   await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
-    id: "BIN-INVALID-RANGE",
+    id: generatedId,
     capacity: 100,
     map_x: 0,
     map_y: 100,
@@ -2082,18 +2166,18 @@ test("feedback page links reports to bins and moves items through workflow", asy
 
   fireEvent.click(screen.getByRole("button", { name: /nhận xử lý FB001/i }));
 
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("feedback", expect.objectContaining({ status: "in_progress" })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/feedback/FB001"), expect.objectContaining({ method: "PATCH" })));
   expect((await screen.findAllByText("Đang xử lý")).length).toBeGreaterThan(0);
 
   fireEvent.click(await screen.findByRole("button", { name: /mở chi tiết FB001/i }));
   fireEvent.change(screen.getByLabelText(/ghi chú xử lý/i), { target: { value: "Đã báo đội vệ sinh kiểm tra A1." } });
   fireEvent.click(screen.getByRole("button", { name: /lưu ghi chú/i }));
 
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("feedback", expect.objectContaining({ admin_note: "Đã báo đội vệ sinh kiểm tra A1." })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/feedback/FB001"), expect.objectContaining({ method: "PATCH" })));
 
   fireEvent.click(screen.getByRole("button", { name: /hoàn tất FB001/i }));
 
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("feedback", expect.objectContaining({ status: "resolved", resolved_at: expect.any(String) })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/feedback/FB001"), expect.objectContaining({ method: "PATCH" })));
 });
 
 test("admins create bin-linked feedback from the feedback page", async () => {
@@ -2360,7 +2444,7 @@ test("feedback page saves admin note and rejects feedback", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: /từ chối FB001/i }));
 
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("feedback", expect.objectContaining({ status: "rejected" })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/feedback/FB001"), expect.objectContaining({ method: "PATCH" })));
   expect((await screen.findAllByText("Từ chối")).length).toBeGreaterThan(0);
 });
 test("dashboard map highlights bins that have open feedback", async () => {
@@ -2981,8 +3065,8 @@ test("approving a scan updates Supabase and writes point history", async () => {
   fireEvent.click(await screen.findByRole("button", { name: /duyệt scan-low/i }));
 
   await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("predictions", expect.objectContaining({ status: "approved" })));
-  expect(mockSupabaseInsert).toHaveBeenCalledWith("point_history", expect.arrayContaining([expect.objectContaining({ prediction_id: "scan-low", points: 8 })]));
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("users", expect.objectContaining({ points: 253 })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/point-adjustments"), expect.objectContaining({ method: "POST" })));
+  expect(mockTables.users.find(user => user.id === "SV001").points).toBe(253);
 });
 
 test("approving a scan matches dirty point rule class keys", async () => {
@@ -2997,8 +3081,8 @@ test("approving a scan matches dirty point rule class keys", async () => {
   fireEvent.click(await screen.findByRole("button", { name: /duyệt scan-low/i }));
 
   await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("predictions", expect.objectContaining({ status: "approved" })));
-  expect(mockSupabaseInsert).toHaveBeenCalledWith("point_history", expect.arrayContaining([expect.objectContaining({ prediction_id: "scan-low", points: 8 })]));
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("users", expect.objectContaining({ points: 253 })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/point-adjustments"), expect.objectContaining({ method: "POST" })));
+  expect(mockTables.users.find(user => user.id === "SV001").points).toBe(253);
 });
 
 test("rejecting a pending scan does not write point history or change user points", async () => {
@@ -3136,7 +3220,11 @@ test("ecopoints page shows recycling submissions awaiting admin review and lets 
 
   fireEvent.click(screen.getByRole("button", { name: /từ chối giao dịch eco-review-001/i }));
 
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("recycling_submissions", expect.objectContaining({ status: "REJECTED" })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/api/mobile/recycling-submissions/sub-review/reject"),
+    expect.objectContaining({ method: "POST" }),
+  ));
+  expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("recycling_submissions", expect.anything());
   expect(await screen.findByText(/đã từ chối giao dịch gửi rác/i)).toBeInTheDocument();
 });
 
@@ -3157,10 +3245,29 @@ test("ecopoints page shows filters and leaderboards", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
-  expect(screen.getByLabelText(/lớp.?khoa/i)).toHaveValue("CNTT K18");
+  expect(screen.getByLabelText(/khoa/i)).toHaveValue("CNTT K18");
   expect(screen.getByRole("heading", { name: /bảng xếp hạng cá nhân/i })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /bảng xếp hạng lớp.?khoa/i })).toBeInTheDocument();
   expect((await screen.findAllByText("Nguyễn Minh Anh")).length).toBeGreaterThan(0);
+});
+
+test("ecopoints page uses searchable user pickers and exposes refresh", async () => {
+  window.location.hash = "#/ecopoints";
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /tải lại dữ liệu/i })).toBeInTheDocument();
+
+  const manualSearch = screen.getByRole("searchbox", { name: /tìm người nhận điểm/i });
+  fireEvent.change(manualSearch, { target: { value: "Minh Anh" } });
+  expect(await screen.findByRole("option", { name: /nguyễn minh anh/i })).toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: /^người nhận điểm$/i })).not.toBeInTheDocument();
+
+  const rewardSearch = screen.getByRole("searchbox", { name: /tìm người đổi thưởng/i });
+  fireEvent.change(rewardSearch, { target: { value: "SV001" } });
+  expect((await screen.findAllByRole("option", { name: /nguyễn minh anh/i })).length).toBeGreaterThan(0);
+  expect(screen.queryByRole("combobox", { name: /^người đổi thưởng$/i })).not.toBeInTheDocument();
 });
 
 test("ecopoints page normalizes dirty group and bin group query filters in the UI", async () => {
@@ -3169,7 +3276,7 @@ test("ecopoints page normalizes dirty group and bin group query filters in the U
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
-  await waitFor(() => expect(screen.getByLabelText(/lớp.?khoa/i)).toHaveValue("CNTT K18"));
+  await waitFor(() => expect(screen.getByLabelText(/khoa/i)).toHaveValue("CNTT K18"));
   expect(screen.getByLabelText(/nhóm rác/i)).toHaveValue("Tái chế");
   expect(await screen.findByText("Duyệt Nhựa")).toBeInTheDocument();
 });
@@ -3185,9 +3292,11 @@ test("admins can add manual Ecopoint adjustments", async () => {
   fireEvent.change(screen.getByLabelText(/lý do/i), { target: { value: "Nộp rác sự kiện xanh" } });
   fireEvent.click(screen.getByRole("button", { name: /cộng điểm thủ công/i }));
 
-  await waitFor(() => expect(mockSupabaseInsert).toHaveBeenCalledWith("point_history", expect.arrayContaining([
-    expect.objectContaining({ user_id: "SV001", points: 10, action: "Nộp rác sự kiện xanh" }),
-  ])));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/point-adjustments"), expect.objectContaining({ method: "POST" })));
+  expect(mockTables.users.find(user => user.id === "SV001").points).toBe(255);
+  expect(await screen.findByText("Nộp rác sự kiện xanh")).toBeInTheDocument();
+  expect(screen.getByText("+10")).toBeInTheDocument();
+  expect(screen.queryByText("Không rõ")).not.toBeInTheDocument();
 });
 
 test("ecopoints page rejects invalid manual point adjustments", async () => {
@@ -3240,10 +3349,8 @@ test("admins can subtract manual Ecopoint adjustments", async () => {
   fireEvent.change(screen.getByLabelText(/lý do/i), { target: { value: "Điều chỉnh sai lượt cộng" } });
   fireEvent.click(screen.getByRole("button", { name: /cộng điểm thủ công/i }));
 
-  await waitFor(() => expect(mockSupabaseInsert).toHaveBeenCalledWith("point_history", expect.arrayContaining([
-    expect.objectContaining({ user_id: "SV001", points: -15, action: "Điều chỉnh sai lượt cộng" }),
-  ])));
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("users", expect.objectContaining({ points: 230 })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/point-adjustments"), expect.objectContaining({ method: "POST" })));
+  expect(mockTables.users.find(user => user.id === "SV001").points).toBe(230);
   expect(await screen.findByText("-15")).toBeInTheDocument();
   expect(screen.queryByText("+-15")).not.toBeInTheDocument();
 });
@@ -3256,12 +3363,12 @@ test("ecopoints page blocks reward requests when user has insufficient points", 
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
   fireEvent.change(await screen.findByLabelText(/người đổi thưởng/i), { target: { value: "SV001" } });
-  fireEvent.change(screen.getByLabelText(/mốc phần thưởng/i), { target: { value: "Giấy chứng nhận xanh 300 điểm" } });
+  fireEvent.change(screen.getByLabelText(/mốc phần thưởng/i), { target: { value: "Voucher nhà sách 500 điểm" } });
   fireEvent.click(screen.getByRole("button", { name: /tạo yêu cầu đổi thưởng/i }));
 
-  expect(await screen.findByText(/người dùng chưa đủ ecopoint/i)).toBeInTheDocument();
+  expect(await screen.findByRole("status")).toHaveClass("tone-danger");
   expect(screen.getByRole("status")).toHaveClass("tone-danger");
-  expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ reward_label: "Giấy chứng nhận xanh 300 điểm" }));
+  expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ reward_label: "Voucher nhà sách 500 điểm" }));
 });
 
 test("ecopoints page treats malformed user points as zero for reward requests", async () => {
@@ -3284,18 +3391,19 @@ test("ecopoints page treats malformed user points as zero for reward requests", 
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ user_id: "SV-BAD-POINTS" }));
 });
 
-test("admins can reject pending reward redemptions", async () => {
-  mockTables.reward_redemptions = [{ id: "RW-REJECT", user_id: "SV001", reward_label: "Voucher căn tin 100 điểm", cost_points: 100, status: "pending", requested_at: "2026-07-07T10:00:00.000Z" }];
+test("admins can cancel fulfilled reward batches", async () => {
+  mockTables.reward_redemption_batches = [{ id: "BATCH-REJECT", student_id: "SV001", status: "fulfilled", created_at: "2026-07-07T10:00:00.000Z" }];
+  mockTables.reward_redemption_items = [{ id: "ITEM-REJECT", batch_id: "BATCH-REJECT", reward_title: "Voucher căn tin 100 điểm", quantity: 1 }];
   window.location.hash = "#/ecopoints";
 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
-  expect((await screen.findAllByText("Voucher căn tin 100 điểm")).length).toBeGreaterThan(0);
-  fireEvent.click(screen.getByRole("button", { name: /^từ chối$/i }));
+  expect((await screen.findAllByText("BATCH-REJECT")).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: /hoàn tác đổi thưởng/i }));
 
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("reward_redemptions", expect.objectContaining({ status: "rejected" })));
-  expect(await screen.findByText(/đã xử lý/i)).toBeInTheDocument();
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/reward-redemption-batches/BATCH-REJECT/finalize"), expect.objectContaining({ method: "POST" })));
+  expect(await screen.findByText("cancelled")).toBeInTheDocument();
 });
 
 test("ecopoints page keeps reward actions for dirty pending statuses", async () => {

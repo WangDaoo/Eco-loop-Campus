@@ -45,13 +45,14 @@ def post_prediction_job(client, content=None):
     return client.post(
         "/predict/jobs",
         files={"file": ("waste.jpg", content or make_image_bytes(), "image/jpeg")},
+        headers={"Authorization": f"Bearer {app.create_auth_token({'sub': 'test-user', 'role': 'student'})}"},
     )
 
 def wait_for_job(client, job_id, expected_statuses=("done", "failed")):
     deadline = time.time() + 2
     payload = None
     while time.time() < deadline:
-        response = client.get(f"/predict/jobs/{job_id}")
+        response = client.get(f"/predict/jobs/{job_id}", headers={"Authorization": f"Bearer {app.create_auth_token({'sub': 'test-user', 'role': 'student'})}"})
         payload = response.json()
         if payload.get("status") in expected_statuses:
             return response
@@ -65,10 +66,16 @@ class AppEndpointTests(unittest.TestCase):
         self.client = self.client_context.__enter__()
         self.original_model = app.model
         self.original_ask_local_ai = app.ask_local_ai
+        self.original_current_user_from_authorization = app.current_user_from_authorization
+        app.current_user_from_authorization = lambda authorization: {
+            "id": "test-user", "name": "Test User", "email": "test@example.com",
+            "role": "admin", "status": "active", "points": 0,
+        }
 
     def tearDown(self):
         app.model = self.original_model
         app.ask_local_ai = self.original_ask_local_ai
+        app.current_user_from_authorization = self.original_current_user_from_authorization
         if hasattr(app, "ai_jobs"):
             app.ai_jobs.clear()
         if hasattr(app, "create_ai_queue"):
@@ -127,7 +134,7 @@ class AppEndpointTests(unittest.TestCase):
         ]
 
         try:
-            response = self.client.get("/api/avatar-presets")
+            response = self.client.get("/api/avatar-presets", headers={"Authorization": "Bearer test-token"})
         finally:
             app.list_avatar_presets = original_list_avatar_presets
 
@@ -157,6 +164,7 @@ class AppEndpointTests(unittest.TestCase):
                 "/api/avatar-presets",
                 data={"key": "eco", "label": "Eco"},
                 files={"file": ("eco.png", b"png-bytes", "image/png")},
+                headers={"Authorization": "Bearer test-token"},
             )
         finally:
             app.save_avatar_preset = original_save_avatar_preset
@@ -224,8 +232,9 @@ class AppEndpointTests(unittest.TestCase):
             self.assertFalse(file_exists_after_delete)
 
     def test_parse_cors_origins_defaults_to_wildcard(self):
-        self.assertEqual(app.parse_cors_origins(""), ["*"])
-        self.assertEqual(app.parse_cors_origins(None), ["*"])
+        expected = ["http://127.0.0.1:3002", "http://localhost:3002", "http://127.0.0.1:3000", "http://localhost:3000"]
+        self.assertEqual(app.parse_cors_origins(""), expected)
+        self.assertEqual(app.parse_cors_origins(None), expected)
 
     def test_parse_cors_origins_splits_comma_separated_values(self):
         self.assertEqual(
@@ -239,6 +248,7 @@ class AppEndpointTests(unittest.TestCase):
         response = self.client.post(
             "/predict",
             files={"file": ("waste.jpg", make_image_bytes(), "image/jpeg")},
+            headers={"Authorization": "Bearer test-token"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -250,6 +260,7 @@ class AppEndpointTests(unittest.TestCase):
         response = self.client.post(
             "/predict",
             files={"file": ("waste.jpg", make_image_bytes(), "image/jpeg")},
+            headers={"Authorization": "Bearer test-token"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -323,7 +334,7 @@ class AppEndpointTests(unittest.TestCase):
 
         response = self.client.post(
             "/predict",
-            files={"file": ("bad.txt", b"not an image", "text/plain")},
+            files={"file": ("bad.txt", b"not an image", "text/plain")}, headers={"Authorization": "Bearer test-token"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -334,7 +345,7 @@ class AppEndpointTests(unittest.TestCase):
 
         response = self.client.post(
             "/predict",
-            files={"file": ("waste.jpg", make_image_bytes(), "image/jpeg")},
+            files={"file": ("waste.jpg", make_image_bytes(), "image/jpeg")}, headers={"Authorization": "Bearer test-token"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -345,7 +356,7 @@ class AppEndpointTests(unittest.TestCase):
 
         response = self.client.post(
             "/predict",
-            files={"file": ("waste.jpg", make_image_bytes(), "image/jpeg")},
+            files={"file": ("waste.jpg", make_image_bytes(), "image/jpeg")}, headers={"Authorization": "Bearer test-token"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -356,7 +367,7 @@ class AppEndpointTests(unittest.TestCase):
 
         response = self.client.post(
             "/predict",
-            files={"file": ("waste.jpg", make_image_bytes(), "image/jpeg")},
+            files={"file": ("waste.jpg", make_image_bytes(), "image/jpeg")}, headers={"Authorization": "Bearer test-token"},
         )
 
         self.assertEqual(response.status_code, 200)

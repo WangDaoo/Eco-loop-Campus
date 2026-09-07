@@ -141,6 +141,16 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
         }
+        uat {
+            initWith release
+            signingConfig signingConfigs.debug
+            applicationIdSuffix ".uat"
+            versionNameSuffix "-uat"
+            resValue "string", "app_name", "Eco-loop Campus UAT"
+            debuggable false
+            minifyEnabled false
+            matchingFallbacks = ["release"]
+        }
     }
     packagingOptions {
         jniLibs {

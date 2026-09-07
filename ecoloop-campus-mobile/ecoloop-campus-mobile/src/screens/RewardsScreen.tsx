@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import QRCode from 'react-native-qrcode-svg';
 import { AppButton } from '../components/AppButton';
 import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
@@ -10,6 +11,11 @@ import { colors, radius } from '../theme/colors';
 function redemptionStatusLabel(status: RewardRedemption['status']) {
   const labels: Record<RewardRedemption['status'], string> = {
     requested: 'Chờ duyệt',
+    pending: 'Chờ quét mã',
+    scanned: 'Đã quét mã',
+    fulfilled: 'Đã hoàn tất',
+    expired: 'Mã đã hết hạn',
+    cancelled: 'Đã hủy',
     approved: 'Đã duyệt',
     rejected: 'Từ chối',
     delivered: 'Đã nhận'
@@ -33,10 +39,12 @@ function getIconForReward(reward: Reward): RewardIcon {
 }
 
 export default function RewardsScreen() {
-  const { points, rewards, rewardRedemptions, requestReward } = useAppContext();
+  const { points, rewards, rewardRedemptions, requestRewardBatch } = useAppContext();
   const [activeCategory, setActiveCategory] = useState('Tất cả');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVoucher, setSelectedVoucher] = useState<Reward | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [cart, setCart] = useState<Record<string, number>>({});
 
   const categories = useMemo(() => {
     const names = rewards
@@ -45,14 +53,43 @@ export default function RewardsScreen() {
     return ['Tất cả', ...Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, 'vi'))];
   }, [rewards]);
 
+  const activeRedemption = rewardRedemptions.find(item =>
+    (item.status === 'pending' || item.status === 'requested') && item.qrToken && item.expiresAt && item.expiresAt.getTime() > now
+  );
+  const secondsLeft = activeRedemption?.expiresAt ? Math.max(0, Math.ceil((activeRedemption.expiresAt.getTime() - now) / 1000)) : 0;
+  useEffect(() => {
+    if (!activeRedemption) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [activeRedemption?.id]);
+
   const redeem = async (reward: Reward) => {
-    const ok = await requestReward(reward);
+    const cartItems = Object.entries({ ...cart, [reward.id]: Math.max(1, cart[reward.id] || 1) }).map(([rewardId, quantity]) => ({ rewardId, quantity }));
+    const total = cartItems.reduce((sum, item) => sum + (rewards.find(row => row.id === item.rewardId)?.costPoints || 0) * item.quantity, 0);
+    if (total > points) {
+      Alert.alert('Không thể tạo mã', `Bạn cần thêm ${total - points} Ecopoint.`);
+      return;
+    }
+    const ok = await requestRewardBatch(cartItems);
     Alert.alert(
-      ok ? 'Đổi quà thành công' : 'Chưa đủ Ecopoint',
-      ok ? 'Vui lòng kiểm tra lịch sử.' : `Bạn cần thêm ${reward.costPoints - points} Ecopoint để đổi phần thưởng này.`
+      ok ? 'Đã tạo mã đổi thưởng' : 'Không thể tạo mã',
+      ok ? 'Đưa mã QR cho tình nguyện viên quét trong 15 phút. Điểm chỉ bị trừ sau khi xác nhận.' : 'Phần thưởng đã hết hàng hoặc dữ liệu không hợp lệ.'
     );
-    if (ok) setSelectedVoucher(null);
+    if (ok) { setSelectedVoucher(null); setCart({}); }
   };
+
+  const addToCart = (reward: Reward) => {
+    updateCart(reward, 1);
+    setSelectedVoucher(null);
+  };
+
+  const cartCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
+  const updateCart = (reward: Reward, delta: number) => setCart(current => {
+    const next = Math.max(0, Math.min(Number(reward.stock ?? 99), (current[reward.id] || 0) + delta));
+    const copy = { ...current };
+    if (next) copy[reward.id] = next; else delete copy[reward.id];
+    return copy;
+  });
 
   const filteredRewards = rewards.filter(reward => {
     if (searchQuery && !reward.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -62,6 +99,14 @@ export default function RewardsScreen() {
 
   return (
     <Screen scroll noPadding style={styles.container}>
+      {activeRedemption && (
+        <View style={styles.activeQrCard}>
+          <Text style={styles.sectionTitle}>Mã đổi thưởng đang hoạt động</Text>
+          <QRCode value={JSON.stringify({ type: 'eco-loop-reward-redemption', version: 1, qrToken: activeRedemption.qrToken })} size={180} />
+          <Text style={styles.qrCountdown}>Còn {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</Text>
+          <Text style={styles.detailsText}>Đưa mã này cho tình nguyện viên quét. Điểm chỉ bị trừ sau khi xác nhận.</Text>
+        </View>
+      )}
       <View style={styles.headerCard}>
         <View>
           <Text style={styles.headerLabel}>Ví Ecopoint</Text>
@@ -187,10 +232,9 @@ export default function RewardsScreen() {
               </ScrollView>
 
               <View style={styles.modalFooter}>
-                <AppButton
-                  title={`${selectedVoucher.costPoints.toLocaleString('vi-VN')} điểm - Đổi ngay`}
-                  onPress={() => void redeem(selectedVoucher)}
-                />
+                <View style={styles.quantityRow}><Text style={styles.detailsLabel}>Số lượng</Text><Pressable onPress={() => updateCart(selectedVoucher, -1)}><Text style={styles.quantityButton}>-</Text></Pressable><Text>{cart[selectedVoucher.id] || 1}</Text><Pressable onPress={() => updateCart(selectedVoucher, 1)}><Text style={styles.quantityButton}>+</Text></Pressable></View>
+                <AppButton title="Thêm sản phẩm khác" onPress={() => addToCart(selectedVoucher)} disabled={Boolean(activeRedemption)} />
+                <AppButton title={`${cartCount ? 'Tạo 1 mã cho ' + cartCount + ' sản phẩm' : selectedVoucher.costPoints.toLocaleString('vi-VN') + ' điểm - Đổi ngay'}`} onPress={() => void redeem(selectedVoucher)} disabled={Boolean(activeRedemption)} />
               </View>
             </View>
           </View>
@@ -204,6 +248,19 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.bgPink,
     paddingHorizontal: 16,
+  },
+  activeQrCard: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 16,
+    gap: 10,
+  },
+  qrCountdown: {
+    color: colors.ecoDarkBlue,
+    fontSize: 24,
+    fontWeight: '900',
   },
   headerCard: {
     backgroundColor: colors.ecoBlue,
@@ -506,6 +563,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
     lineHeight: 22,
+  },
+  quantityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  quantityButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.ecoPill,
+    color: colors.ecoDarkBlue,
+    fontSize: 24,
+    fontWeight: '900',
+    textAlign: 'center',
+    lineHeight: 32,
   },
   modalFooter: {
     padding: 16,

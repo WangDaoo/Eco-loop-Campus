@@ -86,6 +86,28 @@ def test_admin_resource_deletes_reward_for_admin(client, monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 
+def test_admin_point_adjustments_route_is_not_captured_by_resource_route(client, monkeypatch):
+    patch_current_user(monkeypatch, "admin")
+    captured = {}
+
+    def fake_adjust(admin_id, payload):
+        captured["admin_id"] = admin_id
+        captured["payload"] = payload
+        return {"userId": payload["userId"], "points": payload["points"], "balanceAfter": 107}
+
+    monkeypatch.setattr(app, "adjust_manual_points_account", fake_adjust, raising=False)
+
+    response = client.post(
+        "/api/admin/point-adjustments",
+        json={"userId": "student-1", "points": 7, "reason": "UAT manual point"},
+        headers=bearer("admin"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["balanceAfter"] == 107
+    assert captured["admin_id"] == "admin-1"
+    assert captured["payload"]["userId"] == "student-1"
+
 def test_admin_resource_whitelists_reward_categories():
     config = app.admin_resource_config("reward-categories")
 

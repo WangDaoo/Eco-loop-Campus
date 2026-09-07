@@ -157,8 +157,20 @@ export function mapUserRow(row: Row): UserProfile {
   };
   const avatarKey = text(row.avatarKey ?? row.avatar_key).trim();
   const avatarUrl = text(row.avatarUrl ?? row.avatar_url).trim();
+  const studentCode = text(row.studentCode ?? row.student_code).trim();
+  const facultyCode = text(row.facultyCode ?? row.faculty_code).trim();
+  const facultyName = text(row.facultyName ?? row.faculty_name).trim();
+  const phoneNumber = text(row.phoneNumber ?? row.phone_number).trim();
   if (avatarKey) profile.avatarKey = avatarKey;
   if (avatarUrl) profile.avatarUrl = avatarUrl;
+  if (studentCode) profile.studentCode = studentCode;
+  if (facultyCode) profile.facultyCode = facultyCode;
+  if (facultyName) profile.facultyName = facultyName;
+  if (phoneNumber) profile.phoneNumber = phoneNumber;
+  const profileCompleted = row.profileCompleted ?? row.profile_completed;
+  const requiresProfileCompletion = row.requiresProfileCompletion ?? row.requires_profile_completion;
+  if (typeof profileCompleted === 'boolean') profile.profileCompleted = profileCompleted;
+  if (typeof requiresProfileCompletion === 'boolean') profile.requiresProfileCompletion = requiresProfileCompletion;
   return profile;
 }
 
@@ -172,7 +184,10 @@ export function toUserRow(user: UserProfile): Row {
     points: user.points,
     status: user.status,
     avatar_key: user.avatarKey ?? null,
-    avatar_url: user.avatarUrl ?? null
+    avatar_url: user.avatarUrl ?? null,
+    student_code: user.studentCode ?? null,
+    faculty_code: user.facultyCode ?? null,
+    phone_number: user.phoneNumber ?? null
   };
 }
 
@@ -468,16 +483,29 @@ export function mapRewardRow(row: Row): Reward {
 }
 export function mapRewardRedemptionRow(row: Row): RewardRedemption {
   const status = text(row.status, 'requested').trim().toLowerCase();
+  const items = Array.isArray(row.items)
+    ? row.items.map((item: Row) => ({
+        rewardId: text(item.rewardId ?? item.reward_id),
+        rewardLabel: text(item.rewardLabel ?? item.reward_label ?? item.rewardTitle ?? item.reward_title),
+        quantity: number(item.quantity),
+        pointsEach: number(item.pointsEach ?? item.points_each),
+        pointsTotal: number(item.pointsTotal ?? item.points_total)
+      }))
+    : undefined;
   return {
     id: text(row.id),
     userId: text(row.userId ?? row.user_id),
     rewardId: text(row.rewardId ?? row.reward_id ?? row.reward_label),
     rewardLabel: text(row.rewardLabel ?? row.reward_label),
     costPoints: number(row.costPoints ?? row.cost_points),
-    status: status === 'approved' || status === 'rejected' || status === 'delivered' ? status : 'requested',
+    status: ['approved', 'rejected', 'delivered', 'pending', 'scanned', 'fulfilled', 'expired', 'cancelled'].includes(status) ? status as RewardRedemption['status'] : 'requested',
     requestedAt: date(row.requestedAt ?? row.requested_at),
     reviewedAt: row.reviewedAt || row.reviewed_at ? date(row.reviewedAt ?? row.reviewed_at) : undefined,
-    adminNote: text(row.adminNote ?? row.admin_note) || undefined
+    adminNote: text(row.adminNote ?? row.admin_note) || undefined,
+    qrToken: text(row.qrToken ?? row.qr_token) || undefined,
+    expiresAt: row.expiresAt || row.expires_at ? date(row.expiresAt ?? row.expires_at) : undefined,
+    totalPoints: row.totalPoints ?? row.total_points ? number(row.totalPoints ?? row.total_points) : undefined,
+    ...(items ? { items } : {})
   };
 }
 

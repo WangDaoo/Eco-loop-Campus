@@ -19,6 +19,21 @@ import {
   toUserRow
 } from './supabaseAdapters';
 
+test('maps HYUTE faculty-only student profile fields from backend aliases', () => {
+  const profile = mapUserRow({
+    id: 'student-1', role: 'student', status: 'active',
+    studentCode: 'SV20260001', facultyCode: 'information-technology',
+    facultyName: 'Khoa Công nghệ thông tin', phoneNumber: '0912345678',
+    profileCompleted: true, requiresProfileCompletion: false,
+  });
+
+  assert.equal(profile.studentCode, 'SV20260001');
+  assert.equal(profile.facultyCode, 'information-technology');
+  assert.equal(profile.facultyName, 'Khoa Công nghệ thông tin');
+  assert.equal(profile.phoneNumber, '0912345678');
+  assert.equal(profile.requiresProfileCompletion, false);
+});
+
 test('maps existing Supabase rows into mobile domain models', () => {
   assert.deepEqual(
     mapUserRow({ id: 'student-1', name: 'Mai', email: 'mai@school.edu.vn', role: 'student', group: 'CNTT', points: '42', status: 'active' }),

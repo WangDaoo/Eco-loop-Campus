@@ -7,6 +7,7 @@ import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { BIN_GROUPS } from "../data/wasteConfig";
+import campusTopo from "../assets/campus-topo.svg";
 import { applyBinRealtimeChange, buildStationQrCode, buildStationQrPayload, listBins, saveBin, subscribeBins, updateBinStatus } from "../services/supabaseStore";
 
 const emptyForm = {
@@ -58,6 +59,14 @@ function toForm(bin) {
     mapX: bin.mapX ?? "",
     mapY: bin.mapY ?? "",
   };
+}
+
+function buildNextStationId(bins) {
+  const highestSequence = bins.reduce((highest, bin) => {
+    const match = String(bin.id || "").trim().match(/^ECL-BIN-(\d{4})$/i);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
+  return `ECL-BIN-${String(highestSequence + 1).padStart(4, "0")}`;
 }
 
 function buildScanLink(binId) {
@@ -126,8 +135,9 @@ export default function BinsPage() {
   };
 
   const openCreateForm = () => {
+    const id = buildNextStationId(bins);
     setEditingBin({ mode: "create" });
-    setForm(emptyForm);
+    setForm({ ...emptyForm, id, qrCode: buildStationQrCode(id), mapX: "50", mapY: "50" });
   };
 
   const openEditForm = bin => {
@@ -144,6 +154,28 @@ export default function BinsPage() {
     setForm(current => ({ ...current, [key]: value }));
   };
 
+  const pickMapPosition = event => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    updateForm("mapX", normalizePercent(((event.clientX - rect.left) / rect.width) * 100, 0).toFixed(1));
+    updateForm("mapY", normalizePercent(((event.clientY - rect.top) / rect.height) * 100, 0).toFixed(1));
+  };
+
+  const dragMapMarker = event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.parentElement.getBoundingClientRect();
+    const move = pointer => {
+      updateForm("mapX", normalizePercent(((pointer.clientX - rect.left) / rect.width) * 100, 0).toFixed(1));
+      updateForm("mapY", normalizePercent(((pointer.clientY - rect.top) / rect.height) * 100, 0).toFixed(1));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  };
+
   const submitForm = async event => {
     event.preventDefault();
     const id = form.id.trim();
@@ -154,7 +186,7 @@ export default function BinsPage() {
       location: form.location.trim(),
       building: form.building.trim(),
       floor: form.floor.trim(),
-      qrCode: buildStationQrCode(form.qrCode || id || form.name),
+      qrCode: buildStationQrCode(id),
       status: statusCode(form.status) || "active",
       capacity: normalizePercent(form.capacity, 0),
       mapX: normalizePercent(form.mapX),
@@ -163,7 +195,7 @@ export default function BinsPage() {
 
     if (!payload.id || !payload.name || !payload.location) {
       setToastTone("danger");
-      setToast("Nhập đầy đủ mã thùng, tên trạm và vị trí trước khi lưu.");
+      setToast("Nhập đầy đủ tên trạm và vị trí trước khi lưu.");
       return;
     }
 
@@ -200,6 +232,16 @@ export default function BinsPage() {
     if (statusFilter === "attention") return needsAttention(bin);
     return statusCode(bin.status) === statusFilter;
   }), [bins, statusFilter]);
+  const binGroupOptions = useMemo(() => {
+    const labels = new Set(BIN_GROUPS.map(group => group.label));
+    bins.forEach(bin => {
+      const label = typeof bin.binGroup === "string" ? bin.binGroup.trim() : "";
+      if (label) labels.add(label);
+    });
+    const formLabel = typeof form.binGroup === "string" ? form.binGroup.trim() : "";
+    if (formLabel) labels.add(formLabel);
+    return Array.from(labels);
+  }, [bins, form.binGroup]);
 
   const updateStatusFilter = value => {
     const nextValue = normalizeStatusFilter(value);
@@ -287,18 +329,30 @@ export default function BinsPage() {
 
       <Modal open={Boolean(editingBin)} title={editingBin?.mode === "create" ? "Thêm trạm QR" : "Sửa trạm QR"} onClose={closeForm}>
         <form className="eg-form eg-bin-form" onSubmit={submitForm}>
-          <label>Mã thùng<input required value={form.id} disabled={editingBin?.mode !== "create"} onChange={event => updateForm("id", event.target.value)} placeholder="BIN-A1-RECYCLE" /></label>
+          <label>
+            Mã thùng tự sinh
+            <input value={form.id} readOnly aria-label="Mã thùng tự sinh" />
+            <small>Mỗi trạm dùng một mã chuẩn duy nhất theo dạng ECL-BIN-0001.</small>
+          </label>
           <label>Tên trạm<input required value={form.name} onChange={event => updateForm("name", event.target.value)} placeholder="Thùng tái chế A1" /></label>
-          <label>Nhóm rác<select value={form.binGroup} onChange={event => updateForm("binGroup", event.target.value)}>{BIN_GROUPS.map(group => <option key={group.id} value={group.label}>{group.label}</option>)}</select></label>
+          <label>Nhóm rác<select value={form.binGroup} onChange={event => updateForm("binGroup", event.target.value)}>{binGroupOptions.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
           <label>Vị trí<input required value={form.location} onChange={event => updateForm("location", event.target.value)} placeholder="Nhà A1 - tầng 1" /></label>
           <label>Tòa nhà<input value={form.building} onChange={event => updateForm("building", event.target.value)} placeholder="A1" /></label>
           <label>Tầng<input value={form.floor} onChange={event => updateForm("floor", event.target.value)} placeholder="1" /></label>
-          <label>Mã QR chuẩn<input value={buildStationQrCode(form.qrCode || form.id || form.name)} readOnly /></label>
-          <button type="button" className="eg-secondary-btn" onClick={() => updateForm("qrCode", buildStationQrCode(`${form.id || form.name}-${Date.now().toString().slice(-6)}`))}>Tạo lại mã QR</button>
+          <label>
+            Mã QR tự sinh
+            <input value={buildStationQrCode(form.id)} readOnly aria-label="Mã QR tự sinh" />
+            <small>Mã QR luôn được tạo từ mã thùng, không thể nhập hoặc sửa thủ công.</small>
+          </label>
           <label>Sức chứa<input type="number" min="0" max="100" value={form.capacity} onChange={event => updateForm("capacity", event.target.value)} /></label>
           <label>Trạng thái<select value={form.status} onChange={event => updateForm("status", event.target.value)}><option value="active">Hoạt động</option><option value="full">Đầy</option><option value="maintenance">Bảo trì</option></select></label>
-          <label>Tọa độ X<input type="number" min="0" max="100" step="0.1" value={form.mapX} onChange={event => updateForm("mapX", event.target.value)} placeholder="30" /></label>
-          <label>Tọa độ Y<input type="number" min="0" max="100" step="0.1" value={form.mapY} onChange={event => updateForm("mapY", event.target.value)} placeholder="78" /></label>
+           <label>Tọa độ X<input type="number" min="0" max="100" step="0.1" value={form.mapX} onChange={event => updateForm("mapX", event.target.value)} placeholder="30" /></label>
+           <label>Tọa độ Y<input type="number" min="0" max="100" step="0.1" value={form.mapY} onChange={event => updateForm("mapY", event.target.value)} placeholder="78" /></label>
+           <div className="eg-map-picker" role="application" aria-label="Minimap chọn vị trí thùng" onPointerDown={pickMapPosition} style={{ backgroundImage: `linear-gradient(rgba(237, 248, 244, 0.34), rgba(237, 248, 244, 0.34)), url(${campusTopo})` }}>
+             <span className="eg-map-picker-label">Minimap khuôn viên — bấm hoặc kéo marker để chọn vị trí</span>
+             {form.mapX !== "" && form.mapY !== "" && <button type="button" className="eg-map-marker" style={{ left: `${normalizePercent(form.mapX, 0)}%`, top: `${normalizePercent(form.mapY, 0)}%` }} onPointerDown={dragMapMarker} aria-label="Kéo marker thùng">+</button>}
+             <span className="eg-map-picker-coordinate">X: {normalizePercent(form.mapX, 50).toFixed(1)} · Y: {normalizePercent(form.mapY, 50).toFixed(1)}</span>
+           </div>
           <div className="eg-form-actions">
             <button type="button" className="eg-secondary-btn" onClick={closeForm}>Hủy</button>
             <button type="submit" className="eg-primary-btn" disabled={saving}>{saving ? "Đang lưu..." : "Lưu trạm"}</button>

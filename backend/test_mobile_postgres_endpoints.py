@@ -142,15 +142,15 @@ def test_mobile_requests_reward_for_current_user(client, monkeypatch):
     patch_current_user(monkeypatch, "student")
     monkeypatch.setattr(
         app,
-        "request_mobile_reward",
-        lambda user_id, reward_id: {"id": "redemption-1", "userId": user_id, "rewardId": reward_id, "status": "pending"},
+        "create_reward_redemption_batch_account",
+        lambda user_id, payload: {"id": "batch-1", "studentId": user_id, "qrToken": "ECL-REWARD-1", "status": "pending", "totalPoints": 20},
         raising=False,
     )
 
     response = client.post("/api/mobile/reward-redemptions", json={"rewardId": "reward-1"}, headers=bearer("student"))
 
     assert response.status_code == 201
-    assert response.json()["data"]["rewardId"] == "reward-1"
+    assert response.json()["data"]["qrToken"] == "ECL-REWARD-1"
 
 
 def test_admin_uploads_prediction_image(client, monkeypatch):

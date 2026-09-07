@@ -9,10 +9,13 @@ test('BinsPage subscribes to realtime bin changes after initial load', () => {
   expect(source).toMatch(/return unsubscribe/);
 });
 
-test('BinsPage uses generated Eco-loop station QR payloads instead of free-form QR input', () => {
+test('BinsPage uses generated Eco-loop station codes instead of free-form identifiers', () => {
   expect(source).toMatch(/buildStationQrCode/);
   expect(source).toMatch(/buildStationQrPayload/);
-  expect(source).toMatch(/Tạo lại mã QR/);
+  expect(source).toMatch(/buildNextStationId/);
+  expect(source).toMatch(/Mã thùng tự sinh/);
+  expect(source).toMatch(/Mã QR tự sinh/);
+  expect(source).toMatch(/campusTopo/);
   expect(source).not.toMatch(/<label>Mã QR<input/);
   expect(source).not.toMatch(/`QR-\$\{id\}`/);
 });
