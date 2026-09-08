@@ -32,3 +32,11 @@ test("CampusMap keeps edit mode active when dragging the editable marker", () =>
   expect(source).not.toMatch(/marker\.on\("dragstart", \(\) => onSelect\?\.\(station\)\)/);
   expect(source).toMatch(/marker\.on\("dragstart", \(\) => \{\s*if \(editingStationId !== station\.id\) onSelect\?\.\(station\);\s*\}\)/s);
 });
+
+test("CampusMap lets admins drag anywhere on the map while editing a station position", () => {
+  expect(source).toMatch(/map\.dragging\.disable\(\)/);
+  expect(source).toMatch(/map\.on\("mousedown", startMapPositionDrag\)/);
+  expect(source).toMatch(/map\.on\("mousemove", updateMapPositionDraft\)/);
+  expect(source).toMatch(/map\.once\("mouseup", stopMapPositionDrag\)/);
+  expect(source).toMatch(/setDraftPosition\(latLngToStationPosition\(event\.latlng\)\)/);
+});

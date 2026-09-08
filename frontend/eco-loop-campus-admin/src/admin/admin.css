@@ -1179,6 +1179,11 @@ a.eg-priority-item:focus-visible {
   display: none;
 }
 
+.eg-leaflet-map.is-position-editing,
+.eg-leaflet-map.is-position-editing .leaflet-interactive {
+  cursor: crosshair;
+}
+
 .eg-station-tooltip-content {
   width: 230px;
   display: grid;

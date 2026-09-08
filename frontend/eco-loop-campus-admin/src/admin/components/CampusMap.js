@@ -356,6 +356,39 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
     };
   }, [editingPosition, effectiveSelectedStationId, enabledLayers, selectStation, visibleStations]);
 
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    if (!map || !editingPosition || !selectedStation) return undefined;
+
+    const updateMapPositionDraft = event => {
+      if (!event.latlng) return;
+      setDraftPosition(latLngToStationPosition(event.latlng));
+    };
+
+    const stopMapPositionDrag = () => {
+      map.off("mousemove", updateMapPositionDraft);
+    };
+
+    const startMapPositionDrag = event => {
+      if (event.originalEvent) L.DomEvent.preventDefault(event.originalEvent);
+      updateMapPositionDraft(event);
+      map.on("mousemove", updateMapPositionDraft);
+      map.once("mouseup", stopMapPositionDrag);
+    };
+
+    map.dragging.disable();
+    map.getContainer().classList.add("is-position-editing");
+    map.on("mousedown", startMapPositionDrag);
+
+    return () => {
+      map.off("mousedown", startMapPositionDrag);
+      map.off("mousemove", updateMapPositionDraft);
+      map.off("mouseup", stopMapPositionDrag);
+      map.dragging.enable();
+      map.getContainer().classList.remove("is-position-editing");
+    };
+  }, [editingPosition, selectedStation]);
+
   const zoomIn = () => {
     leafletMapRef.current?.zoomIn(1, { animate: true });
   };
