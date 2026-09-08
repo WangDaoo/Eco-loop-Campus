@@ -1220,7 +1220,7 @@ a.eg-priority-item:focus-visible {
 
 .eg-map-detail-grid {
   display: grid;
-  grid-template-columns: minmax(190px, 0.9fr) minmax(0, 1.6fr);
+  grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.4fr);
   gap: 14px;
   margin-top: 14px;
 }
@@ -1388,6 +1388,70 @@ a.eg-priority-item:focus-visible {
   color: var(--eg-primary);
   font-size: 13px;
   font-weight: 800;
+}
+
+.eg-map-gamepad {
+  display: grid;
+  grid-template-columns: repeat(3, 38px);
+  grid-template-rows: repeat(3, 38px);
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid #dbeafe;
+  border-radius: var(--eg-radius);
+  background: #f8fbff;
+}
+
+.eg-map-gamepad button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: var(--eg-primary);
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.eg-map-gamepad button:hover:not(:disabled),
+.eg-map-gamepad button:focus-visible {
+  background: #eff6ff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16);
+  transform: translateY(-1px);
+}
+
+.eg-map-gamepad button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.eg-map-gamepad .is-up {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.eg-map-gamepad .is-left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.eg-map-gamepad .is-center {
+  grid-column: 2;
+  grid-row: 2;
+  background: var(--eg-primary);
+  color: #ffffff;
+}
+
+.eg-map-gamepad .is-right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.eg-map-gamepad .is-down {
+  grid-column: 2;
+  grid-row: 3;
 }
 
 .eg-inline-error {

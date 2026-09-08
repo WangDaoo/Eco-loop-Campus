@@ -1,4 +1,4 @@
-import { ArrowsOutCardinal, CheckCircle, Crosshair, Minus, Plus, SlidersHorizontal, Trash, XCircle } from "@phosphor-icons/react";
+import { ArrowsOutCardinal, CaretDown, CaretLeft, CaretRight, CaretUp, CheckCircle, Crosshair, Minus, Plus, SlidersHorizontal, Trash, XCircle } from "@phosphor-icons/react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import proj4 from "proj4";
@@ -15,6 +15,7 @@ const CAMPUS_FRAME = {
 };
 
 const STATION_FOCUS_ZOOM = 19;
+const POSITION_NUDGE_STEP = 1;
 
 proj4.defs("EPSG:32648", "+proj=utm +zone=48 +datum=WGS84 +units=m +no_defs");
 
@@ -426,6 +427,24 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
     setPositionError("");
   };
 
+  const nudgeDraftPosition = useCallback((deltaX, deltaY) => {
+    if (!selectedStation) return;
+    setDraftPosition(current => {
+      const base = current || { x: selectedStation.x, y: selectedStation.y };
+      return {
+        x: roundedPercent(base.x + deltaX),
+        y: roundedPercent(base.y + deltaY),
+      };
+    });
+    setPositionError("");
+  }, [selectedStation]);
+
+  const resetDraftPosition = useCallback(() => {
+    if (!selectedStation) return;
+    setDraftPosition({ x: selectedStation.x, y: selectedStation.y });
+    setPositionError("");
+  }, [selectedStation]);
+
   const confirmPositionEdit = async () => {
     if (!selectedStation || !draftPosition || !onUpdateBinPosition) return;
     setSavingPosition(true);
@@ -572,7 +591,24 @@ export default function CampusMap({ bins = [], feedback = [], onUpdateBinPositio
                   </button>
                 ) : (
                   <>
-                    <span className="eg-map-drag-hint">Kéo marker trên bản đồ để chỉnh vị trí thùng.</span>
+                    <span className="eg-map-drag-hint">Dùng tay cầm hoặc kéo marker trên bản đồ để chỉnh vị trí thùng.</span>
+                    <div className="eg-map-gamepad" aria-label="Tay cầm chỉnh vị trí thùng">
+                      <button type="button" className="is-up" aria-label="Di chuyển lên trên" disabled={savingPosition} onClick={() => nudgeDraftPosition(0, -POSITION_NUDGE_STEP)}>
+                        <CaretUp size={17} weight="bold" aria-hidden="true" />
+                      </button>
+                      <button type="button" className="is-left" aria-label="Di chuyển sang trái" disabled={savingPosition} onClick={() => nudgeDraftPosition(-POSITION_NUDGE_STEP, 0)}>
+                        <CaretLeft size={17} weight="bold" aria-hidden="true" />
+                      </button>
+                      <button type="button" className="is-center" aria-label="Đưa về vị trí ban đầu" disabled={savingPosition} onClick={resetDraftPosition}>
+                        <Crosshair size={16} weight="bold" aria-hidden="true" />
+                      </button>
+                      <button type="button" className="is-right" aria-label="Di chuyển sang phải" disabled={savingPosition} onClick={() => nudgeDraftPosition(POSITION_NUDGE_STEP, 0)}>
+                        <CaretRight size={17} weight="bold" aria-hidden="true" />
+                      </button>
+                      <button type="button" className="is-down" aria-label="Di chuyển xuống dưới" disabled={savingPosition} onClick={() => nudgeDraftPosition(0, POSITION_NUDGE_STEP)}>
+                        <CaretDown size={17} weight="bold" aria-hidden="true" />
+                      </button>
+                    </div>
                     <button type="button" className="eg-primary-btn" aria-label="Xác nhận vị trí" disabled={savingPosition || !hasPositionChanges} onClick={confirmPositionEdit}>
                       <CheckCircle size={16} weight="bold" aria-hidden="true" />
                       {savingPosition ? "Đang lưu..." : "Xác nhận vị trí"}

@@ -2455,7 +2455,7 @@ test("dashboard map highlights bins that have open feedback", async () => {
   expect(screen.getByText(/1 phản hồi mở/i)).toBeInTheDocument();
 });
 
-test("dashboard map opens bin details and switches position editing to direct marker drag", async () => {
+test("dashboard map opens bin details and supports gamepad position editing", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /bản đồ gis campus/i })).toBeInTheDocument();
@@ -2466,9 +2466,14 @@ test("dashboard map opens bin details and switches position editing to direct ma
   expect(screen.getByText(/thùng tái chế A1 gần đầy/i)).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /chỉnh vị trí/i }));
-  expect(screen.getByText(/kéo marker trên bản đồ để chỉnh vị trí thùng/i)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /di chuyển sang phải/i })).not.toBeInTheDocument();
+  expect(screen.getByText(/dùng tay cầm hoặc kéo marker trên bản đồ để chỉnh vị trí thùng/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/tay cầm chỉnh vị trí thùng/i)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /xác nhận vị trí/i })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole("button", { name: /di chuyển sang phải/i }));
+  expect(screen.getByText(/x 31% · y 78%/i)).toBeInTheDocument();
+  expect(screen.getByText(/có thay đổi vị trí/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /xác nhận vị trí/i })).toBeEnabled();
 
   fireEvent.click(screen.getByRole("button", { name: /hủy thay đổi vị trí/i }));
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ id: "BIN-A1-RECYCLE", map_x: expect.any(Number) }));
@@ -3531,4 +3536,14 @@ test("desktop admin shell keeps the hamburger button visible for sidebar togglin
 
   expect(finalDisplayFor(new Set(["eg-icon-btn", "eg-menu-btn"]))).toBe("inline-flex");
   expect(finalDisplayFor(new Set(["eg-sidebar-backdrop"]))).toBe("none");
+});
+
+test("dashboard map detail keeps enough width for position gamepad controls", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const css = fs.readFileSync(path.join(process.cwd(), "src", "admin", "admin.css"), "utf8");
+  const mapDetailRule = css.match(/\.eg-map-detail-grid\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body || "";
+
+  expect(mapDetailRule).toContain("grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.4fr);");
+  expect(css).toContain(".eg-map-gamepad");
 });

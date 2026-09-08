@@ -18,11 +18,10 @@ test("CampusMap keeps reset bounds separate from station focus", () => {
   expect(source).toMatch(/fitBounds\(latestBoundsRef\.current/);
 });
 
-test("CampusMap edits bin position by dragging the selected map marker instead of arrow buttons", () => {
+test("CampusMap edits bin position by dragging the selected map marker", () => {
   expect(source).toMatch(/draggable: editingStationId === station\.id/);
   expect(source).toMatch(/marker\.on\("dragend", event => onDraftPosition\?\.\(station\.id, latLngToStationPosition\(event\.target\.getLatLng\(\)\)\)\)/);
-  expect(source).toMatch(/Kéo marker trên bản đồ/);
-  expect(source).not.toMatch(/Di chuyển sang trái|Di chuyển lên trên|Di chuyển xuống dưới|Di chuyển sang phải/);
+  expect(source).toMatch(/kéo marker trên bản đồ/);
   expect(source).not.toMatch(/moveDraftPosition/);
 });
 
@@ -39,4 +38,15 @@ test("CampusMap lets admins drag anywhere on the map while editing a station pos
   expect(source).toMatch(/map\.on\("mousemove", updateMapPositionDraft\)/);
   expect(source).toMatch(/map\.once\("mouseup", stopMapPositionDrag\)/);
   expect(source).toMatch(/setDraftPosition\(latLngToStationPosition\(event\.latlng\)\)/);
+});
+
+test("CampusMap provides a gamepad-style position control when drag is unreliable", () => {
+  expect(source).toMatch(/const POSITION_NUDGE_STEP = 1;/);
+  expect(source).toMatch(/const nudgeDraftPosition = useCallback/);
+  expect(source).toMatch(/aria-label="Tay cầm chỉnh vị trí thùng"/);
+  expect(source).toMatch(/Di chuyển lên trên/);
+  expect(source).toMatch(/Di chuyển sang trái/);
+  expect(source).toMatch(/Đưa về vị trí ban đầu/);
+  expect(source).toMatch(/Di chuyển sang phải/);
+  expect(source).toMatch(/Di chuyển xuống dưới/);
 });
