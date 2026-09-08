@@ -36,23 +36,72 @@ def test_student_creates_recycling_submission_qr(client, monkeypatch):
     patch_current_user(monkeypatch, "student")
     captured = {}
 
-    def fake_create(user_id, payload):
+    def fake_create(user_id, payload, file_name, content_type, content):
         captured["user_id"] = user_id
         captured["payload"] = payload
-        return {"id": "sub-1", "qrToken": "ECL-SUB-1", "status": "CREATED"}
+        captured["file"] = (file_name, content_type, content)
+        return {"submission": {"id": "sub-1", "qrToken": "ECL-SUB-1", "status": "CREATED"}}
 
-    monkeypatch.setattr(app, "create_recycling_submission_account", fake_create, raising=False)
+    monkeypatch.setattr(app, "create_recycling_submission_with_proof_account", fake_create, raising=False)
 
+    response = client.post(
+        "/api/mobile/recycling-submissions",
+        data={"binId": "bin-e1", "wasteTypeId": "paper", "quantity": "1"},
+        files={"proof": ("student-proof.jpg", b"student-proof", "image/jpeg")},
+        headers=bearer("student"),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["submission"]["qrToken"] == "ECL-SUB-1"
+    assert captured["user_id"] == "student-1"
+    assert captured["payload"]["binId"] == "bin-e1"
+    assert captured["file"] == ("student-proof.jpg", "image/jpeg", b"student-proof")
+
+
+def test_student_submission_without_proof_is_rejected(client, monkeypatch):
+    patch_current_user(monkeypatch, "student")
     response = client.post(
         "/api/mobile/recycling-submissions",
         json={"binId": "bin-e1", "wasteTypeId": "paper", "quantity": 1},
         headers=bearer("student"),
     )
 
-    assert response.status_code == 201
-    assert response.json()["data"]["qrToken"] == "ECL-SUB-1"
-    assert captured["user_id"] == "student-1"
-    assert captured["payload"]["binId"] == "bin-e1"
+    assert response.status_code == 400
+    assert response.json()["detail"] == "PROOF_IMAGE_REQUIRED"
+
+
+def test_student_submission_rejects_non_image_proof(client, monkeypatch):
+    patch_current_user(monkeypatch, "student")
+    response = client.post(
+        "/api/mobile/recycling-submissions",
+        data={"binId": "bin-e1", "wasteTypeId": "paper", "quantity": "1"},
+        files={"proof": ("proof.txt", b"not-an-image", "text/plain")},
+        headers=bearer("student"),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "File minh chứng phải là ảnh"
+
+
+def test_student_proof_file_is_removed_when_database_write_fails(monkeypatch, tmp_path):
+    patch_current_user(monkeypatch, "student")
+    monkeypatch.setattr(app, "PROOF_UPLOADS_DIR", tmp_path / "proofs")
+    monkeypatch.setattr(
+        app,
+        "call_postgres_json_function",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("database unavailable")),
+    )
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        app.create_recycling_submission_with_proof_account(
+            "student-1",
+            {"binId": "bin-e1", "wasteTypeId": "paper", "quantity": 1},
+            "proof.jpg",
+            "image/jpeg",
+            b"proof-content",
+        )
+
+    assert not list((tmp_path / "proofs").rglob("*.*"))
 
 def test_student_creates_reward_batch_without_spending_points(client, monkeypatch):
     patch_current_user(monkeypatch, "student")
@@ -231,3 +280,44 @@ def test_volunteer_rejects_and_requests_review(client, monkeypatch):
     assert reject.json()["data"]["status"] == "REJECTED"
     assert review.status_code == 200
     assert review.json()["data"]["status"] == "PENDING_REVIEW"
+
+
+def test_volunteer_unlocks_manual_review_with_audited_reason(client, monkeypatch):
+    patch_current_user(monkeypatch, "volunteer")
+    captured = {}
+
+    def fake_unlock(actor_id, submission_id, payload):
+        captured.update(actor_id=actor_id, submission_id=submission_id, payload=payload)
+        return {
+            "status": "PENDING_REVIEW",
+            "submission": {
+                "id": submission_id,
+                "status": "PENDING_REVIEW",
+                "manualReviewReason": payload["reason"],
+            },
+        }
+
+    monkeypatch.setattr(app, "unlock_recycling_manual_review_account", fake_unlock, raising=False)
+    response = client.post(
+        "/api/mobile/recycling-submissions/sub-1/manual-review",
+        json={"reason": "Không thể đọc mã QR trên màn hình"},
+        headers=bearer("volunteer"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["submission"]["manualReviewReason"] == "Không thể đọc mã QR trên màn hình"
+    assert captured == {
+        "actor_id": "volunteer-1",
+        "submission_id": "sub-1",
+        "payload": {"reason": "Không thể đọc mã QR trên màn hình"},
+    }
+
+
+def test_only_students_can_mark_notifications_read(client, monkeypatch):
+    patch_current_user(monkeypatch, "volunteer")
+    response = client.patch(
+        "/api/mobile/notifications/notification-1/read",
+        headers=bearer("volunteer"),
+    )
+
+    assert response.status_code == 403

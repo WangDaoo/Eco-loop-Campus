@@ -1,6 +1,7 @@
 import { WasteType } from '../types';
 import { AiRuntimeMode, createAiRuntime, LocalAiEngine } from './aiRuntime';
 import { localAiService } from './localAiService';
+import { getMobileAccessToken } from './authTokenStore';
 
 export type PickedImage = {
   uri: string;
@@ -29,7 +30,7 @@ type FetchResponseLike = {
   json(): Promise<Record<string, unknown>>;
 };
 
-type FetchLike = (url: string, init: { method: string; body?: FormDataLike; signal?: AbortSignal }) => Promise<FetchResponseLike>;
+type FetchLike = (url: string, init: { method: string; body?: FormDataLike; signal?: AbortSignal; headers?: Record<string, string> }) => Promise<FetchResponseLike>;
 
 type PredictionServiceOptions = {
   baseUrl?: string;
@@ -41,6 +42,7 @@ type PredictionServiceOptions = {
   pollIntervalMs?: number;
   wait?: (ms: number) => Promise<void>;
   now?: () => number;
+  tokenProvider?: () => Promise<string>;
 };
 
 function normalizedBaseUrl(baseUrl: string) {
@@ -94,7 +96,8 @@ export function createPredictionService({
   queueTimeoutMs = 45000,
   pollIntervalMs = 1000,
   wait = waitFor,
-  now = Date.now
+  now = Date.now,
+  tokenProvider = getMobileAccessToken
 }: PredictionServiceOptions = {}) {
   const remoteEngine = {
     async predictImage(image: PickedImage): Promise<PredictionResult> {
@@ -109,9 +112,15 @@ export function createPredictionService({
 
       const endpointBaseUrl = normalizedBaseUrl(baseUrl);
 
+      const authenticatedHeaders = async (): Promise<Record<string, string>> => {
+        const token = await tokenProvider();
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      };
+
       const postDirectPrediction = async () => {
         const response = await fetcher(`${endpointBaseUrl}/predict`, {
           method: 'POST',
+          headers: await authenticatedHeaders(),
           body: formData
         });
 
@@ -125,7 +134,10 @@ export function createPredictionService({
       const pollPredictionJob = async (jobId: string) => {
         const deadline = now() + queueTimeoutMs;
         while (now() <= deadline) {
-          const response = await fetcher(`${endpointBaseUrl}/predict/jobs/${jobId}`, { method: 'GET' });
+          const response = await fetcher(`${endpointBaseUrl}/predict/jobs/${jobId}`, {
+            method: 'GET',
+            headers: await authenticatedHeaders()
+          });
           if (!response.ok) {
             throw new Error(`Dịch vụ AI tạm thời chưa sẵn sàng${response.status ? ` (${response.status})` : ''}`);
           }
@@ -140,6 +152,7 @@ export function createPredictionService({
       const submitQueuedPrediction = async () => {
         const response = await fetcher(`${endpointBaseUrl}/predict/jobs`, {
           method: 'POST',
+          headers: await authenticatedHeaders(),
           body: formData
         });
 

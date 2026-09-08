@@ -62,14 +62,15 @@ def test_scenario_a_registered_student_submission_is_synced_exactly_once(
     created_response = api_client.post(
         "/api/mobile/recycling-submissions",
         headers=student,
-        json={
+        data={
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
-            "quantity": 2,
+            "quantity": "2",
         },
+        files={"proof": ("student-proof.jpg", b"student-proof-e2e", "image/jpeg")},
     )
     assert created_response.status_code == 201, created_response.text
-    created = created_response.json()["data"]
+    created = created_response.json()["data"]["submission"]
     scan = api_client.post(
         "/api/mobile/recycling-submissions/scan",
         headers=volunteer,
@@ -229,12 +230,13 @@ def test_scenario_c_ineligible_and_non_owner_actions_leave_database_unchanged(
     created = api_client.post(
         "/api/mobile/recycling-submissions",
         headers=student,
-        json={
+        data={
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
-            "quantity": 1,
+            "quantity": "1",
         },
-    ).json()["data"]
+        files={"proof": ("student-proof.jpg", b"student-proof-owner", "image/jpeg")},
+    ).json()["data"]["submission"]
     scan = api_client.post(
         "/api/mobile/recycling-submissions/scan",
         headers=owner,
@@ -291,7 +293,7 @@ def test_scenario_c_ineligible_and_non_owner_actions_leave_database_unchanged(
         history_count = connection.execute("select count(*) from point_history").fetchone()[0]
 
     assert submission_state == ("QR_SCANNED", SEED_IDS["volunteer_a"])
-    assert proof_count == 0
+    assert proof_count == 1
     assert batch_state == ("pending", None)
     assert points == 1000
     assert stocks == {

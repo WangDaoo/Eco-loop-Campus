@@ -8,6 +8,7 @@ export type RootStackParamList = {
   Rewards: undefined;
   Leaderboard: undefined;
   About: undefined;
+  Notifications: undefined;
 };
 
 export type StudentTabParamList = {
@@ -124,12 +125,23 @@ export type RecyclingSubmission = {
   verifiedAt?: Date;
   actualQuantity?: number;
   volunteerNote?: string;
+  predictionId?: string;
+  manualReviewUnlockedAt?: Date;
+  manualReviewUnlockedBy?: string;
+  manualReviewReason?: string;
+  proofImages?: ProofImage[];
 };
 
 export type CreateSubmissionInput = {
   binId: string;
   wasteTypeId: string;
   quantity: number;
+  predictionId?: string;
+  proof?: {
+    uri: string;
+    name?: string;
+    mimeType?: string;
+  };
 };
 
 export type CreateFeedbackInput = {
@@ -259,6 +271,22 @@ export type ProofImage = {
   status: 'pending' | 'accepted' | 'rejected';
   verificationCode?: string;
   note?: string;
+  kind?: 'STUDENT_PROOF' | 'REVIEWER_PROOF' | 'BIN_CLEAR_PROOF';
+  uploadedBy?: string;
+  imageName?: string;
+  capturedAt?: Date;
+};
+
+export type InAppNotification = {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  message: string;
+  referenceType?: string;
+  referenceId?: string;
+  readAt?: Date;
+  createdAt: Date;
 };
 
 export type QRScanResult =

@@ -217,12 +217,36 @@ test('maps proof images and attaches them to submissions by submission id', () =
     image_url: 'https://cdn.example/proof-1.jpg',
     image_hash: 'hash-1',
     verification_code: 'RVW-1234',
-    status: 'pending'
+    status: 'pending',
+    kind: 'STUDENT_PROOF',
+    uploaded_by: 'student-1',
+    image_name: 'student-proof.jpg',
+    captured_at: '2026-08-02T01:01:00.000Z'
   });
 
   assert.equal(proof.submissionId, 'sub-1');
   assert.equal(proof.verificationCode, 'RVW-1234');
-  assert.equal(attachProofImagesToSubmissions([submission], [proof])[0].proofImage?.imageUrl, 'https://cdn.example/proof-1.jpg');
+  assert.equal(proof.kind, 'STUDENT_PROOF');
+  assert.equal(proof.uploadedBy, 'student-1');
+  assert.equal(proof.imageName, 'student-proof.jpg');
+  const attached = attachProofImagesToSubmissions([submission], [proof])[0];
+  assert.equal(attached.proofImage?.imageUrl, 'https://cdn.example/proof-1.jpg');
+  assert.deepEqual(attached.proofImages, [proof]);
+});
+
+test('maps manual review audit and embedded proof images from canonical submission payload', () => {
+  const submission = mapSubmissionRow({
+    id: 'sub-1', userId: 'student-1', binId: 'bin-1', wasteTypeId: 'paper', quantity: 1, unit: 'kg',
+    qrToken: 'ECL-SUB-1', status: 'PENDING_REVIEW', createdAt: '2026-08-02T01:00:00.000Z', expiredAt: '2026-08-02T01:45:00.000Z',
+    predictionId: 'prediction-1', manualReviewUnlockedAt: '2026-08-02T01:10:00.000Z', manualReviewUnlockedBy: 'volunteer-1',
+    manualReviewReason: 'Camera bị hỏng',
+    proofImages: [{ id: 'proof-1', submissionId: 'sub-1', imageUrl: '/uploads/proofs/proof-1.jpg', kind: 'STUDENT_PROOF', uploadedBy: 'student-1', status: 'pending' }]
+  });
+
+  assert.equal(submission.predictionId, 'prediction-1');
+  assert.equal(submission.manualReviewUnlockedBy, 'volunteer-1');
+  assert.equal(submission.manualReviewReason, 'Camera bị hỏng');
+  assert.equal(submission.proofImages?.[0].kind, 'STUDENT_PROOF');
 });
 
 test('maps reward catalog rows from Supabase into mobile rewards', () => {

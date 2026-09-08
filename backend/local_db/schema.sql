@@ -297,8 +297,17 @@ create table if not exists recycling_submissions (
   verified_by text references users(id) on delete set null,
   verified_at timestamptz,
   actual_quantity numeric,
-  volunteer_note text
+  volunteer_note text,
+  prediction_id text references predictions(id) on delete set null,
+  manual_review_unlocked_at timestamptz,
+  manual_review_unlocked_by text references users(id) on delete set null,
+  manual_review_reason text
 );
+
+alter table recycling_submissions add column if not exists prediction_id text references predictions(id) on delete set null;
+alter table recycling_submissions add column if not exists manual_review_unlocked_at timestamptz;
+alter table recycling_submissions add column if not exists manual_review_unlocked_by text references users(id) on delete set null;
+alter table recycling_submissions add column if not exists manual_review_reason text;
 
 alter table point_history drop constraint if exists point_history_submission_id_fkey;
 
@@ -313,8 +322,11 @@ create table if not exists qr_scan_logs (
   station_id text references bins(id) on delete set null,
   scanned_at timestamptz not null default now(),
   result text not null check (result in ('SUCCESS', 'EXPIRED', 'ALREADY_USED', 'INVALID_TOKEN', 'WRONG_STATION')),
-  note text not null default ''
+  note text not null default '',
+  submission_id text references recycling_submissions(id) on delete set null
 );
+
+alter table qr_scan_logs add column if not exists submission_id text references recycling_submissions(id) on delete set null;
 
 create table if not exists proof_images (
   id text primary key default gen_random_uuid()::text,
@@ -324,8 +336,46 @@ create table if not exists proof_images (
   captured_at timestamptz not null default now(),
   verification_code text,
   status text not null default 'pending' check (status in ('pending', 'accepted', 'rejected')),
-  note text not null default ''
+  note text not null default '',
+  kind text not null default 'REVIEWER_PROOF' check (kind in ('STUDENT_PROOF', 'REVIEWER_PROOF')),
+  uploaded_by text references users(id) on delete set null,
+  image_name text not null default ''
 );
+
+alter table proof_images add column if not exists kind text not null default 'REVIEWER_PROOF';
+alter table proof_images add column if not exists uploaded_by text references users(id) on delete set null;
+alter table proof_images add column if not exists image_name text not null default '';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'proof_images_kind_check'
+      and conrelid = 'proof_images'::regclass
+  ) then
+    alter table proof_images
+      add constraint proof_images_kind_check
+      check (kind in ('STUDENT_PROOF', 'REVIEWER_PROOF'));
+  end if;
+end
+$$;
+
+create table if not exists notifications (
+  id text primary key default gen_random_uuid()::text,
+  user_id text not null references users(id) on delete cascade,
+  type text not null,
+  title text not null,
+  message text not null,
+  reference_type text not null default '',
+  reference_id text not null default '',
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_notifications_user_created on notifications(user_id, created_at desc);
+create unique index if not exists idx_submission_rejection_notification
+  on notifications(user_id, reference_type, reference_id, type)
+  where type = 'SUBMISSION_REJECTED';
 
 create table if not exists ai_training_samples (
   id text primary key,
@@ -543,6 +593,7 @@ create index if not exists idx_recycling_submissions_user_id on recycling_submis
 create index if not exists idx_recycling_submissions_bin_id on recycling_submissions(bin_id);
 create index if not exists idx_recycling_submissions_status on recycling_submissions(status);
 create index if not exists idx_qr_scan_logs_qr_token on qr_scan_logs(qr_token);
+create index if not exists idx_qr_scan_logs_submission_id on qr_scan_logs(submission_id);
 create index if not exists idx_point_history_submission_id on point_history(submission_id);
 create index if not exists idx_user_missions_user_id on user_missions(user_id);
 create index if not exists idx_mission_events_user_id on mission_events(user_id);
@@ -669,6 +720,108 @@ begin
 end;
 $$;
 
+create or replace function recycling_submission_payload(p_submission_id text)
+returns jsonb
+language sql
+stable
+as $$
+  select jsonb_build_object(
+    'id', s.id,
+    'userId', s.user_id,
+    'binId', s.bin_id,
+    'wasteTypeId', s.waste_type_id,
+    'quantity', s.quantity,
+    'unit', s.unit,
+    'qrToken', s.qr_token,
+    'status', s.status,
+    'createdAt', s.created_at,
+    'expiredAt', s.expired_at,
+    'verifiedBy', s.verified_by,
+    'verifiedAt', s.verified_at,
+    'actualQuantity', s.actual_quantity,
+    'volunteerNote', coalesce(s.volunteer_note, ''),
+    'predictionId', s.prediction_id,
+    'manualReviewUnlockedAt', s.manual_review_unlocked_at,
+    'manualReviewUnlockedBy', s.manual_review_unlocked_by,
+    'manualReviewReason', coalesce(s.manual_review_reason, ''),
+    'proofImages', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'id', p.id,
+          'submissionId', p.submission_id,
+          'kind', p.kind,
+          'imageUrl', p.image_url,
+          'imageHash', p.image_hash,
+          'imageName', p.image_name,
+          'uploadedBy', p.uploaded_by,
+          'capturedAt', p.captured_at,
+          'verificationCode', p.verification_code,
+          'status', p.status,
+          'note', p.note
+        ) order by p.captured_at, p.id
+      )
+      from proof_images p
+      where p.submission_id = s.id
+    ), '[]'::jsonb)
+  )
+  from recycling_submissions s
+  where s.id = p_submission_id;
+$$;
+
+create or replace function create_recycling_submission_with_proof(
+  p_user_id text,
+  p_bin_id text,
+  p_waste_type_id text,
+  p_quantity numeric,
+  p_proof_id text,
+  p_image_url text,
+  p_image_hash text,
+  p_image_name text,
+  p_prediction_id text default null
+)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_waste waste_types%rowtype;
+  v_submission recycling_submissions%rowtype;
+  v_token text := 'ECL-SUB-' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISS') || '-' || lpad(floor(random() * 1000000)::text, 6, '0');
+begin
+  if not exists (select 1 from users where id = p_user_id and role = 'student' and status = 'active') then
+    raise exception 'INVALID_STUDENT';
+  end if;
+  if not exists (select 1 from bins where id = p_bin_id and status = 'active') then
+    raise exception 'INVALID_STATION';
+  end if;
+  select * into v_waste from waste_types where id = p_waste_type_id and status = 'active';
+  if not found then
+    raise exception 'INVALID_WASTE_TYPE';
+  end if;
+  if p_quantity is null or p_quantity <= 0 then
+    raise exception 'INVALID_QUANTITY';
+  end if;
+  if nullif(trim(p_proof_id), '') is null or nullif(trim(p_image_url), '') is null then
+    raise exception 'PROOF_IMAGE_REQUIRED';
+  end if;
+  if p_prediction_id is not null and not exists (select 1 from predictions where id = p_prediction_id and user_id = p_user_id) then
+    raise exception 'INVALID_PREDICTION';
+  end if;
+
+  insert into recycling_submissions
+    (user_id, bin_id, waste_type_id, quantity, unit, qr_token, expired_at, prediction_id)
+  values
+    (p_user_id, p_bin_id, p_waste_type_id, p_quantity, v_waste.unit, v_token, now() + interval '45 minutes', p_prediction_id)
+  returning * into v_submission;
+
+  insert into proof_images
+    (id, submission_id, image_url, image_hash, verification_code, kind, uploaded_by, image_name)
+  values
+    (p_proof_id, v_submission.id, trim(p_image_url), p_image_hash, left(coalesce(p_image_hash, ''), 12), 'STUDENT_PROOF', p_user_id, coalesce(p_image_name, ''));
+
+  return jsonb_build_object('submission', recycling_submission_payload(v_submission.id));
+end;
+$$;
+
 create or replace function scan_recycling_qr(
   p_qr_token text,
   p_scanned_by text,
@@ -687,8 +840,8 @@ begin
 
   select * into v_submission from recycling_submissions where qr_token = p_qr_token for update;
   if not found then
-    insert into qr_scan_logs (qr_token, scanned_by, station_id, result, note)
-    values (coalesce(p_qr_token, ''), p_scanned_by, p_station_id, 'INVALID_TOKEN', 'QR token không tồn tại');
+    insert into qr_scan_logs (qr_token, scanned_by, station_id, result, note, submission_id)
+    values (coalesce(p_qr_token, ''), p_scanned_by, p_station_id, 'INVALID_TOKEN', 'QR token không tồn tại', null);
     return jsonb_build_object('result', 'INVALID_TOKEN');
   end if;
 
@@ -706,10 +859,14 @@ begin
     where id = v_submission.id;
   end if;
 
-  insert into qr_scan_logs (qr_token, scanned_by, station_id, result, note)
-  values (p_qr_token, p_scanned_by, p_station_id, v_result, '');
+  insert into qr_scan_logs (qr_token, scanned_by, station_id, result, note, submission_id)
+  values (p_qr_token, p_scanned_by, p_station_id, v_result, '', v_submission.id);
 
-  return jsonb_build_object('result', v_result, 'submissionId', v_submission.id);
+  return jsonb_build_object(
+    'result', v_result,
+    'submissionId', v_submission.id,
+    'submission', recycling_submission_payload(v_submission.id)
+  );
 end;
 $$;
 
@@ -739,8 +896,11 @@ begin
   if not found then
     raise exception 'SUBMISSION_NOT_FOUND';
   end if;
-  if v_submission.status <> 'QR_SCANNED' then
+  if v_submission.status not in ('QR_SCANNED', 'PENDING_REVIEW') then
     raise exception 'INVALID_SUBMISSION_STATUS';
+  end if;
+  if v_submission.status = 'PENDING_REVIEW' and v_submission.manual_review_unlocked_at is null then
+    raise exception 'MANUAL_REVIEW_NOT_UNLOCKED';
   end if;
   if p_actual_quantity is null or p_actual_quantity <= 0 then
     raise exception 'INVALID_QUANTITY';
@@ -787,7 +947,12 @@ begin
     greatest(1, ceil(coalesce(p_actual_quantity, v_submission.quantity))::integer)
   );
 
-  return jsonb_build_object('status', 'POINT_CONFIRMED', 'points', v_points, 'submissionId', p_submission_id);
+  return jsonb_build_object(
+    'status', 'POINT_CONFIRMED',
+    'points', v_points,
+    'submissionId', p_submission_id,
+    'submission', recycling_submission_payload(p_submission_id)
+  );
 end;
 $$;
 
@@ -803,6 +968,9 @@ declare
   v_submission recycling_submissions%rowtype;
   v_actor_role text;
 begin
+  if nullif(trim(p_note), '') is null then
+    raise exception 'REJECTION_NOTE_REQUIRED';
+  end if;
   select role into v_actor_role
   from users
   where id = p_volunteer_id and role in ('volunteer', 'admin') and status = 'active';
@@ -813,8 +981,11 @@ begin
   from recycling_submissions
   where id = p_submission_id
   for update;
-  if not found or v_submission.status not in ('CREATED', 'QR_SCANNED', 'PENDING_REVIEW') then
+  if not found or v_submission.status not in ('QR_SCANNED', 'PENDING_REVIEW') then
     raise exception 'INVALID_SUBMISSION_STATUS';
+  end if;
+  if v_submission.status = 'PENDING_REVIEW' and v_submission.manual_review_unlocked_at is null then
+    raise exception 'MANUAL_REVIEW_NOT_UNLOCKED';
   end if;
   if v_actor_role <> 'admin' and v_submission.verified_by is distinct from p_volunteer_id then
     raise exception 'SUBMISSION_ACTOR_MISMATCH';
@@ -823,9 +994,93 @@ begin
   set status = 'REJECTED',
       verified_by = p_volunteer_id,
       verified_at = now(),
-      volunteer_note = coalesce(p_note, '')
+      volunteer_note = trim(p_note)
   where id = p_submission_id;
-  return jsonb_build_object('status', 'REJECTED', 'submissionId', p_submission_id);
+  insert into notifications (user_id, type, title, message, reference_type, reference_id)
+  values (
+    v_submission.user_id,
+    'SUBMISSION_REJECTED',
+    'Giao dịch gửi rác bị từ chối',
+    trim(p_note),
+    'recycling_submission',
+    p_submission_id
+  )
+  on conflict (user_id, reference_type, reference_id, type) where type = 'SUBMISSION_REJECTED' do nothing;
+  return jsonb_build_object(
+    'status', 'REJECTED',
+    'submissionId', p_submission_id,
+    'submission', recycling_submission_payload(p_submission_id)
+  );
+end;
+$$;
+
+create or replace function unlock_recycling_manual_review(
+  p_submission_id text,
+  p_actor_id text,
+  p_reason text default '',
+  p_scan_log_id text default null
+)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_submission recycling_submissions%rowtype;
+  v_actor_role text;
+  v_scan qr_scan_logs%rowtype;
+  v_reason text := nullif(trim(coalesce(p_reason, '')), '');
+begin
+  select role into v_actor_role
+  from users
+  where id = p_actor_id and role in ('volunteer', 'admin') and status = 'active';
+  if not found then
+    raise exception 'INVALID_VOLUNTEER';
+  end if;
+
+  select * into v_submission
+  from recycling_submissions
+  where id = p_submission_id
+  for update;
+  if not found or v_submission.status not in ('CREATED', 'QR_SCANNED') then
+    raise exception 'INVALID_SUBMISSION_STATUS';
+  end if;
+
+  if p_scan_log_id is not null then
+    select * into v_scan
+    from qr_scan_logs
+    where id = p_scan_log_id
+      and submission_id = p_submission_id
+      and result <> 'SUCCESS';
+    if not found then
+      raise exception 'INVALID_SCAN_FAILURE';
+    end if;
+    if v_actor_role <> 'admin' and v_scan.scanned_by is distinct from p_actor_id then
+      raise exception 'SUBMISSION_ACTOR_MISMATCH';
+    end if;
+    v_reason := coalesce(v_reason, nullif(trim(v_scan.note), ''), 'Quét QR không thành công: ' || v_scan.result);
+  elsif v_reason is null then
+    raise exception 'MANUAL_REVIEW_REASON_REQUIRED';
+  end if;
+
+  if v_actor_role <> 'admin'
+     and v_submission.verified_by is not null
+     and v_submission.verified_by is distinct from p_actor_id then
+    raise exception 'SUBMISSION_ACTOR_MISMATCH';
+  end if;
+
+  update recycling_submissions
+  set status = 'PENDING_REVIEW',
+      verified_by = p_actor_id,
+      verified_at = now(),
+      manual_review_unlocked_at = now(),
+      manual_review_unlocked_by = p_actor_id,
+      manual_review_reason = v_reason
+  where id = p_submission_id;
+
+  return jsonb_build_object(
+    'status', 'PENDING_REVIEW',
+    'submissionId', p_submission_id,
+    'submission', recycling_submission_payload(p_submission_id)
+  );
 end;
 $$;
 
@@ -841,28 +1096,6 @@ declare
   v_submission recycling_submissions%rowtype;
   v_actor_role text;
 begin
-  select role into v_actor_role
-  from users
-  where id = p_volunteer_id and role in ('volunteer', 'admin') and status = 'active';
-  if not found then
-    raise exception 'INVALID_VOLUNTEER';
-  end if;
-  select * into v_submission
-  from recycling_submissions
-  where id = p_submission_id
-  for update;
-  if not found or v_submission.status not in ('CREATED', 'QR_SCANNED') then
-    raise exception 'INVALID_SUBMISSION_STATUS';
-  end if;
-  if v_actor_role <> 'admin' and v_submission.verified_by is distinct from p_volunteer_id then
-    raise exception 'SUBMISSION_ACTOR_MISMATCH';
-  end if;
-  update recycling_submissions
-  set status = 'PENDING_REVIEW',
-      verified_by = p_volunteer_id,
-      verified_at = now(),
-      volunteer_note = coalesce(p_note, '')
-  where id = p_submission_id;
-  return jsonb_build_object('status', 'PENDING_REVIEW', 'submissionId', p_submission_id);
+  return unlock_recycling_manual_review(p_submission_id, p_volunteer_id, p_note, null);
 end;
 $$;

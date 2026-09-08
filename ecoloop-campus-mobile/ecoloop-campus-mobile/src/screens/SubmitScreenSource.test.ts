@@ -60,7 +60,11 @@ test('SubmitScreen keeps station QR selection camera-only without an image QR bu
 test('SubmitScreen keeps QR submission flow and readable Vietnamese copy', () => {
   assert.doesNotMatch(source, mojibakePattern);
   assert.match(source, /Tạo mã QR giao dịch dùng một lần/);
-  assert.match(source, /Phân loại AI/);
+  assert.match(source, /Ảnh minh chứng \(Bắt buộc\)/);
+  assert.match(source, /Thiếu ảnh minh chứng/);
+  assert.match(source, /buildProofFirstSubmissionInput/);
+  assert.match(source, /AI chỉ gợi ý loại rác/);
+  assert.match(source, /Nếu AI lỗi/);
   assert.match(source, /buildSubmitAiSuggestion/);
   assert.match(source, /AI đã nhận diện/);
   assert.match(source, /Chạy trên thiết bị/);

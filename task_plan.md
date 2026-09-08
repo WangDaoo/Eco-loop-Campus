@@ -61,3 +61,32 @@ Tạo một kế hoạch kiểm thử tự động bám sát code hiện tại, 
 - APK UAT phải chứa JavaScript bundle và chạy không cần Metro.
 - Dùng Cloudflare quick tunnel hiện có cho lần test đầu; tunnel phải còn chạy trong suốt buổi test.
 - Không dùng database test tự động hoặc database sản xuất; database UAT phải có hậu tố `_uat`.
+
+## Minh chứng gửi rác và duyệt thủ công — 2026-09-08
+
+- [complete] SUB-PROOF-1. Khóa thiết kế, contract và kế hoạch triển khai.
+- [complete] SUB-PROOF-2. PostgreSQL lưu ảnh sinh viên bắt buộc, nhật ký mở duyệt thủ công và thông báo từ chối.
+- [complete] SUB-PROOF-3. FastAPI nhận multipart, trả submission đầy đủ và bảo vệ AI bằng bearer token từ Mobile.
+- [complete] SUB-PROOF-4. Mobile bắt buộc ảnh, giữ ảnh khi AI lỗi, quét QR là luồng chính và có trung tâm thông báo.
+- [complete] SUB-PROOF-5. Web Admin hiển thị ảnh gắn submission và chỉ cho duyệt thủ công sau khi được mở khóa.
+- [complete] SUB-PROOF-6. PostgreSQL/API/Mobile/Web Admin regression và UAT artifact mới.
+
+### Quyết định đã duyệt
+
+- Ảnh sinh viên là bắt buộc trước khi tạo QR; AI chỉ gợi ý và không được chặn giao dịch khi lỗi.
+- Quét QR vẫn là luồng xác minh chính.
+- Duyệt thủ công chỉ mở sau scan thất bại hoặc hành động “Không thể quét QR” có lý do bắt buộc.
+- Admin hoặc tình nguyện viên đang sở hữu lượt xử lý có thể duyệt; ảnh xác minh bổ sung là tùy chọn.
+- Từ chối bắt buộc lý do; sinh viên thấy trong lịch sử/chi tiết và trung tâm thông báo, chưa dùng push notification.
+- Điểm chỉ được cộng đúng một lần bằng PostgreSQL transaction idempotent.
+
+### Lỗi gặp trong thực thi
+
+| Lỗi | Lần thử | Hướng xử lý |
+|---|---:|---|
+| `pytest` không có trên PATH của shell | 1 | Dùng Python runtime được repository/workspace cấu hình để chạy `-m pytest` |
+| Plan tham chiếu runner không tồn tại | 1 | Sửa thành `scripts/run_automated_logic_tests.ps1` sau khi kiểm kê repository |
+| Hai Python runtime ngoài dự án thiếu module `pytest` | 2 | Dùng `backend/.venv/Scripts/python.exe`, là runtime của repository |
+| `AsyncStorage` không tồn tại trong Node test của AI token provider | 1 | Dùng cache token dùng chung; store xác thực hydrate cache, provider có fallback an toàn khi test Node |
+| TypeScript suy luận header rỗng có `Authorization?: undefined` | 1 | Khóa kiểu trả về `Promise<Record<string, string>>` |
+| Source guard Mobile còn đòi nhãn “Phân loại AI” cũ | 1 | Cập nhật assertion theo contract ảnh bắt buộc/AI chỉ gợi ý đã duyệt |

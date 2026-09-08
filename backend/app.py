@@ -833,6 +833,14 @@ CAMEL_ALIASES = {
     "image_hash": "imageHash",
     "captured_at": "capturedAt",
     "verification_code": "verificationCode",
+    "prediction_id": "predictionId",
+    "manual_review_unlocked_at": "manualReviewUnlockedAt",
+    "manual_review_unlocked_by": "manualReviewUnlockedBy",
+    "manual_review_reason": "manualReviewReason",
+    "submission_id": "submissionId",
+    "uploaded_by": "uploadedBy",
+    "image_name": "imageName",
+    "read_at": "readAt",
     "reference_type": "referenceType",
     "reference_id": "referenceId",
 }
@@ -912,21 +920,27 @@ ADMIN_RESOURCES = {
     },
     "recycling-submissions": {
         "table": "recycling_submissions",
-        "columns": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "created_at", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
-        "writable": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
+        "columns": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "created_at", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note", "prediction_id", "manual_review_unlocked_at", "manual_review_unlocked_by", "manual_review_reason"],
+        "writable": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note", "prediction_id", "manual_review_unlocked_at", "manual_review_unlocked_by", "manual_review_reason"],
         "order": "created_at desc",
     },
     "qr-scan-logs": {
         "table": "qr_scan_logs",
-        "columns": ["id", "qr_token", "scanned_by", "station_id", "scanned_at", "result", "note"],
-        "writable": ["id", "qr_token", "scanned_by", "station_id", "result", "note"],
+        "columns": ["id", "qr_token", "scanned_by", "station_id", "scanned_at", "result", "note", "submission_id"],
+        "writable": ["id", "qr_token", "scanned_by", "station_id", "result", "note", "submission_id"],
         "order": "scanned_at desc",
     },
     "proof-images": {
         "table": "proof_images",
-        "columns": ["id", "submission_id", "image_url", "image_hash", "captured_at", "verification_code", "status", "note"],
-        "writable": ["id", "submission_id", "image_url", "image_hash", "verification_code", "status", "note"],
+        "columns": ["id", "submission_id", "image_url", "image_hash", "captured_at", "verification_code", "status", "note", "kind", "uploaded_by", "image_name"],
+        "writable": ["id", "submission_id", "image_url", "image_hash", "verification_code", "status", "note", "kind", "uploaded_by", "image_name"],
         "order": "captured_at desc",
+    },
+    "notifications": {
+        "table": "notifications",
+        "columns": ["id", "user_id", "type", "title", "message", "reference_type", "reference_id", "read_at", "created_at"],
+        "writable": [],
+        "order": "created_at desc",
     },
     "point-history": {
         "table": "point_history",
@@ -1197,6 +1211,7 @@ def load_mobile_initial_data(user):
             (user_id,),
         )
         qr_scan_logs = []
+        notifications = list_rows_from_config(ADMIN_RESOURCES["notifications"], "user_id = %s", (user_id,))
     elif role == "volunteer":
         predictions = []
         submissions = list_rows_from_config(
@@ -1209,10 +1224,11 @@ def load_mobile_initial_data(user):
         reward_redemptions = []
         proof_images = list_rows_from_config(
             ADMIN_RESOURCES["proof-images"],
-            "submission_id in (select id from recycling_submissions where verified_by = %s)",
+            "submission_id in (select id from recycling_submissions where status = 'CREATED' or verified_by = %s)",
             (user_id,),
         )
         qr_scan_logs = list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"], "scanned_by = %s", (user_id,))
+        notifications = []
     else:
         predictions = list_rows_from_config(ADMIN_RESOURCES["predictions"])
         submissions = list_rows_from_config(ADMIN_RESOURCES["recycling-submissions"])
@@ -1222,6 +1238,7 @@ def load_mobile_initial_data(user):
         reward_redemptions.extend(list_mobile_reward_batches())
         proof_images = list_rows_from_config(ADMIN_RESOURCES["proof-images"])
         qr_scan_logs = list_rows_from_config(ADMIN_RESOURCES["qr-scan-logs"])
+        notifications = []
 
     return {
         "users": list_mobile_leaderboard_users() if role in {"student", "volunteer"} else list_rows_from_config(ADMIN_RESOURCES["users"]),
@@ -1237,6 +1254,7 @@ def load_mobile_initial_data(user):
         "rewardRedemptions": reward_redemptions,
         "proofImages": proof_images,
         "qrScanLogs": qr_scan_logs,
+        "notifications": notifications,
         "avatarOptions": list_avatar_presets(),
     }
 
@@ -1489,6 +1507,11 @@ POSTGRES_BUSINESS_ERROR_STATUS = {
     "INVALID_SUBMISSION_STATUS": 400,
     "SUBMISSION_ACTOR_MISMATCH": 403,
     "PROOF_IMAGE_REQUIRED": 400,
+    "MANUAL_REVIEW_REASON_REQUIRED": 400,
+    "MANUAL_REVIEW_NOT_UNLOCKED": 400,
+    "INVALID_SCAN_FAILURE": 400,
+    "REJECTION_NOTE_REQUIRED": 400,
+    "INVALID_PREDICTION": 400,
     "REWARD_ITEMS_REQUIRED": 400,
     "ACTIVE_REWARD_BATCH_EXISTS": 409,
     "REWARD_NOT_FOUND": 404,
@@ -1537,7 +1560,7 @@ def qr_payload_value(payload, camel_name, snake_name=None, default=None):
 
 
 def require_positive_decimal(value):
-    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, str)):
         raise HTTPException(status_code=400, detail="INVALID_QUANTITY")
     try:
         quantity = Decimal(str(value))
@@ -1558,6 +1581,50 @@ def create_recycling_submission_account(user_id, payload):
             quantity,
         ],
     )
+
+
+def save_student_proof_upload(file_name, content_type, content):
+    if not str(content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="File minh chứng phải là ảnh")
+    if not content:
+        raise HTTPException(status_code=400, detail="PROOF_IMAGE_REQUIRED")
+
+    proof_id = str(uuid.uuid4())
+    proof_dir = PROOF_UPLOADS_DIR / "student"
+    proof_dir.mkdir(parents=True, exist_ok=True)
+    storage_name = f"{proof_id}-{safe_upload_file_name(file_name)}"
+    storage_path = proof_dir / storage_name
+    storage_path.write_bytes(content)
+    return {
+        "id": proof_id,
+        "imageUrl": f"/uploads/proofs/student/{storage_name}",
+        "imageHash": hashlib.sha256(content).hexdigest(),
+        "imageName": file_name or storage_name,
+        "storagePath": storage_path,
+    }
+
+
+def create_recycling_submission_with_proof_account(user_id, payload, file_name, content_type, content):
+    quantity = require_positive_decimal(qr_payload_value(payload, "quantity"))
+    upload = save_student_proof_upload(file_name, content_type, content)
+    try:
+        return call_postgres_json_function(
+            "create_recycling_submission_with_proof",
+            [
+                user_id,
+                qr_payload_value(payload, "binId", "bin_id"),
+                qr_payload_value(payload, "wasteTypeId", "waste_type_id"),
+                quantity,
+                upload["id"],
+                upload["imageUrl"],
+                upload["imageHash"],
+                upload["imageName"],
+                qr_payload_value(payload, "predictionId", "prediction_id"),
+            ],
+        )
+    except Exception:
+        upload["storagePath"].unlink(missing_ok=True)
+        raise
 
 def create_reward_redemption_batch_account(user_id, payload):
     items = payload.get("items") or [{"rewardId": payload.get("rewardId"), "quantity": payload.get("quantity", 1)}]
@@ -1624,8 +1691,20 @@ def review_recycling_submission_account(volunteer_id, submission_id, payload):
         [submission_id, volunteer_id, qr_payload_value(payload, "note", default="")],
     )
 
+
+def unlock_recycling_manual_review_account(actor_id, submission_id, payload):
+    return call_postgres_json_function(
+        "unlock_recycling_manual_review",
+        [
+            submission_id,
+            actor_id,
+            qr_payload_value(payload, "reason", default=""),
+            qr_payload_value(payload, "scanLogId", "scan_log_id"),
+        ],
+    )
+
 def to_proof_image(row):
-    proof_id, submission_id, image_url, image_hash, captured_at, verification_code, status, note = row
+    proof_id, submission_id, image_url, image_hash, captured_at, verification_code, status, note, kind, uploaded_by, image_name = row
     return {
         "id": proof_id,
         "submissionId": submission_id,
@@ -1635,6 +1714,9 @@ def to_proof_image(row):
         "verificationCode": verification_code,
         "status": status,
         "note": note,
+        "kind": kind,
+        "uploadedBy": uploaded_by,
+        "imageName": image_name,
     }
 
 def require_submission_actor(submission_id, actor):
@@ -1675,11 +1757,11 @@ def save_submission_proof_image(submission_id, file_name, content_type, content,
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                insert into proof_images (id, submission_id, image_url, image_hash, verification_code, status, note)
-                values (%s, %s, %s, %s, %s, 'pending', %s)
-                returning id, submission_id, image_url, image_hash, captured_at, verification_code, status, note
+                insert into proof_images (id, submission_id, image_url, image_hash, verification_code, status, note, kind, uploaded_by, image_name)
+                values (%s, %s, %s, %s, %s, 'pending', %s, 'REVIEWER_PROOF', %s, %s)
+                returning id, submission_id, image_url, image_hash, captured_at, verification_code, status, note, kind, uploaded_by, image_name
                 """,
-                (str(uuid.uuid4()), submission_id, image_url, image_hash, image_hash[:12], str(note or "")),
+                (str(uuid.uuid4()), submission_id, image_url, image_hash, image_hash[:12], str(note or ""), actor.get("id"), file_name or storage_name),
             )
             row = cursor.fetchone()
         connection.commit()
@@ -1704,9 +1786,27 @@ def save_prediction_upload(file_name, content_type, content):
     }
 
 @app.post("/api/mobile/recycling-submissions", status_code=201)
-def mobile_create_recycling_submission(payload: dict, authorization: str | None = Header(default=None)):
+async def mobile_create_recycling_submission(request: Request, authorization: str | None = Header(default=None)):
     user = require_role_user(authorization, {"student"})
-    return {"data": create_recycling_submission_account(user["id"], payload)}
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" not in content_type.lower():
+        raise HTTPException(status_code=400, detail="PROOF_IMAGE_REQUIRED")
+    form = await request.form()
+    proof = form.get("proof")
+    if proof is None or not hasattr(proof, "read"):
+        raise HTTPException(status_code=400, detail="PROOF_IMAGE_REQUIRED")
+    content = await read_limited_upload(proof)
+    payload = {
+        "binId": form.get("binId"),
+        "wasteTypeId": form.get("wasteTypeId"),
+        "quantity": form.get("quantity"),
+        "predictionId": form.get("predictionId"),
+    }
+    return {
+        "data": create_recycling_submission_with_proof_account(
+            user["id"], payload, proof.filename, proof.content_type, content
+        )
+    }
 
 @app.post("/api/mobile/recycling-submissions/scan")
 def mobile_scan_recycling_submission(payload: dict, authorization: str | None = Header(default=None)):
@@ -1744,6 +1844,34 @@ def mobile_reject_recycling_submission(submission_id: str, payload: dict, author
 def mobile_review_recycling_submission(submission_id: str, payload: dict, authorization: str | None = Header(default=None)):
     user = require_role_user(authorization, {"volunteer", "admin"})
     return {"data": review_recycling_submission_account(user["id"], submission_id, payload)}
+
+
+@app.post("/api/mobile/recycling-submissions/{submission_id}/manual-review")
+def mobile_unlock_recycling_manual_review(submission_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"volunteer", "admin"})
+    return {"data": unlock_recycling_manual_review_account(user["id"], submission_id, payload)}
+
+
+@app.patch("/api/mobile/notifications/{notification_id}/read")
+def mobile_mark_notification_read(notification_id: str, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student"})
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                update notifications
+                set read_at = coalesce(read_at, now())
+                where id = %s and user_id = %s
+                returning id, user_id, type, title, message, reference_type, reference_id, read_at, created_at
+                """,
+                (notification_id, user["id"]),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="NOTIFICATION_NOT_FOUND")
+    return {"data": admin_row_to_json(ADMIN_RESOURCES["notifications"]["columns"], row)}
 
 
 def slugify(value, fallback="avatar"):

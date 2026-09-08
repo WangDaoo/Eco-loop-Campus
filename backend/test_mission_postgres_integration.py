@@ -97,12 +97,13 @@ def test_confirmed_submission_advances_mission_once_and_rewards_once(
     created = api_client.post(
         "/api/mobile/recycling-submissions",
         headers=student_headers,
-        json={
+        data={
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
-            "quantity": 1,
+            "quantity": "1",
         },
-    ).json()["data"]
+        files={"proof": ("student-proof.jpg", b"student-proof-mission", "image/jpeg")},
+    ).json()["data"]["submission"]
     scan = api_client.post(
         "/api/mobile/recycling-submissions/scan",
         headers=volunteer_headers,

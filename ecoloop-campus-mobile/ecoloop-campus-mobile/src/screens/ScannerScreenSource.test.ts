@@ -26,15 +26,16 @@ test('ScannerScreen uses a square camera preview instead of a rectangle', () => 
 test('ScannerScreen disables accept action until the QR scan is valid', () => {
   assert.match(source, /canConfirmSubmission/);
   assert.match(source, /selectedSubmission\?\.status === 'QR_SCANNED'/);
+  assert.match(source, /selectedSubmission\?\.status === 'PENDING_REVIEW'[\s\S]*selectedSubmission\?\.manualReviewUnlockedAt/);
   assert.match(source, /title=\{canConfirmSubmission \? 'Xác nhận & Cộng điểm' : 'Chưa scan hợp lệ'\}/);
   assert.match(source, /disabled=\{!canConfirmSubmission\}/);
 });
 
-test('ScannerScreen reopens QR_SCANNED pending submissions without scanning the QR again', () => {
+test('ScannerScreen opens queue details without fabricating a successful QR scan', () => {
   assert.match(source, /openSubmissionForReview/);
   assert.match(source, /openPendingSubmission/);
-  assert.match(source, /submission\.status === 'QR_SCANNED'/);
-  assert.match(source, /onPress=\{\(\) => void openPendingSubmission\(item\)\}/);
+  assert.match(source, /openPendingSubmission = \(submission:[\s\S]*openSubmissionForReview\(submission\)/);
+  assert.match(source, /onPress=\{\(\) => openPendingSubmission\(item\)\}/);
   assert.doesNotMatch(source, /onPress=\{\(\) => void loadQr\(item\.qrToken\)\}/);
 });
 
@@ -55,7 +56,7 @@ test('ScannerScreen reports anti-fraud scan outcomes immediately', () => {
 test('ScannerScreen keeps Vietnamese UI text readable', () => {
   assert.doesNotMatch(source, mojibakePattern);
   assert.match(source, /Xác nhận QR Giao dịch/);
-  assert.match(source, /Chụp ảnh minh chứng/);
+  assert.match(source, /Ảnh minh chứng sinh viên/);
 });
 
 test('ScannerScreen retries proof image picker with legacy mode when Android PhotoPicker fails', () => {
@@ -64,8 +65,30 @@ test('ScannerScreen retries proof image picker with legacy mode when Android Pho
 });
 
 test('ScannerScreen reports proof upload errors instead of failing silently before confirm', () => {
-  assert.match(source, /ensureProofImageSafely/);
-  assert.match(source, /return await ensureProofImage\(\)/);
+  assert.match(source, /uploadReviewerProofSafely/);
+  assert.match(source, /return await uploadReviewerProofIfSelected\(\)/);
   assert.match(source, /Không lưu được ảnh minh chứng/);
-  assert.match(source, /if \(!\(await ensureProofImageSafely\(\)\)\) return;/);
+  assert.match(source, /if \(!\(await uploadReviewerProofSafely\(\)\)\) return;/);
+});
+
+test('ScannerScreen keeps QR primary and only unlocks manual review with a reason', () => {
+  assert.match(source, /unlockManualReview/);
+  assert.match(source, /Không thể quét QR/);
+  assert.match(source, /Nhập lý do không thể quét QR/);
+  assert.match(source, /selectedSubmission\?\.status === 'PENDING_REVIEW'/);
+  assert.doesNotMatch(source, /loadQr\(submission\.qrToken\)/);
+});
+
+test('ScannerScreen shows student proof and requires an explicit rejection reason', () => {
+  assert.match(source, /STUDENT_PROOF/);
+  assert.match(source, /Ảnh minh chứng sinh viên/);
+  assert.match(source, /Lý do từ chối là bắt buộc/);
+  assert.doesNotMatch(source, /Không đạt điều kiện tiếp nhận/);
+});
+
+test('ScannerScreen reconciles the all-station pending count with the duty-station count', () => {
+  assert.match(source, /allPendingSubmissions/);
+  assert.match(source, /pendingAtDuty\.length/);
+  assert.match(source, /allPendingSubmissions\.length/);
+  assert.match(source, /Giao dịch ở trạm khác/);
 });

@@ -81,8 +81,17 @@ export default function HistoryScreen() {
             <Text style={styles.time}>{item.quantity} {item.unit} tại {station?.name ?? item.binId}</Text>
             <Text style={styles.time}>QR: {item.qrToken}</Text>
             {item.actualQuantity ? <Text style={styles.time}>Thực tế: {item.actualQuantity} {item.unit}</Text> : null}
-            {item.volunteerNote ? <Text style={styles.time}>Ghi chú: {item.volunteerNote}</Text> : null}
-            {item.proofImage ? <Text style={styles.time}>Ảnh chứng minh: {item.proofImage.imageUrl}</Text> : null}
+            {item.volunteerNote ? (
+              <Text style={[styles.time, item.status === 'REJECTED' && styles.rejectionReason]}>
+                {item.status === 'REJECTED' ? 'Lý do từ chối' : 'Ghi chú'}: {item.volunteerNote}
+              </Text>
+            ) : null}
+            {(item.proofImages ?? (item.proofImage ? [item.proofImage] : [])).map(proof => (
+              <View key={proof.id} style={styles.proofBlock}>
+                <Text style={styles.proofLabel}>{proof.kind === 'STUDENT_PROOF' ? 'Ảnh sinh viên gửi' : 'Ảnh người duyệt bổ sung'}</Text>
+                <Image source={{ uri: proof.imageUrl }} style={styles.proofImage} />
+              </View>
+            ))}
           </Card>
         );
       })}
@@ -163,6 +172,10 @@ const styles = StyleSheet.create({
   earn: { color: colors.green },
   spend: { color: colors.coralDark },
   time: { color: colors.muted, marginTop: 4 },
+  rejectionReason: { color: colors.coralDark, fontWeight: '900' },
+  proofBlock: { marginTop: 10 },
+  proofLabel: { color: colors.green, fontWeight: '900', marginBottom: 6 },
+  proofImage: { width: '100%', height: 180, borderRadius: 14, backgroundColor: colors.cream },
   emptyContainer: { alignItems: 'center', marginVertical: 20 },
   mascot: { width: 120, height: 120, resizeMode: 'contain', marginBottom: 12 },
   empty: { color: colors.muted, fontWeight: '700', textAlign: 'center' },

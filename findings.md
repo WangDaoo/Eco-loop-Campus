@@ -70,4 +70,33 @@ Các mục 1–9 là phát hiện tĩnh cần được khóa bằng test đỏ t
 - Không thể quản lý UAT an toàn bằng PID trần hoặc PID của wrapper PowerShell: phải lưu PID, executable và start time của chính Python listener/cloudflared rồi xác thực cả ba trước khi stop.
 - PowerShell 7 tự chuyển ISO date trong JSON thành `DateTime`, còn Windows PowerShell giữ string; process identity phải xử lý cả hai kiểu để không diễn giải sai ngày/tháng theo locale.
 - Health UAT phải xác nhận đồng thời `configured=true`, `status=ok` và database đúng `ecoloop_campus_uat`; chỉ nhận HTTP 200 có thể vô tình trỏ APK vào backend/database khác.
+
+## Khảo sát minh chứng và duyệt thủ công ngày 2026-09-08
+
+- APK gọi `POST /predict/jobs` nhưng không gửi `Authorization`; log UAT ghi nhận `401 Unauthorized`. Model backend đã load thành công, nên lỗi nằm ở contract xác thực Mobile–AI.
+- `SubmitScreen` hiện tạo submission chỉ với `binId`, `wasteTypeId`, `quantity`; ảnh đã chọn cho AI không được liên kết vào submission.
+- `buildSubmitAiSuggestion` chỉ lưu prediction sau khi AI thành công. Khi AI lỗi, đường dẫn ảnh chỉ còn trong state cục bộ và không được backend lưu.
+- Endpoint `/api/uploads/predictions` tồn tại nhưng không được luồng Mobile hiện tại gọi; `saveAiPrediction` gửi JSON và không upload byte ảnh.
+- Endpoint proof hiện chỉ cho volunteer/admin và chỉ chấp nhận submission `QR_SCANNED`/`PENDING_REVIEW`; sinh viên không thể tạo proof khi tạo giao dịch.
+- Web Admin Ecopoint chỉ ghép ảnh từ `proof_images` theo `submissionId`. Vì ảnh sinh viên không vào bảng này, giao dịch hiện hiển thị `0 ảnh`.
+- `scan_recycling_qr` hiện chỉ trả `result` và `submissionId`, trong khi Mobile chỉ nhận `data.submission`; scan thành công có thể bị UI báo không tìm thấy rồi lần sau thành `ALREADY_USED`.
+- Lịch sử volunteer hiển thị mọi `CREATED`, còn queue scanner lọc theo trạm đang chọn; vì vậy có thể thấy “Chờ tình nguyện viên” trong lịch sử nhưng queue bằng 0.
+- Bảng `bins` chỉ có `capacity` phần trăm; chưa có tồn kho theo loại rác, snapshot kiểm kê hoặc biên bản dọn/reset.
+- Danh mục khoa tiếng Việt trong UAT bị thay bằng ký tự `?` ngay trong PostgreSQL do Windows PowerShell pipe nội dung UTF-8 vào `psql`; cần dùng `psql -f` với `PGCLIENTENCODING=UTF8` ở chặng riêng.
 - Normal restart phải giữ nguyên điểm và tồn kho phục vụ test xuyên thiết bị; chỉ `-ResetData` mới seed lại. Reward badge UAT có stock khởi tạo 30 để kiểm chứng debit/refund thật.
+
+## Kết quả proof-first đã triển khai ở backend/Mobile
+
+- FastAPI hiện nhận multipart và không thể tạo QR nếu thiếu proof; PostgreSQL lưu submission + `STUDENT_PROOF` + liên kết AI tùy chọn trong cùng transaction.
+- Mobile giữ asset ảnh ngay trước khi gọi AI. Vì vậy lỗi queue/model/network không làm mất ảnh và không chặn lựa chọn loại rác thủ công.
+- Token AI dùng chung nguồn với FastAPI store; login/logout/cold-session hydrate cùng một cache để tránh request prediction 401.
+- Canonical scan response đã mang submission đầy đủ; Mobile cần hoàn thiện adapter để giữ mảng `proofImages` và URL tuyệt đối trong phản hồi scan/initial-data.
+
+## Kết quả hoàn tất submission proof/manual review — 2026-09-08
+
+- PostgreSQL là nguồn quyết định trạng thái: `QR_SCANNED` được duyệt theo luồng quét chuẩn; `PENDING_REVIEW` chỉ được confirm/reject khi có `manual_review_unlocked_at` và audit lý do.
+- Cả PostgreSQL và UI đều chặn bản ghi `PENDING_REVIEW` bị tạo/sửa thủ công nhưng thiếu audit mở khóa; lỗi API chuẩn là `MANUAL_REVIEW_NOT_UNLOCKED`.
+- Notification read chỉ dành cho sinh viên và luôn lọc `notification.user_id` theo chủ token; volunteer/admin không được dùng endpoint này.
+- Backend từ chối file proof không có MIME ảnh và xóa file sinh viên vừa lưu nếu transaction tạo submission thất bại.
+- Web Admin và Mobile cùng dùng canonical `proofImages`, phân biệt `STUDENT_PROOF` và `REVIEWER_PROOF`; lý do từ chối nằm cả trong submission history và notification center.
+- Bản UAT mới dùng cùng schema/contract, giữ dữ liệu đang test và nhúng tunnel `https://brick-classroom-apache-sims.trycloudflare.com`.

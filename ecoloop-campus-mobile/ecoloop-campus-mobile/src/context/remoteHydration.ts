@@ -1,4 +1,4 @@
-import { AvatarPreset, BinStation, EcoPointTransaction, Feedback, Mission, PredictionRecord, RecyclingSubmission, Reward, QRScanLog, RewardRedemption, UserProfile, WasteType } from '../types';
+import { AvatarPreset, BinStation, EcoPointTransaction, Feedback, InAppNotification, Mission, PredictionRecord, RecyclingSubmission, Reward, QRScanLog, RewardRedemption, UserProfile, WasteType } from '../types';
 import { MobileInitialData, OperatingReadiness } from '../services/backendMobileStore';
 
 type RemoteHydrationState = {
@@ -16,6 +16,7 @@ type RemoteHydrationState = {
   rewardRedemptions: RewardRedemption[];
   qrScanLogs: QRScanLog[];
   avatarOptions: AvatarPreset[];
+  notifications: InAppNotification[];
   dutyStationId: string;
 };
 
@@ -35,6 +36,7 @@ export function resolveRemoteHydrationState(data: MobileInitialData, readiness: 
     rewardRedemptions: data.rewardRedemptions,
     qrScanLogs: data.qrScanLogs,
     avatarOptions: data.avatarOptions,
+    notifications: data.notifications,
     dutyStationId: data.stations[0]?.id ?? ''
   };
 }

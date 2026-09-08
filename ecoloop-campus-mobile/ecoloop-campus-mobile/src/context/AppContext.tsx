@@ -9,6 +9,7 @@ import {
   EcoPointTransaction,
   Faculty,
   Feedback,
+  InAppNotification,
   Mission,
   PredictionRecord,
   ProofImage,
@@ -45,6 +46,7 @@ type AppContextValue = {
   rewards: Reward[];
   rewardRedemptions: RewardRedemption[];
   qrScanLogs: QRScanLog[];
+  notifications: InAppNotification[];
   feedbacks: Feedback[];
   avatarOptions: AvatarPreset[];
   faculties: Faculty[];
@@ -66,6 +68,8 @@ type AppContextValue = {
   confirmSubmission: (submissionId: string, actualQuantity: number, volunteerNote?: string) => Promise<void>;
   rejectSubmission: (submissionId: string, volunteerNote?: string) => Promise<void>;
   requestReview: (submissionId: string, volunteerNote?: string) => Promise<void>;
+  unlockManualReview: (submissionId: string, reason: string, scanLogId?: string) => Promise<void>;
+  markNotificationRead: (notificationId: string) => Promise<void>;
   attachProofImage: (submissionId: string, input: CreateProofImageInput) => Promise<RecyclingSubmission | undefined>;
   scanRewardRedemption: (qrToken: string) => Promise<boolean>;
 };
@@ -90,7 +94,11 @@ function messageOf(error: unknown) {
 function applyProofImage(items: RecyclingSubmission[], proofImage: ProofImage | undefined, submissionId?: string) {
   const targetId = proofImage?.submissionId ?? submissionId;
   if (!targetId) return items;
-  return items.map(item => (item.id === targetId ? { ...item, proofImage } : item));
+  return items.map(item => {
+    if (item.id !== targetId || !proofImage) return item;
+    const proofImages = [proofImage, ...(item.proofImages ?? []).filter(proof => proof.id !== proofImage.id)];
+    return { ...item, proofImage: proofImages[0], proofImages };
+  });
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -107,6 +115,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [rewardRedemptions, setRewardRedemptions] = useState<RewardRedemption[]>([]);
   const [qrScanLogs, setQrScanLogs] = useState<QRScanLog[]>([]);
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [stations, setStations] = useState<BinStation[]>([]);
   const [wasteTypes, setWasteTypes] = useState<WasteType[]>([]);
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
@@ -155,6 +164,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setRewards(state.rewards);
         setRewardRedemptions(state.rewardRedemptions);
         setQrScanLogs(state.qrScanLogs);
+        setNotifications(state.notifications);
         setDutyStationId(current => current || state.dutyStationId);
         setSyncSource(state.syncSource);
         setSyncError(state.syncError);
@@ -171,6 +181,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setRewards([]);
         setRewardRedemptions([]);
         setQrScanLogs([]);
+        setNotifications([]);
         setDutyStationId('');
         setSyncSource('backend');
         setSyncError(messageOf(error));
@@ -276,6 +287,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setRewards([]);
       setRewardRedemptions([]);
       setQrScanLogs([]);
+      setNotifications([]);
       setMissions([]);
       setFeedbacks([]);
       setAvatarOptions([]);
@@ -426,6 +438,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const unlockManualReview = async (submissionId: string, reason: string, scanLogId?: string) => {
+    try {
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để mở duyệt thủ công.');
+      if (!reason.trim()) throw new Error('Nhập lý do không thể quét QR.');
+      const submission = await remoteStore.unlockManualReview(submissionId, reason.trim(), scanLogId);
+      setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
+    } catch (error) {
+      failRemoteMutation(error);
+    }
+  };
+
+  const markNotificationRead = async (notificationId: string) => {
+    try {
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để cập nhật thông báo.');
+      const notification = await remoteStore.markNotificationRead(notificationId);
+      setNotifications(items => items.map(item => item.id === notification.id ? notification : item));
+    } catch (error) {
+      failRemoteMutation(error);
+    }
+  };
+
   const completeProfile = async (profile: StudentProfileInput) => {
     setIsLoading(true);
     try {
@@ -481,6 +514,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       faculties,
       rewardRedemptions,
       qrScanLogs,
+      notifications,
       dutyStationId,
       signIn,
       signUp,
@@ -499,8 +533,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       confirmSubmission,
       rejectSubmission,
       requestReview,
-       attachProofImage,
-       scanRewardRedemption
+      unlockManualReview,
+      markNotificationRead,
+      attachProofImage,
+      scanRewardRedemption
     }),
     [
       currentUser,
@@ -522,6 +558,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       faculties,
       rewardRedemptions,
       qrScanLogs,
+      notifications,
       dutyStationId,
       updateAvatar,
       updatePassword

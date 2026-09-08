@@ -16,7 +16,8 @@ const baseData: MobileInitialData = {
   rewardRedemptions: [{ id: 'redeem-real', userId: 'user-real' } as any],
   qrScanLogs: [{ id: 'scan-real', scannedBy: 'vol-1' } as any],
   proofImages: [],
-  avatarOptions: []
+  avatarOptions: [],
+  notifications: []
 };
 
 test('remote hydration keeps backend PostgreSQL active when station and waste type data are ready', () => {

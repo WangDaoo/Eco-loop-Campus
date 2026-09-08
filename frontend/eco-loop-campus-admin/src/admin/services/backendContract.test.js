@@ -33,7 +33,8 @@ test("admin surfaces malformed JSON and offline backend errors", async () => {
 test("admin submission review uses state-machine endpoints, not generic resource writes", () => {
   const source = fs.readFileSync(path.join(__dirname, "supabaseStore.js"), "utf8");
   expect(source).toMatch(/recycling-submissions\/\$\{encodeURIComponent\(item\.id\)\}\/reject/);
-  expect(source).toMatch(/recycling-submissions\/\$\{encodeURIComponent\(item\.id\)\}\/review/);
+  expect(source).toMatch(/recycling-submissions\/\$\{encodeURIComponent\(item\.id\)\}\/manual-review/);
+  expect(source).toMatch(/recycling-submissions\/\$\{encodeURIComponent\(item\.id\)\}\/confirm/);
   expect(source).not.toMatch(/saveResource\("recycling-submissions"/);
   expect(source).toMatch(/\/api\/admin\/point-adjustments/);
   expect(source).toMatch(/reward-redemption-batches\/\$\{encodeURIComponent\(batchId\)\}\/finalize/);

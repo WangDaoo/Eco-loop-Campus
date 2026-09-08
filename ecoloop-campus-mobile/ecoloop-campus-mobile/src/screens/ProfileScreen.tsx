@@ -104,6 +104,14 @@ export default function ProfileScreen({ navigation }: any) {
 
           <Pressable
             style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
+            onPress={() => navigation?.navigate('Notifications')}
+          >
+            <Text style={styles.actionButtonText}>Trung tâm thông báo</Text>
+            <Text style={styles.actionIcon}>›</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
             onPress={() => setAvatarModalVisible(true)}
           >
             <Text style={styles.actionButtonText}>Đổi avatar hồ sơ</Text>

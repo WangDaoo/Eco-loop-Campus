@@ -39,7 +39,11 @@
     "verifiedBy": "volunteer-contract-1",
     "verifiedAt": "2026-09-05T01:10:03+00:00",
     "actualQuantity": 2.5,
-    "volunteerNote": "Đã kiểm tra"
+    "volunteerNote": "Đã kiểm tra",
+    "predictionId": null,
+    "manualReviewUnlockedAt": null,
+    "manualReviewUnlockedBy": null,
+    "manualReviewReason": null
   },
   "pointHistory": {
     "id": 501,

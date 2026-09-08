@@ -549,7 +549,7 @@ function fromWasteType(row = {}) {
 }
 
 function fromProofImage(row = {}) {
-  const { submission_id: submissionIdSnake, image_url: imageUrlSnake, image_hash: imageHashSnake, captured_at: capturedAtSnake, verification_code: verificationCodeSnake, ...rest } = row || {};
+  const { submission_id: submissionIdSnake, image_url: imageUrlSnake, image_hash: imageHashSnake, captured_at: capturedAtSnake, verification_code: verificationCodeSnake, uploaded_by: uploadedBySnake, image_name: imageNameSnake, ...rest } = row || {};
   return {
     ...rest,
     id: row?.id || "",
@@ -560,11 +560,14 @@ function fromProofImage(row = {}) {
     verificationCode: row?.verificationCode || verificationCodeSnake || "",
     status: row?.status || "pending",
     note: row?.note || "",
+    kind: row?.kind || "REVIEWER_PROOF",
+    uploadedBy: row?.uploadedBy || uploadedBySnake || "",
+    imageName: row?.imageName || imageNameSnake || "",
   };
 }
 
 function fromRecyclingSubmission(row = {}) {
-  const { user_id: userIdSnake, bin_id: binIdSnake, waste_type_id: wasteTypeIdSnake, actual_quantity: actualQuantitySnake, qr_token: qrTokenSnake, expired_at: expiredAtSnake, created_at: createdAtSnake, verified_by: verifiedBySnake, verified_at: verifiedAtSnake, volunteer_note: volunteerNoteSnake, ...rest } = row || {};
+  const { user_id: userIdSnake, bin_id: binIdSnake, waste_type_id: wasteTypeIdSnake, actual_quantity: actualQuantitySnake, qr_token: qrTokenSnake, expired_at: expiredAtSnake, created_at: createdAtSnake, verified_by: verifiedBySnake, verified_at: verifiedAtSnake, volunteer_note: volunteerNoteSnake, prediction_id: predictionIdSnake, manual_review_unlocked_at: manualReviewUnlockedAtSnake, manual_review_unlocked_by: manualReviewUnlockedBySnake, manual_review_reason: manualReviewReasonSnake, ...rest } = row || {};
   const quantity = Number(row?.quantity ?? 0);
   const actualQuantity = normalizeNumber(row?.actualQuantity ?? actualQuantitySnake, null);
   return {
@@ -582,6 +585,10 @@ function fromRecyclingSubmission(row = {}) {
     verifiedBy: row?.verifiedBy || verifiedBySnake || "",
     verifiedAt: row?.verifiedAt || verifiedAtSnake || "",
     volunteerNote: row?.volunteerNote || volunteerNoteSnake || "",
+    predictionId: row?.predictionId || predictionIdSnake || "",
+    manualReviewUnlockedAt: row?.manualReviewUnlockedAt || manualReviewUnlockedAtSnake || "",
+    manualReviewUnlockedBy: row?.manualReviewUnlockedBy || manualReviewUnlockedBySnake || "",
+    manualReviewReason: row?.manualReviewReason || manualReviewReasonSnake || "",
   };
 }
 
@@ -1051,21 +1058,39 @@ export async function listRecyclingSubmissions() {
 export async function updateRecyclingSubmissionReview(item, updates) {
   const current = fromRecyclingSubmission(item);
   const nextStatus = String(updates.status || current.status || "").trim().toUpperCase();
-  if (!nextStatus || ["POINT_CONFIRMED", "LOCKED"].includes(String(current.status || "").trim().toUpperCase())) {
+  const currentStatus = String(current.status || "").trim().toUpperCase();
+  const note = typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : "";
+  if (!nextStatus || ["POINT_CONFIRMED", "REJECTED", "EXPIRED", "LOCKED"].includes(currentStatus)) {
     return result(current, BACKEND, new Error("Invalid recycling submission status"));
+  }
+  if (nextStatus === "REJECTED" && (!["QR_SCANNED", "PENDING_REVIEW"].includes(currentStatus) || !note)) {
+    return result(current, BACKEND, new Error("Rejection reason is required"));
+  }
+  if (nextStatus === "POINT_CONFIRMED" && !["QR_SCANNED", "PENDING_REVIEW"].includes(currentStatus)) {
+    return result(current, BACKEND, new Error("QR scan or manual-review unlock is required"));
+  }
+  if (nextStatus === "PENDING_REVIEW" && (currentStatus !== "CREATED" || !note)) {
+    return result(current, BACKEND, new Error("Manual-review reason is required"));
   }
   const endpoint = nextStatus === "REJECTED"
     ? `/api/mobile/recycling-submissions/${encodeURIComponent(item.id)}/reject`
     : nextStatus === "PENDING_REVIEW"
-      ? `/api/mobile/recycling-submissions/${encodeURIComponent(item.id)}/review`
-      : "";
+      ? `/api/mobile/recycling-submissions/${encodeURIComponent(item.id)}/manual-review`
+      : nextStatus === "POINT_CONFIRMED"
+        ? `/api/mobile/recycling-submissions/${encodeURIComponent(item.id)}/confirm`
+        : "";
   if (!endpoint) return result(current, BACKEND, new Error("Invalid recycling submission status"));
   try {
+    const body = nextStatus === "PENDING_REVIEW"
+      ? { reason: note }
+      : nextStatus === "POINT_CONFIRMED"
+        ? { actualQuantity: Number(updates.actualQuantity ?? current.actualQuantity ?? current.quantity), note }
+        : { note };
     const response = await requestBackend(endpoint, {
       method: "POST",
-      body: { note: typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : current.volunteerNote || "" },
+      body,
     });
-    return result(fromRecyclingSubmission(response.data || current), BACKEND);
+    return result(fromRecyclingSubmission(response.data?.submission || response.data || current), BACKEND);
   } catch (error) {
     return result(current, BACKEND, error);
   }

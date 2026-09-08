@@ -225,10 +225,11 @@ def test_legacy_student_must_complete_profile_before_business_actions(
     allowed = api_client.post(
         "/api/mobile/recycling-submissions",
         headers=headers,
-        json={
+        data={
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
-            "quantity": 1,
+            "quantity": "1",
         },
+        files={"proof": ("student-proof.jpg", b"student-proof-profile", "image/jpeg")},
     )
     assert allowed.status_code == 201

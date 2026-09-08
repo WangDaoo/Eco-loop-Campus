@@ -151,7 +151,25 @@ function mockBackendFetch(rawUrl, init = {}) {
     if (!current) return jsonResponse({ detail: "SUBMISSION_NOT_FOUND" }, 404);
     const next = { ...current, status: "REJECTED", volunteer_note: body.note || "" };
     mockTables.recycling_submissions = mockTables.recycling_submissions.map(item => item.id === id ? next : item);
-    return jsonResponse({ data: next });
+    return jsonResponse({ data: { submission: next } });
+  }
+  if (path.startsWith("/api/mobile/recycling-submissions/") && path.endsWith("/confirm") && method === "POST") {
+    const id = decodeURIComponent(path.split("/")[4]);
+    const body = readRequestBody(init);
+    const current = (mockTables.recycling_submissions || []).find(item => item.id === id);
+    if (!current) return jsonResponse({ detail: "SUBMISSION_NOT_FOUND" }, 404);
+    const next = { ...current, status: "POINT_CONFIRMED", actual_quantity: body.actualQuantity, volunteer_note: body.note || "" };
+    mockTables.recycling_submissions = mockTables.recycling_submissions.map(item => item.id === id ? next : item);
+    return jsonResponse({ data: { submission: next } });
+  }
+  if (path.startsWith("/api/mobile/recycling-submissions/") && path.endsWith("/manual-review") && method === "POST") {
+    const id = decodeURIComponent(path.split("/")[4]);
+    const body = readRequestBody(init);
+    const current = (mockTables.recycling_submissions || []).find(item => item.id === id);
+    if (!current) return jsonResponse({ detail: "SUBMISSION_NOT_FOUND" }, 404);
+    const next = { ...current, status: "PENDING_REVIEW", manual_review_reason: body.reason, manual_review_unlocked_at: new Date().toISOString() };
+    mockTables.recycling_submissions = mockTables.recycling_submissions.map(item => item.id === id ? next : item);
+    return jsonResponse({ data: { submission: next } });
   }
   if (path.startsWith("/api/users/") && path.endsWith("/status") && method === "PATCH") {
     const id = decodeURIComponent(path.split("/")[3]);
@@ -207,10 +225,11 @@ const seedSupabase = () => {
       { id: "plastic-bottle", name: "Chai nhựa", unit: "item", point_per_unit: 10, recycle_method: "Làm sạch", status: "active" },
     ],
     recycling_submissions: [
-      { id: "sub-review", user_id: "SV001", bin_id: "BIN-A1-RECYCLE", waste_type_id: "plastic-bottle", quantity: 1, actual_quantity: 1, status: "PENDING_REVIEW", qr_token: "ECO-REVIEW-001", volunteer_note: "Cần admin kiểm tra", created_at: "2026-07-07T10:10:00.000Z", expired_at: "2026-07-07T10:55:00.000Z", verified_at: "2026-07-07T10:20:00.000Z" },
+      { id: "sub-review", user_id: "SV001", bin_id: "BIN-A1-RECYCLE", waste_type_id: "plastic-bottle", quantity: 1, actual_quantity: 1, status: "PENDING_REVIEW", qr_token: "ECO-REVIEW-001", volunteer_note: "Cần admin kiểm tra", manual_review_unlocked_at: "2026-07-07T10:19:00.000Z", manual_review_reason: "Không thể đọc QR", created_at: "2026-07-07T10:10:00.000Z", expired_at: "2026-07-07T10:55:00.000Z", verified_at: "2026-07-07T10:20:00.000Z" },
     ],
     proof_images: [
-      { id: "proof-review", submission_id: "sub-review", image_url: "https://storage.example/proof.jpg", image_hash: "hash-1", captured_at: "2026-07-07T10:19:00.000Z", verification_code: "RVW-001", status: "pending", note: "Ảnh minh chứng" },
+      { id: "proof-student", submission_id: "sub-review", image_url: "https://storage.example/student-proof.jpg", image_hash: "hash-1", captured_at: "2026-07-07T10:18:00.000Z", verification_code: "STU-001", status: "pending", kind: "STUDENT_PROOF", uploaded_by: "SV001", note: "Ảnh sinh viên" },
+      { id: "proof-review", submission_id: "sub-review", image_url: "https://storage.example/reviewer-proof.jpg", image_hash: "hash-2", captured_at: "2026-07-07T10:19:00.000Z", verification_code: "RVW-001", status: "pending", kind: "REVIEWER_PROOF", uploaded_by: "VOL001", note: "Ảnh xác minh" },
     ],
     rewards: [
       { id: "coffee", title: "Cà phê căn tin", description: "Giảm 50% cho 1 ly bất kỳ", cost_points: 300, status: "active", color: "#F6B83F" },
@@ -3191,8 +3210,10 @@ test("ecopoints page shows recycling submissions awaiting admin review and lets 
   expect(await screen.findByText("ECO-REVIEW-001")).toBeInTheDocument();
   expect(screen.getAllByText("Nguyễn Minh Anh").length).toBeGreaterThan(0);
   expect(screen.getByText("Chai nhựa")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /xem ảnh/i })).toHaveAttribute("href", "https://storage.example/proof.jpg");
+  expect(screen.getByRole("link", { name: /ảnh sinh viên/i })).toHaveAttribute("href", "https://storage.example/student-proof.jpg");
+  expect(screen.getByRole("link", { name: /ảnh người duyệt/i })).toHaveAttribute("href", "https://storage.example/reviewer-proof.jpg");
 
+  window.prompt = jest.fn(() => "Ảnh không khớp loại rác đã chọn");
   fireEvent.click(screen.getByRole("button", { name: /từ chối giao dịch eco-review-001/i }));
 
   await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
@@ -3201,6 +3222,34 @@ test("ecopoints page shows recycling submissions awaiting admin review and lets 
   ));
   expect(mockSupabaseUpdate).not.toHaveBeenCalledWith("recycling_submissions", expect.anything());
   expect(await screen.findByText(/đã từ chối giao dịch gửi rác/i)).toBeInTheDocument();
+  const rejectCall = global.fetch.mock.calls.find(([url]) => String(url).includes("/sub-review/reject"));
+  expect(JSON.parse(rejectCall[1].body).note).toBe("Ảnh không khớp loại rác đã chọn");
+});
+
+test("ecopoints page can approve only an unlocked manual review through the transaction endpoint", async () => {
+  window.location.hash = "#/ecopoints";
+  render(<App />);
+
+  const approve = await screen.findByRole("button", { name: /duyệt giao dịch eco-review-001/i });
+  fireEvent.click(approve);
+
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/api/mobile/recycling-submissions/sub-review/confirm"),
+    expect.objectContaining({ method: "POST" }),
+  ));
+});
+
+test("ecopoints page hides manual decision controls when unlock audit is missing", async () => {
+  mockTables.recycling_submissions[0] = {
+    ...mockTables.recycling_submissions[0],
+    manual_review_unlocked_at: null,
+  };
+  window.location.hash = "#/ecopoints";
+  render(<App />);
+
+  expect(await screen.findByText("ECO-REVIEW-001")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /duyệt giao dịch eco-review-001/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /từ chối giao dịch eco-review-001/i })).not.toBeInTheDocument();
 });
 
 test.skip("ecopoints page shows local fallback alert when Supabase data fails", async () => {

@@ -62,15 +62,16 @@ Mở URL mà React báo trong terminal (thường là `http://localhost:3000`) v
 1. Đăng nhập và kiểm tra họ tên, mã sinh viên, khoa, số điện thoại.
 2. Mở chức năng gửi rác/quét trạm.
 3. Trên Web Admin mở trạm đang hoạt động và hiển thị QR trạm; dùng Điện thoại 1 quét QR đó.
-4. Chọn loại rác, khối lượng/số lượng và tạo giao dịch.
-5. Giữ màn hình QR giao dịch để Điện thoại 2 quét.
+4. Chụp/chọn ít nhất một ảnh minh chứng. Có thể dùng AI để lấy gợi ý; nếu AI lỗi, ảnh vẫn phải còn và sinh viên được chọn loại rác thủ công.
+5. Chọn loại rác, khối lượng/số lượng và tạo giao dịch. Thử một lần không chọn ảnh để xác nhận app không cho tạo QR.
+6. Giữ màn hình QR giao dịch để Điện thoại 2 quét.
 
 ### Điện thoại 2 – Tình nguyện viên
 
 1. Đăng nhập tài khoản tình nguyện viên trạng thái `active`.
 2. Mở chức năng quét xác nhận và quét QR đang hiển thị trên Điện thoại 1.
 3. Kiểm tra đúng sinh viên, trạm, loại rác và số lượng.
-4. Tải/chụp ảnh minh chứng, nhập số lượng thực nhận rồi xác nhận.
+4. Kiểm tra ảnh sinh viên đã tải. Có thể bổ sung ảnh xác minh của người duyệt nhưng không bắt buộc; nhập số lượng thực nhận rồi xác nhận.
 5. Thử xác nhận lại cùng QR lần thứ hai. Hệ thống phải từ chối hoặc giữ nguyên kết quả, tuyệt đối không cộng điểm lần hai.
 
 ### Đối chiếu
@@ -79,6 +80,21 @@ Mở URL mà React báo trong terminal (thường là `http://localhost:3000`) v
 - Điện thoại 2 thấy giao dịch đã hoàn tất, không còn ở hàng chờ.
 - Web Admin hiển thị cùng trạng thái, tình nguyện viên xác nhận, minh chứng và số điểm.
 - Đăng nhập bằng tình nguyện viên khác và thử xác nhận QR đã nhận; hệ thống không được chuyển quyền hoặc cộng lại điểm.
+
+### Luồng dự phòng khi không thể quét QR
+
+1. Mở giao dịch `CREATED` từ hàng chờ; không được thấy nút duyệt/cộng điểm ngay.
+2. Chọn **Không thể quét QR**, nhập lý do bắt buộc rồi xác nhận mở duyệt thủ công.
+3. Sau khi backend trả trạng thái `PENDING_REVIEW` cùng thời điểm mở khóa, nút duyệt/từ chối mới được bật.
+4. Thử từ chối khi không nhập lý do: hệ thống phải chặn. Sau khi nhập lý do và từ chối, sinh viên phải thấy cùng lý do ở lịch sử/chi tiết và Trung tâm thông báo.
+5. Web Admin phải xem được ảnh sinh viên gắn đúng giao dịch, đồng thời không được duyệt một `PENDING_REVIEW` thiếu dấu vết mở khóa.
+
+### Chỉ có một điện thoại
+
+1. Đăng nhập sinh viên, tạo giao dịch có ảnh và chụp màn hình QR.
+2. Đăng xuất, đăng nhập tình nguyện viên. Trước tiên thử quét ảnh QR trên một màn hình khác (máy tính/Zalo Web); camera không thể quét chính ảnh đang hiển thị trên cùng điện thoại.
+3. Nếu vẫn không quét được, dùng đúng luồng **Không thể quét QR** ở trên. Không nhập chuỗi QR bằng cách chép tay để giả lập scan thành công.
+4. Sau khi xử lý, đăng xuất và đăng nhập lại sinh viên để đối chiếu lịch sử, điểm và thông báo.
 
 ## 6. Luồng B: đổi điểm, bàn giao và hoàn tác
 

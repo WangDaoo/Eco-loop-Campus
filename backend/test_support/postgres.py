@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "local_db" / "schema.sql"
 TEST_TABLES = (
+    "notifications",
     "ai_training_samples",
     "proof_images",
     "qr_scan_logs",

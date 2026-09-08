@@ -18,20 +18,32 @@ def login_headers(api_client, email):
     return {"Authorization": f"Bearer {response.json()['token']}"}
 
 
+@pytest.fixture(autouse=True)
+def isolate_submission_uploads(monkeypatch, tmp_path):
+    import app as backend_app
+
+    monkeypatch.setattr(backend_app, "PROOF_UPLOADS_DIR", tmp_path / "proofs")
+
+
+def post_submission(api_client, headers, *, quantity=1, bin_id=None, waste_type_id=None):
+    return api_client.post(
+        "/api/mobile/recycling-submissions",
+        headers=headers,
+        data={
+            "binId": bin_id or SEED_IDS["bin_a"],
+            "wasteTypeId": waste_type_id or SEED_IDS["waste_plastic"],
+            "quantity": "" if quantity is None else str(quantity),
+        },
+        files={"proof": ("student-proof.jpg", b"student-proof-content", "image/jpeg")},
+    )
+
+
 def create_and_scan_submission(api_client):
     student_headers = login_headers(api_client, "student.a@hyute.edu.vn")
     volunteer_headers = login_headers(api_client, "volunteer.a@hyute.edu.vn")
-    create_response = api_client.post(
-        "/api/mobile/recycling-submissions",
-        headers=student_headers,
-        json={
-            "binId": SEED_IDS["bin_a"],
-            "wasteTypeId": SEED_IDS["waste_plastic"],
-            "quantity": 1,
-        },
-    )
+    create_response = post_submission(api_client, student_headers)
     assert create_response.status_code == 201
-    submission = create_response.json()["data"]
+    submission = create_response.json()["data"]["submission"]
     scan_response = api_client.post(
         "/api/mobile/recycling-submissions/scan",
         headers=volunteer_headers,
@@ -67,17 +79,9 @@ def test_real_submission_flow_is_atomic_idempotent_and_visible_to_both_clients(
     volunteer = login_headers(api_client, "volunteer.a@hyute.edu.vn")
     admin = login_headers(api_client, "admin.test@hyute.edu.vn")
 
-    created_response = api_client.post(
-        "/api/mobile/recycling-submissions",
-        headers=student,
-        json={
-            "binId": SEED_IDS["bin_a"],
-            "wasteTypeId": SEED_IDS["waste_plastic"],
-            "quantity": 2,
-        },
-    )
+    created_response = post_submission(api_client, student, quantity=2)
     assert created_response.status_code == 201
-    created = created_response.json()["data"]
+    created = created_response.json()["data"]["submission"]
     assert created["status"] == "CREATED"
 
     scanned = api_client.post(
@@ -106,11 +110,12 @@ def test_real_submission_flow_is_atomic_idempotent_and_visible_to_both_clients(
     )
 
     assert confirmed.status_code == 200
-    assert confirmed.json()["data"] == {
-        "status": "POINT_CONFIRMED",
-        "points": 15,
-        "submissionId": created["id"],
-    }
+    confirmed_data = confirmed.json()["data"]
+    assert confirmed_data["status"] == "POINT_CONFIRMED"
+    assert confirmed_data["points"] == 15
+    assert confirmed_data["submissionId"] == created["id"]
+    assert confirmed_data["submission"]["id"] == created["id"]
+    assert confirmed_data["submission"]["status"] == "POINT_CONFIRMED"
     assert replay.status_code == 400
     mobile = api_client.get("/api/mobile/initial-data", headers=student).json()
     admin_rows = api_client.get(
@@ -143,15 +148,7 @@ def test_create_rejects_invalid_quantity_without_partial_write(
 ):
     student = login_headers(api_client, "student.a@hyute.edu.vn")
 
-    response = api_client.post(
-        "/api/mobile/recycling-submissions",
-        headers=student,
-        json={
-            "binId": SEED_IDS["bin_a"],
-            "wasteTypeId": SEED_IDS["waste_plastic"],
-            "quantity": quantity,
-        },
-    )
+    response = post_submission(api_client, student, quantity=quantity)
 
     assert response.status_code == 400
     assert response.json()["detail"] == "INVALID_QUANTITY"
@@ -180,15 +177,7 @@ def test_create_rejects_inactive_catalog_rows_with_stable_error(
             expected = "INVALID_WASTE_TYPE"
         connection.commit()
 
-    response = api_client.post(
-        "/api/mobile/recycling-submissions",
-        headers=student,
-        json={
-            "binId": SEED_IDS["bin_a"],
-            "wasteTypeId": SEED_IDS["waste_plastic"],
-            "quantity": 1,
-        },
-    )
+    response = post_submission(api_client, student)
 
     assert response.status_code == 400
     assert response.json()["detail"] == expected
@@ -293,15 +282,7 @@ def test_scan_outcomes_are_persisted_without_invalid_state_transition(
         token = "ECL-SUB-NOT-FOUND"
         station_id = SEED_IDS["bin_a"]
     else:
-        created = api_client.post(
-            "/api/mobile/recycling-submissions",
-            headers=student,
-            json={
-                "binId": SEED_IDS["bin_a"],
-                "wasteTypeId": SEED_IDS["waste_plastic"],
-                "quantity": 1,
-            },
-        ).json()["data"]
+        created = post_submission(api_client, student).json()["data"]["submission"]
         submission = created
         token = created["qrToken"]
         station_id = (
@@ -370,7 +351,7 @@ def test_only_scanning_volunteer_can_upload_submission_proof(
     assert accepted_response.status_code == 200
     with psycopg.connect(postgres_test_url) as connection:
         proof_count = connection.execute(
-            "select count(*) from proof_images where submission_id = %s",
+            "select count(*) from proof_images where submission_id = %s and kind = 'REVIEWER_PROOF'",
             (submission["id"],),
         ).fetchone()[0]
     assert proof_count == 1
@@ -415,3 +396,276 @@ def test_other_volunteer_cannot_transition_scanned_submission(
         "QR_SCANNED",
         SEED_IDS["volunteer_a"],
     )
+
+
+def test_submission_is_created_with_student_proof_and_scan_returns_canonical_row(
+    postgres_test_url, seed_operating_catalog
+):
+    with psycopg.connect(postgres_test_url) as connection:
+        created = connection.execute(
+            """
+            select create_recycling_submission_with_proof(
+              %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                SEED_IDS["student_a"],
+                SEED_IDS["bin_a"],
+                SEED_IDS["waste_plastic"],
+                2,
+                "proof-student-1",
+                "/uploads/proofs/student-proof.jpg",
+                "student-proof-hash",
+                "student-proof.jpg",
+                None,
+            ),
+        ).fetchone()[0]
+        scanned = connection.execute(
+            "select scan_recycling_qr(%s, %s, %s)",
+            (
+                created["submission"]["qrToken"],
+                SEED_IDS["volunteer_a"],
+                SEED_IDS["bin_a"],
+            ),
+        ).fetchone()[0]
+        connection.commit()
+
+    assert created["submission"]["status"] == "CREATED"
+    assert len(created["submission"]["proofImages"]) == 1
+    student_proof = created["submission"]["proofImages"][0]
+    assert student_proof["id"] == "proof-student-1"
+    assert student_proof["submissionId"] == created["submission"]["id"]
+    assert student_proof["kind"] == "STUDENT_PROOF"
+    assert student_proof["status"] == "pending"
+    assert student_proof["imageName"] == "student-proof.jpg"
+    assert student_proof["imageUrl"] == "/uploads/proofs/student-proof.jpg"
+    assert student_proof["imageHash"] == "student-proof-hash"
+    assert student_proof["uploadedBy"] == SEED_IDS["student_a"]
+    assert student_proof["capturedAt"]
+    assert scanned["result"] == "SUCCESS"
+    assert scanned["submission"]["id"] == created["submission"]["id"]
+    assert scanned["submission"]["status"] == "QR_SCANNED"
+    assert scanned["submission"]["verifiedBy"] == SEED_IDS["volunteer_a"]
+
+
+def test_submission_with_proof_rejects_missing_image_without_partial_write(
+    postgres_test_url, seed_operating_catalog
+):
+    with psycopg.connect(postgres_test_url) as connection:
+        with pytest.raises(psycopg.errors.RaiseException, match="PROOF_IMAGE_REQUIRED"):
+            connection.execute(
+                """
+                select create_recycling_submission_with_proof(
+                  %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    SEED_IDS["student_a"],
+                    SEED_IDS["bin_a"],
+                    SEED_IDS["waste_plastic"],
+                    1,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            )
+        connection.rollback()
+        assert connection.execute("select count(*) from recycling_submissions").fetchone()[0] == 0
+
+
+def test_manual_review_requires_audit_and_rejection_creates_student_notification(
+    postgres_test_url, seed_operating_catalog, api_client
+):
+    with psycopg.connect(postgres_test_url) as connection:
+        created = connection.execute(
+            """
+            select create_recycling_submission_with_proof(
+              %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                SEED_IDS["student_a"],
+                SEED_IDS["bin_a"],
+                SEED_IDS["waste_plastic"],
+                1,
+                "proof-student-2",
+                "/uploads/proofs/student-proof-2.jpg",
+                "student-proof-hash-2",
+                "student-proof-2.jpg",
+                None,
+            ),
+        ).fetchone()[0]
+        submission_id = created["submission"]["id"]
+        connection.commit()
+
+        with pytest.raises(psycopg.errors.RaiseException, match="MANUAL_REVIEW_REASON_REQUIRED"):
+            connection.execute(
+                "select unlock_recycling_manual_review(%s, %s, %s, %s)",
+                (submission_id, SEED_IDS["volunteer_a"], "", None),
+            )
+        connection.rollback()
+
+        unlocked = connection.execute(
+            "select unlock_recycling_manual_review(%s, %s, %s, %s)",
+            (
+                submission_id,
+                SEED_IDS["volunteer_a"],
+                "Camera không nhận được mã QR trên màn hình",
+                None,
+            ),
+        ).fetchone()[0]
+        connection.commit()
+        with pytest.raises(psycopg.errors.RaiseException, match="REJECTION_NOTE_REQUIRED"):
+            connection.execute(
+                "select reject_recycling_submission(%s, %s, %s)",
+                (submission_id, SEED_IDS["volunteer_a"], "  "),
+            )
+        connection.rollback()
+
+        rejected = connection.execute(
+            "select reject_recycling_submission(%s, %s, %s)",
+            (
+                submission_id,
+                SEED_IDS["volunteer_a"],
+                "Ảnh không chứng minh đúng loại rác đã khai báo",
+            ),
+        ).fetchone()[0]
+        notification = connection.execute(
+            """
+            select id, type, message, reference_type, reference_id
+            from notifications
+            where user_id = %s
+            """,
+            (SEED_IDS["student_a"],),
+        ).fetchone()
+        connection.commit()
+
+    assert unlocked["submission"]["status"] == "PENDING_REVIEW"
+    assert unlocked["submission"]["manualReviewReason"] == "Camera không nhận được mã QR trên màn hình"
+    assert rejected["submission"]["status"] == "REJECTED"
+    assert rejected["submission"]["volunteerNote"] == "Ảnh không chứng minh đúng loại rác đã khai báo"
+    assert notification[1:] == (
+        "SUBMISSION_REJECTED",
+        "Ảnh không chứng minh đúng loại rác đã khai báo",
+        "recycling_submission",
+        submission_id,
+    )
+
+    student_headers = login_headers(api_client, "student.a@hyute.edu.vn")
+    initial_data = api_client.get("/api/mobile/initial-data", headers=student_headers)
+    assert initial_data.status_code == 200
+    student_notification = next(
+        row for row in initial_data.json()["notifications"] if row["id"] == notification[0]
+    )
+    assert student_notification["message"] == "Ảnh không chứng minh đúng loại rác đã khai báo"
+    assert student_notification["readAt"] is None
+
+    marked_read = api_client.patch(
+        f"/api/mobile/notifications/{notification[0]}/read", headers=student_headers
+    )
+    assert marked_read.status_code == 200
+    assert marked_read.json()["data"]["readAt"] is not None
+
+
+def test_manual_review_confirmation_awards_points_exactly_once(
+    postgres_test_url, seed_operating_catalog
+):
+    disable_missions(postgres_test_url)
+    with psycopg.connect(postgres_test_url) as connection:
+        created = connection.execute(
+            """
+            select create_recycling_submission_with_proof(
+              %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                SEED_IDS["student_a"],
+                SEED_IDS["bin_a"],
+                SEED_IDS["waste_plastic"],
+                2,
+                "proof-manual-confirm",
+                "/uploads/proofs/manual-confirm.jpg",
+                "manual-confirm-hash",
+                "manual-confirm.jpg",
+                None,
+            ),
+        ).fetchone()[0]
+        submission_id = created["submission"]["id"]
+        connection.execute(
+            "select unlock_recycling_manual_review(%s, %s, %s, %s)",
+            (
+                submission_id,
+                SEED_IDS["volunteer_a"],
+                "Màn hình sinh viên bị vỡ nên camera không đọc được QR",
+                None,
+            ),
+        )
+        confirmed = connection.execute(
+            "select confirm_recycling_submission(%s, %s, %s::numeric, %s)",
+            (submission_id, SEED_IDS["volunteer_a"], 1.5, "Duyệt từ ảnh sinh viên"),
+        ).fetchone()[0]
+        connection.commit()
+
+        with pytest.raises(psycopg.errors.RaiseException, match="INVALID_SUBMISSION_STATUS"):
+            connection.execute(
+                "select confirm_recycling_submission(%s, %s, %s::numeric, %s)",
+                (submission_id, SEED_IDS["volunteer_a"], 1.5, "Gọi lặp"),
+            )
+        connection.rollback()
+        point_rows = connection.execute(
+            "select points from point_history where submission_id = %s",
+            (submission_id,),
+        ).fetchall()
+
+    assert confirmed["status"] == "POINT_CONFIRMED"
+    assert confirmed["points"] == 15
+    assert point_rows == [(15,)]
+
+
+def test_pending_review_without_unlock_audit_cannot_be_confirmed_or_rejected(
+    postgres_test_url, seed_operating_catalog
+):
+    with psycopg.connect(postgres_test_url) as connection:
+        created = connection.execute(
+            """
+            select create_recycling_submission_with_proof(
+              %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                SEED_IDS["student_a"],
+                SEED_IDS["bin_a"],
+                SEED_IDS["waste_plastic"],
+                1,
+                "proof-crafted-pending",
+                "/uploads/proofs/crafted-pending.jpg",
+                "crafted-pending-hash",
+                "crafted-pending.jpg",
+                None,
+            ),
+        ).fetchone()[0]
+        submission_id = created["submission"]["id"]
+        connection.execute(
+            """
+            update recycling_submissions
+            set status = 'PENDING_REVIEW', verified_by = %s
+            where id = %s
+            """,
+            (SEED_IDS["volunteer_a"], submission_id),
+        )
+        connection.commit()
+
+        with pytest.raises(psycopg.errors.RaiseException, match="MANUAL_REVIEW_NOT_UNLOCKED"):
+            connection.execute(
+                "select confirm_recycling_submission(%s, %s, %s::numeric, %s)",
+                (submission_id, SEED_IDS["volunteer_a"], 1, "Không có audit mở khóa"),
+            )
+        connection.rollback()
+
+        with pytest.raises(psycopg.errors.RaiseException, match="MANUAL_REVIEW_NOT_UNLOCKED"):
+            connection.execute(
+                "select reject_recycling_submission(%s, %s, %s)",
+                (submission_id, SEED_IDS["volunteer_a"], "Không có audit mở khóa"),
+            )

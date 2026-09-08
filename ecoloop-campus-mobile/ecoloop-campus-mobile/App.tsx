@@ -20,6 +20,7 @@ import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import AboutScreen from './src/screens/AboutScreen';
 import VolunteerDutyScreen from './src/screens/VolunteerDutyScreen';
 import SubmitScreen from './src/screens/SubmitScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
 import { CustomTabBar } from './src/components/CustomTabBar';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -86,6 +87,7 @@ function RootNavigator() {
             <Stack.Screen name="Rewards" component={RewardsScreen} />
             <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
             <Stack.Screen name="About" component={AboutScreen} />
+            <Stack.Screen name="Notifications" component={NotificationsScreen} />
           </>
         )}
       </Stack.Navigator>

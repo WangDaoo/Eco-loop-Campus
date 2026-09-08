@@ -20,17 +20,18 @@ const wasteTypes: WasteType[] = [
 ];
 
 test('prediction service submits image to FastAPI queue, polls result, and normalizes confidence', async () => {
-  const calls: { url: string; init: { method: string; body?: FakeFormData } }[] = [];
+  const calls: { url: string; init: { method: string; body?: FakeFormData; headers?: Record<string, string> } }[] = [];
   const service = createPredictionService({
     baseUrl: 'http://127.0.0.1:8000/',
     FormDataCtor: FakeFormData,
     fetcher: async (url, init) => {
-      calls.push({ url, init: init as { method: string; body?: FakeFormData } });
+      calls.push({ url, init: init as { method: string; body?: FakeFormData; headers?: Record<string, string> } });
       if (url.endsWith('/predict/jobs')) {
         return { ok: true, status: 202, json: async () => ({ job_id: 'job-1', status: 'queued', position: 1, poll_url: '/predict/jobs/job-1' }) };
       }
       return { ok: true, status: 200, json: async () => ({ job_id: 'job-1', status: 'done', class: 'plastic', confidence: 0.9234 }) };
-    }
+    },
+    tokenProvider: async () => 'token-1'
   });
 
   const result = await service.predictImage({ uri: 'file:///tmp/bottle.jpg', name: 'bottle.jpg', mimeType: 'image/jpeg' });
@@ -43,16 +44,19 @@ test('prediction service submits image to FastAPI queue, polls result, and norma
   });
   assert.equal(calls[1].url, 'http://127.0.0.1:8000/predict/jobs/job-1');
   assert.equal(calls[1].init.method, 'GET');
+  assert.equal(calls[0].init.headers?.Authorization, 'Bearer token-1');
+  assert.equal(calls[1].init.headers?.Authorization, 'Bearer token-1');
   assert.deepEqual(result, { className: 'plastic', confidence: 0.9234, confidencePercent: 92, runtime: 'remote', fallbackReason: undefined });
 });
 
 test('prediction service falls back to direct /predict when queue API is missing', async () => {
-  const calls: string[] = [];
+  const calls: Array<{ url: string; authorization?: string }> = [];
   const service = createPredictionService({
     baseUrl: 'http://127.0.0.1:8000',
     FormDataCtor: FakeFormData,
-    fetcher: async (url) => {
-      calls.push(url);
+    tokenProvider: async () => 'token-fallback',
+    fetcher: async (url, init) => {
+      calls.push({ url, authorization: (init as any).headers?.Authorization });
       if (url.endsWith('/predict/jobs')) return { ok: false, status: 404, json: async () => ({ error: 'not found' }) };
       return { ok: true, status: 200, json: async () => ({ class: 'paper', confidence: 0.8 }) };
     }
@@ -60,7 +64,10 @@ test('prediction service falls back to direct /predict when queue API is missing
 
   const result = await service.predictImage({ uri: 'file:///tmp/paper.jpg', name: 'paper.jpg', mimeType: 'image/jpeg' });
 
-  assert.deepEqual(calls, ['http://127.0.0.1:8000/predict/jobs', 'http://127.0.0.1:8000/predict']);
+  assert.deepEqual(calls, [
+    { url: 'http://127.0.0.1:8000/predict/jobs', authorization: 'Bearer token-fallback' },
+    { url: 'http://127.0.0.1:8000/predict', authorization: 'Bearer token-fallback' }
+  ]);
   assert.equal(result.className, 'paper');
 });
 

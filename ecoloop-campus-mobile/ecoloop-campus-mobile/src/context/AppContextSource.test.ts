@@ -47,6 +47,14 @@ test('AppProvider leaves mission progress to verified backend events', () => {
   assert.match(source, /remoteStore\.submitFeedback[\s\S]*hydrateRemoteData\(currentUser\)/);
 });
 
+test('AppProvider exposes manual review and in-app notification actions', () => {
+  assert.match(source, /notifications/);
+  assert.match(source, /unlockManualReview/);
+  assert.match(source, /remoteStore\.unlockManualReview/);
+  assert.match(source, /markNotificationRead/);
+  assert.match(source, /remoteStore\.markNotificationRead/);
+});
+
 test('AppProvider does not create offline Ecopoint rewards when missions complete', () => {
   assert.doesNotMatch(source, /createMissionRewardPoint/);
   assert.doesNotMatch(source, /source: 'mission_reward'/);

@@ -65,7 +65,8 @@ const SUBMISSION_STATUS_LABELS = {
 
 const submissionStatusCode = value => String(value || "").trim().toUpperCase();
 const submissionStatusLabel = value => SUBMISSION_STATUS_LABELS[submissionStatusCode(value)] || value || "Không rõ";
-const canRejectSubmission = row => !["POINT_CONFIRMED", "REJECTED", "EXPIRED", "LOCKED"].includes(submissionStatusCode(row.status));
+const canReviewSubmission = row => submissionStatusCode(row.status) === "QR_SCANNED"
+  || (submissionStatusCode(row.status) === "PENDING_REVIEW" && Boolean(row.manualReviewUnlockedAt));
 const formatSubmissionQuantity = row => {
   const quantity = row.actualQuantity ?? row.quantity;
   const unit = row.wasteTypeUnit ? ` ${row.wasteTypeUnit}` : "";
@@ -300,13 +301,44 @@ export default function EcoPointsPage() {
   };
 
   const rejectRecyclingSubmission = async row => {
+    if (!canReviewSubmission(row)) return;
+    const reason = window.prompt("Nhập lý do từ chối để gửi lại cho sinh viên:", row.volunteerNote || "");
+    if (!reason?.trim()) {
+      showToast("Lý do từ chối là bắt buộc", "danger");
+      return;
+    }
     const response = await updateRecyclingSubmissionReview(row, {
       status: "REJECTED",
-      volunteerNote: row.volunteerNote || "Admin từ chối sau khi kiểm tra",
+      volunteerNote: reason.trim(),
     });
     setSubmissions(current => current.map(item => item.id === row.id ? { ...item, ...response.data } : item));
     setError(response.error);
     showToast(response.error ? "Không từ chối được giao dịch gửi rác" : "Đã từ chối giao dịch gửi rác", response.error ? "danger" : "success");
+  };
+
+  const approveRecyclingSubmission = async row => {
+    if (!canReviewSubmission(row)) return;
+    const response = await updateRecyclingSubmissionReview(row, {
+      status: "POINT_CONFIRMED",
+      actualQuantity: row.actualQuantity ?? row.quantity,
+      volunteerNote: row.volunteerNote || "Admin xác nhận dựa trên ảnh minh chứng",
+    });
+    setSubmissions(current => current.map(item => item.id === row.id ? { ...item, ...response.data } : item));
+    setError(response.error);
+    showToast(response.error ? "Không duyệt được giao dịch gửi rác" : "Đã duyệt và cộng điểm giao dịch", response.error ? "danger" : "success");
+  };
+
+  const unlockManualReview = async row => {
+    if (submissionStatusCode(row.status) !== "CREATED") return;
+    const reason = window.prompt("Nhập lý do không thể quét QR:", "");
+    if (!reason?.trim()) {
+      showToast("Lý do không thể quét QR là bắt buộc", "danger");
+      return;
+    }
+    const response = await updateRecyclingSubmissionReview(row, { status: "PENDING_REVIEW", volunteerNote: reason.trim() });
+    setSubmissions(current => current.map(item => item.id === row.id ? { ...item, ...response.data } : item));
+    setError(response.error);
+    showToast(response.error ? "Không mở được duyệt thủ công" : "Đã mở duyệt thủ công", response.error ? "danger" : "success");
   };
 
   const historyColumns = [
@@ -385,15 +417,18 @@ export default function EcoPointsPage() {
     { key: "binName", label: "Trạm", render: row => <div><strong>{row.binName}</strong>{row.binLocation && <span className="eg-muted-block">{row.binLocation}</span>}</div> },
     { key: "wasteTypeName", label: "Loại rác", render: row => <div><strong>{row.wasteTypeName}</strong><span className="eg-muted-block">{formatSubmissionQuantity(row)}</span></div> },
     { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status}>{submissionStatusLabel(row.status)}</StatusBadge> },
-    { key: "proof", label: "Minh chứng", render: row => row.proofImageUrl ? <a href={row.proofImageUrl} target="_blank" rel="noreferrer">Xem ảnh</a> : `${row.proofCount || 0} ảnh` },
-    { key: "volunteerNote", label: "Ghi chú", render: row => <span className="eg-text-cell">{row.volunteerNote || "-"}</span> },
+    { key: "proof", label: "Minh chứng", render: row => row.proofImages?.length ? <div className="eg-proof-links">{row.proofImages.map((proof, index) => <a key={proof.id || index} href={proof.imageUrl} target="_blank" rel="noreferrer">{proof.kind === "STUDENT_PROOF" ? `Ảnh sinh viên ${index + 1}` : `Ảnh người duyệt ${index + 1}`}</a>)}</div> : "0 ảnh" },
+    { key: "volunteerNote", label: "Ghi chú", render: row => <span className="eg-text-cell">{row.volunteerNote || row.manualReviewReason || "-"}</span> },
     {
       key: "actions",
       label: "Thao tác",
-      render: row => canRejectSubmission(row) ? (
+      render: row => canReviewSubmission(row) ? (
         <div className="eg-table-actions">
+          <button type="button" className="eg-small-btn success" aria-label={`Duyệt giao dịch ${row.qrToken}`} onClick={() => approveRecyclingSubmission(row)}>Duyệt & cộng điểm</button>
           <button type="button" className="eg-small-btn danger" aria-label={`Từ chối giao dịch ${row.qrToken}`} onClick={() => rejectRecyclingSubmission(row)}>Từ chối</button>
         </div>
+      ) : submissionStatusCode(row.status) === "CREATED" ? (
+        <button type="button" className="eg-small-btn" aria-label={`Không thể quét QR giao dịch ${row.qrToken}`} onClick={() => unlockManualReview(row)}>Không thể quét QR</button>
       ) : <span className="eg-muted-block">Đã xử lý</span>,
     },
   ];

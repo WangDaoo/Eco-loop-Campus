@@ -267,6 +267,13 @@ export function buildSubmissionDraft({
 }
 
 export function mapSubmissionRow(row: Row): RecyclingSubmission {
+  const rawProofImages = row.proofImages ?? row.proof_images;
+  const embeddedProofImages = Array.isArray(rawProofImages)
+    ? rawProofImages.map(proofValue => {
+        const proof = proofValue as Row;
+        return mapProofImageRow({ ...proof, submissionId: proof.submissionId ?? proof.submission_id ?? row.id });
+      })
+    : undefined;
   return {
     id: text(row.id),
     userId: text(row.userId ?? row.user_id),
@@ -281,7 +288,13 @@ export function mapSubmissionRow(row: Row): RecyclingSubmission {
     verifiedBy: text(row.verifiedBy ?? row.verified_by) || undefined,
     verifiedAt: row.verifiedAt || row.verified_at ? date(row.verifiedAt ?? row.verified_at) : undefined,
     actualQuantity: row.actualQuantity !== undefined || row.actual_quantity !== undefined ? number(row.actualQuantity ?? row.actual_quantity) : undefined,
-    volunteerNote: text(row.volunteerNote ?? row.volunteer_note) || undefined
+    volunteerNote: text(row.volunteerNote ?? row.volunteer_note) || undefined,
+    predictionId: text(row.predictionId ?? row.prediction_id) || undefined,
+    manualReviewUnlockedAt: row.manualReviewUnlockedAt || row.manual_review_unlocked_at ? date(row.manualReviewUnlockedAt ?? row.manual_review_unlocked_at) : undefined,
+    manualReviewUnlockedBy: text(row.manualReviewUnlockedBy ?? row.manual_review_unlocked_by) || undefined,
+    manualReviewReason: text(row.manualReviewReason ?? row.manual_review_reason) || undefined,
+    proofImage: embeddedProofImages?.[0],
+    proofImages: embeddedProofImages,
   };
 }
 
@@ -356,15 +369,35 @@ export function mapProofImageRow(row: Row): ProofImage {
     imageHash: text(row.imageHash ?? row.image_hash) || undefined,
     status: proofStatus(row.status),
     verificationCode: text(row.verificationCode ?? row.verification_code) || undefined,
-    note: text(row.note) || undefined
+    note: text(row.note) || undefined,
+    kind: text(row.kind) as ProofImage['kind'] || undefined,
+    uploadedBy: text(row.uploadedBy ?? row.uploaded_by) || undefined,
+    imageName: text(row.imageName ?? row.image_name) || undefined,
+    capturedAt: row.capturedAt || row.captured_at ? date(row.capturedAt ?? row.captured_at) : undefined,
   };
 }
 
 export function attachProofImagesToSubmissions(submissions: RecyclingSubmission[], proofImages: ProofImage[]) {
   return submissions.map(submission => {
-    const proofImage = proofImages.find(item => item.submissionId === submission.id);
-    return proofImage ? { ...submission, proofImage } : submission;
+    const submissionProofImages = proofImages.filter(item => item.submissionId === submission.id);
+    return submissionProofImages.length
+      ? { ...submission, proofImage: submissionProofImages[0], proofImages: submissionProofImages }
+      : submission;
   });
+}
+
+export function mapNotificationRow(row: Row) {
+  return {
+    id: text(row.id),
+    userId: text(row.userId ?? row.user_id),
+    type: text(row.type),
+    title: text(row.title),
+    message: text(row.message),
+    referenceType: text(row.referenceType ?? row.reference_type) || undefined,
+    referenceId: text(row.referenceId ?? row.reference_id) || undefined,
+    readAt: row.readAt || row.read_at ? date(row.readAt ?? row.read_at) : undefined,
+    createdAt: date(row.createdAt ?? row.created_at),
+  };
 }
 
 export function toSubmissionRow(submission: RecyclingSubmission): Row {

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BACKEND_TOKEN_KEY, setCachedMobileAccessToken } from './authTokenStore';
 import {
   AvatarPreset,
   BinStation,
@@ -9,6 +10,7 @@ import {
   Faculty,
   Feedback,
   Mission,
+  InAppNotification,
   PredictionRecord,
   ProofImage,
   QRScanLog,
@@ -28,6 +30,7 @@ import {
   mapBinRow,
   mapFeedbackRow,
   mapMissionRow,
+  mapNotificationRow,
   mapPointHistoryRow,
   mapPredictionRow,
   mapProofImageRow,
@@ -47,6 +50,8 @@ type StorageLike = {
   setItem(key: string, value: string): Promise<void>;
   removeItem(key: string): Promise<void>;
 };
+type FormDataLike = { append(name: string, value: unknown): void };
+type FormDataConstructor = new () => FormDataLike;
 
 export type MobileInitialData = {
   users: UserProfile[];
@@ -62,6 +67,7 @@ export type MobileInitialData = {
   proofImages: ProofImage[];
   qrScanLogs: QRScanLog[];
   avatarOptions: AvatarPreset[];
+  notifications: InAppNotification[];
 };
 
 export type SchemaHealth = {
@@ -99,6 +105,8 @@ export type BackendMobileStore = {
   ): Promise<{ submission: RecyclingSubmission; point: EcoPointTransaction }>;
   rejectSubmission(submissionId: string, volunteerId: string, volunteerNote?: string): Promise<RecyclingSubmission>;
   requestReview(submissionId: string, volunteerId: string, volunteerNote?: string): Promise<RecyclingSubmission>;
+  unlockManualReview(submissionId: string, reason: string, scanLogId?: string): Promise<RecyclingSubmission>;
+  markNotificationRead(notificationId: string): Promise<InAppNotification>;
   attachProofImage(submissionId: string, input: CreateProofImageInput): Promise<ProofImage>;
   submitFeedback(user: UserProfile, input: CreateFeedbackInput): Promise<Feedback>;
   requestReward(userId: string, reward: Reward): Promise<RewardRedemption>;
@@ -107,7 +115,7 @@ export type BackendMobileStore = {
 };
 
 const DEFAULT_API_URL = 'http://10.0.2.2:8000';
-const TOKEN_KEY = 'ecoloop_backend_token';
+const TOKEN_KEY = BACKEND_TOKEN_KEY;
 
 function normalizedBaseUrl(baseUrl: string) {
   return baseUrl.replace(/\/+$/, '');
@@ -125,6 +133,21 @@ function normalizeAvatar(row: Row, baseUrl: string) {
 function normalizeUser(row: Row, baseUrl: string) {
   const mapped = mapUserRow(row);
   return { ...mapped, avatarUrl: buildBackendAssetUrl(mapped.avatarUrl, baseUrl) };
+}
+
+function normalizeProofImage(row: Row | ProofImage, baseUrl: string) {
+  const mapped = 'submissionId' in row ? row as ProofImage : mapProofImageRow(row);
+  return { ...mapped, imageUrl: buildBackendAssetUrl(mapped.imageUrl, baseUrl) ?? '' };
+}
+
+function normalizeSubmission(row: Row, baseUrl: string) {
+  const mapped = mapSubmissionRow(row);
+  const proofImages = mapped.proofImages?.map(proof => normalizeProofImage(proof, baseUrl));
+  return {
+    ...mapped,
+    proofImages,
+    proofImage: proofImages?.[0] ?? (mapped.proofImage ? normalizeProofImage(mapped.proofImage, baseUrl) : undefined),
+  };
 }
 
 function readiness(data: Pick<MobileInitialData, 'stations' | 'wasteTypes'>): OperatingReadiness {
@@ -178,25 +201,28 @@ export function createBackendMobileStore({
   fetcher = fetch as FetchLike,
   storage = AsyncStorage as StorageLike,
   initialToken = '',
-}: { baseUrl?: string; fetcher?: FetchLike; storage?: StorageLike; initialToken?: string } = {}): BackendMobileStore {
+  FormDataCtor = FormData as unknown as FormDataConstructor,
+}: { baseUrl?: string; fetcher?: FetchLike; storage?: StorageLike; initialToken?: string; FormDataCtor?: FormDataConstructor } = {}): BackendMobileStore {
   const endpointBaseUrl = normalizedBaseUrl(baseUrl);
   let token = initialToken;
 
   async function getToken() {
     if (token) return token;
     token = (await storage.getItem(TOKEN_KEY)) ?? '';
+    setCachedMobileAccessToken(token);
     return token;
   }
 
   async function setToken(nextToken: string) {
     token = nextToken;
+    setCachedMobileAccessToken(nextToken);
     if (nextToken) await storage.setItem(TOKEN_KEY, nextToken);
     else await storage.removeItem(TOKEN_KEY);
   }
 
   async function request(path: string, init: any = {}) {
     const headers: Record<string, string> = { ...(init.headers ?? {}) };
-    if (init.body !== undefined && !(typeof FormData !== 'undefined' && init.body instanceof FormData)) {
+    if (init.body !== undefined && !(init.body instanceof FormDataCtor)) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(init.body);
     }
@@ -278,9 +304,9 @@ export function createBackendMobileStore({
 
     async loadInitialData(profile) {
       const payload = await request('/api/mobile/initial-data');
-      const proofImages = (payload.proofImages ?? []).map((row: Row) => mapProofImageRow(row));
+      const proofImages = (payload.proofImages ?? []).map((row: Row) => normalizeProofImage(row, endpointBaseUrl));
       const submissions = attachProofImagesToSubmissions(
-        (payload.submissions ?? []).map((row: Row) => mapSubmissionRow(row)),
+        (payload.submissions ?? []).map((row: Row) => normalizeSubmission(row, endpointBaseUrl)),
         proofImages
       );
       const predictions = (payload.predictions ?? []).map((row: Row) => mapPredictionRow(row));
@@ -301,6 +327,7 @@ export function createBackendMobileStore({
         proofImages,
         qrScanLogs: profile.role === 'student' ? [] : qrScanLogs,
         avatarOptions: (payload.avatarOptions ?? []).map((row: Row) => normalizeAvatar(row, endpointBaseUrl)).filter((item: AvatarPreset) => item.status === 'active'),
+        notifications: (payload.notifications ?? []).map((row: Row) => mapNotificationRow(row)),
       };
     },
 
@@ -310,8 +337,19 @@ export function createBackendMobileStore({
     },
 
     async createSubmission(_userId, input) {
-      const payload = await request('/api/mobile/recycling-submissions', { method: 'POST', body: input });
-      return mapSubmissionRow(payload.data ?? {});
+      if (!input.proof?.uri?.trim()) throw new Error('Ảnh minh chứng là bắt buộc trước khi tạo QR.');
+      const formData = new FormDataCtor();
+      formData.append('binId', input.binId);
+      formData.append('wasteTypeId', input.wasteTypeId);
+      formData.append('quantity', String(input.quantity));
+      if (input.predictionId) formData.append('predictionId', input.predictionId);
+      formData.append('proof', {
+        uri: input.proof.uri,
+        name: input.proof.name ?? 'student-proof.jpg',
+        type: input.proof.mimeType ?? 'image/jpeg',
+      });
+      const payload = await request('/api/mobile/recycling-submissions', { method: 'POST', body: formData });
+      return normalizeSubmission(payload.data?.submission ?? payload.data ?? {}, endpointBaseUrl);
     },
 
     async saveAiPrediction(_userId, input) {
@@ -324,7 +362,7 @@ export function createBackendMobileStore({
       const data = payload.data ?? {};
       return {
         result: String(data.result ?? 'INVALID_TOKEN') as QRScanOutcome['result'],
-        submission: data.submission ? mapSubmissionRow(data.submission) : undefined,
+        submission: data.submission ? normalizeSubmission(data.submission, endpointBaseUrl) : undefined,
         note: String(data.note ?? ''),
       };
     },
@@ -336,7 +374,7 @@ export function createBackendMobileStore({
       });
       const data = payload.data ?? {};
       return {
-        submission: data.submission ? mapSubmissionRow(data.submission) : fallbackSubmission(String(data.submissionId ?? submissionId), 'POINT_CONFIRMED'),
+        submission: data.submission ? normalizeSubmission(data.submission, endpointBaseUrl) : fallbackSubmission(String(data.submissionId ?? submissionId), 'POINT_CONFIRMED'),
         point: data.point ? mapPointHistoryRow(data.point) : fallbackPoint(String(data.submissionId ?? submissionId), Number(data.points ?? 0)),
       };
     },
@@ -346,7 +384,7 @@ export function createBackendMobileStore({
         method: 'POST',
         body: { note: volunteerNote ?? '' },
       });
-      return (payload.data?.submission ? mapSubmissionRow(payload.data.submission) : fallbackSubmission(submissionId, 'REJECTED'));
+      return (payload.data?.submission ? normalizeSubmission(payload.data.submission, endpointBaseUrl) : fallbackSubmission(submissionId, 'REJECTED'));
     },
 
     async requestReview(submissionId, _volunteerId, volunteerNote) {
@@ -354,11 +392,24 @@ export function createBackendMobileStore({
         method: 'POST',
         body: { note: volunteerNote ?? '' },
       });
-      return (payload.data?.submission ? mapSubmissionRow(payload.data.submission) : fallbackSubmission(submissionId, 'PENDING_REVIEW'));
+      return (payload.data?.submission ? normalizeSubmission(payload.data.submission, endpointBaseUrl) : fallbackSubmission(submissionId, 'PENDING_REVIEW'));
+    },
+
+    async unlockManualReview(submissionId, reason, scanLogId) {
+      const payload = await request(`/api/mobile/recycling-submissions/${encodeURIComponent(submissionId)}/manual-review`, {
+        method: 'POST',
+        body: { reason, ...(scanLogId ? { scanLogId } : {}) },
+      });
+      return normalizeSubmission(payload.data?.submission ?? payload.data ?? {}, endpointBaseUrl);
+    },
+
+    async markNotificationRead(notificationId) {
+      const payload = await request(`/api/mobile/notifications/${encodeURIComponent(notificationId)}/read`, { method: 'PATCH' });
+      return mapNotificationRow(payload.data ?? {});
     },
 
     async attachProofImage(submissionId, input) {
-      const formData = new FormData();
+      const formData = new FormDataCtor();
       const uri = input.imageUri ?? input.imageUrl ?? '';
       formData.append('note', input.note ?? '');
       formData.append('file', { uri, name: input.fileName ?? 'proof.jpg', type: input.mimeType ?? 'image/jpeg' } as any);
@@ -366,7 +417,7 @@ export function createBackendMobileStore({
         method: 'POST',
         body: formData,
       });
-      return mapProofImageRow(payload.data ?? {});
+      return normalizeProofImage(payload.data ?? {}, endpointBaseUrl);
     },
 
     async submitFeedback(_user, input) {

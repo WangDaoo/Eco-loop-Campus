@@ -31,3 +31,9 @@ test('HistoryScreen keeps Vietnamese UI text readable', () => {
   assert.match(source, /Lịch sử của bạn/);
   assert.match(source, /Giao dịch tái chế/);
 });
+
+test('student history shows proof images and the rejection reason', () => {
+  assert.match(source, /proofImages/);
+  assert.match(source, /Lý do từ chối/);
+  assert.match(source, /item\.volunteerNote/);
+});

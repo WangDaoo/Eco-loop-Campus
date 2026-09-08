@@ -24,13 +24,14 @@ def test_admin_generic_resources_cannot_bypass_point_or_submission_transactions(
     create_response = api_client.post(
         "/api/mobile/recycling-submissions",
         headers=student_headers,
-        json={
+        data={
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
-            "quantity": 1,
+            "quantity": "1",
         },
+        files={"proof": ("student-proof.jpg", b"student-proof", "image/jpeg")},
     )
-    submission = create_response.json()["data"]
+    submission = create_response.json()["data"]["submission"]
 
     status_response = api_client.post(
         "/api/admin/recycling-submissions",

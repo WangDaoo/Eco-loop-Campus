@@ -15,6 +15,7 @@ import { getWasteTypeDisplayName, getWasteUnitDisplayLabel } from '../services/s
 import { buildSubmitAiSuggestion, SubmitAiSuggestion } from './submitAiFlow';
 import { buildSubmissionQrPayload, extractStationQrCandidates } from '../services/qrPayload';
 import { launchImageLibraryWithFallback } from '../services/imagePickerFallback';
+import { buildProofFirstSubmissionInput } from './submitProofFlow';
 
 const feedbackTypes = [
   { id: 'bin_full', label: 'Thùng đầy' },
@@ -53,6 +54,7 @@ export default function SubmitScreen() {
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AiSuggestion | null>(null);
+  const [proofAsset, setProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [stationScannerEnabled, setStationScannerEnabled] = useState(false);
   const [stationScannerPaused, setStationScannerPaused] = useState(false);
   const [stationDropdownOpen, setStationDropdownOpen] = useState(false);
@@ -136,9 +138,19 @@ export default function SubmitScreen() {
       Alert.alert('Số lượng chưa đúng', 'Nhập số lượng lớn hơn 0.');
       return;
     }
+    if (!proofAsset) {
+      Alert.alert('Thiếu ảnh minh chứng', 'Hãy chụp hoặc chọn ít nhất một ảnh rác trước khi tạo mã QR.');
+      return;
+    }
 
     try {
-      const submission = await createSubmission({ binId: stationId, wasteTypeId, quantity: quantityNumber });
+      const submission = await createSubmission(buildProofFirstSubmissionInput({
+        binId: stationId,
+        wasteTypeId,
+        quantity: quantityNumber,
+        proofAsset,
+        predictionId: aiSuggestion?.predictionId,
+      }));
       setLatestSubmission(submission);
     } catch (error) {
       Alert.alert('Không tạo được QR', messageOf(error));
@@ -146,6 +158,8 @@ export default function SubmitScreen() {
   };
 
   const runAiPrediction = async (asset: ImagePicker.ImagePickerAsset, source: 'camera' | 'upload') => {
+    setProofAsset(asset);
+    setAiSuggestion(null);
     setAiLoading(true);
     try {
       const suggestion = await buildSubmitAiSuggestion({
@@ -305,12 +319,19 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
             )}
           </View>
 
-          <Text style={styles.sectionTitle}>2. Phân loại AI (Tùy chọn)</Text>
+          <Text style={styles.sectionTitle}>2. Ảnh minh chứng (Bắt buộc)</Text>
           <View style={styles.aiContainer}>
              <View style={styles.aiButtonRow}>
-                <AppButton title={aiLoading ? 'Đang phân tích...' : 'Chụp ảnh AI'} onPress={handleAiCapture} disabled={aiLoading} />
-                <AppButton title="Tải ảnh" variant="light" onPress={handleAiPick} disabled={aiLoading} />
+                <AppButton title={aiLoading ? 'Đang phân tích...' : 'Chụp ảnh'} onPress={handleAiCapture} disabled={aiLoading} />
+                <AppButton title="Chọn ảnh" variant="light" onPress={handleAiPick} disabled={aiLoading} />
              </View>
+
+             {proofAsset ? (
+               <View style={styles.proofPreviewBox}>
+                 <Image source={{ uri: proofAsset.uri }} style={styles.aiPreview} />
+                 <Text style={styles.proofReady}>Đã chọn ảnh minh chứng sinh viên</Text>
+               </View>
+             ) : null}
 
              {aiLoading ? (
                <View style={styles.aiLoadingOverlay}>
@@ -319,7 +340,6 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
                </View>
              ) : aiSuggestion ? (
                <View style={styles.aiResult}>
-                 {aiSuggestion.sourceUri && <Image source={{ uri: aiSuggestion.sourceUri }} style={styles.aiPreview} />}
                  <Text style={styles.aiLabel}>Nhận diện: {aiSuggestion.predictedClass} ({aiSuggestion.confidencePercent}%)</Text>
                  <Text style={styles.aiRuntime}>{aiRuntimeLabel(aiSuggestion)}</Text>
                  {aiSuggestion.predictionId ? <Text style={styles.aiSaved}>Đã lưu AI #{aiSuggestion.predictionId}</Text> : null}
@@ -328,8 +348,10 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
                    <Text style={styles.aiSuggestButtonText}>Áp dụng gợi ý này</Text>
                  </Pressable>
                </View>
+             ) : proofAsset ? (
+               <Text style={styles.aiHint}>Ảnh đã được giữ làm minh chứng. Nếu AI lỗi, bạn vẫn có thể chọn loại rác thủ công và tạo QR.</Text>
              ) : (
-               <Text style={styles.aiHint}>Chụp ảnh để AI nhận diện tự động loại rác của bạn.</Text>
+               <Text style={styles.aiHint}>Ảnh là bắt buộc. AI chỉ gợi ý loại rác; nếu AI lỗi, bạn vẫn có thể chọn thủ công.</Text>
              )}
           </View>
 
@@ -654,6 +676,15 @@ const styles = StyleSheet.create({
   aiResult: {
     marginTop: 12,
     alignItems: 'center',
+  },
+  proofPreviewBox: {
+    marginTop: 14,
+    alignItems: 'center',
+  },
+  proofReady: {
+    color: '#047857',
+    fontSize: 13,
+    fontWeight: '900',
   },
   aiPreview: {
     width: 100,

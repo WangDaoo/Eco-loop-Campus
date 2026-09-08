@@ -60,3 +60,28 @@
 - APK UAT cuối 116093416 bytes; SHA-256 `367d9025badd3ba54dbbc4eb3446951e57d858614b31154f9f156c6befe6f6d8`.
 - Artifact verification cuối: checksum khớp, chữ ký APK v1/v2 hợp lệ, package `com.ecoloopcampus.mobile.uat`, nhãn `Eco-loop Campus UAT`, version `1.0.0-uat`, bundle chứa public API URL, public database health `ok` trên `ecoloop_campus_uat`, auth secret tách biệt và stock badge bằng 30.
 - Full gate cuối exit 0: Backend unit 80/80; PostgreSQL integration 71/71; Mobile 223/223 và typecheck pass; Web Admin 273/273 với 16 legacy fallback skip.
+
+## 2026-09-08
+
+- Người dùng duyệt thiết kế ảnh sinh viên bắt buộc, AI chỉ gợi ý, QR là luồng chính, manual review có điều kiện và thông báo từ chối trong app.
+- Systematic debugging xác định AI UAT trả `401` vì `predictionService` không gắn bearer token; backend/model không bị lỗi tải.
+- Xác nhận Web Admin hiện chưa xem được ảnh sinh viên theo submission vì Mobile không tạo `proof_images` và không liên kết prediction với submission.
+- Chốt kiểm kê thùng theo mô hình dự kiến + số thực tế + biên bản dọn; ảnh sau dọn bắt buộc, ghi chú tùy chọn. Chặng này sẽ triển khai sau submission proof.
+- Đã đọc writing-plans, test-driven-development, writing-good-tests, planning-with-files và executing-plans trước khi thay đổi code sản phẩm.
+- TDD Task 1: đã thêm test PostgreSQL cho student proof, canonical scan response, manual-review audit, reject note và notification.
+- Lần chạy `pytest` trực tiếp thất bại trước collection vì executable không có trên PATH; chuyển sang Python runtime của workspace/runner, không lặp lại cùng lệnh.
+- Plan self-review phát hiện tên runner `run_full_test_gate.ps1` không tồn tại; đã sửa sang runner thật `scripts/run_automated_logic_tests.ps1`.
+- Bundled Codex Python và `C:\Python313` đều thiếu `pytest`; tìm thấy runtime dự án tại `backend/.venv` và chuyển sang runtime này.
+- TDD PostgreSQL RED: 20 test cũ pass, 2 test mới fail đúng vì function proof-first chưa tồn tại.
+- TDD PostgreSQL GREEN: `backend/test_submission_postgres_integration.py` đạt 23/23; canonical scan/confirm, student proof, manual audit, reject note và notification đều chạy trên PostgreSQL `_test` thật.
+- TDD FastAPI GREEN: endpoint tạo submission nhận multipart proof bắt buộc, endpoint mở manual review và canonical response; API tests 20/20, PostgreSQL integration 23/23.
+- TDD Mobile AI GREEN: queue/poll/direct prediction đều gửi bearer token; cache token dùng chung tránh phụ thuộc AsyncStorage trong Node. Mobile regression tại checkpoint đạt 224/224.
+- TDD Mobile proof-first: helper giữ ảnh độc lập với AI và liên kết `predictionId` tùy chọn; SubmitScreen chặn tạo QR nếu thiếu ảnh, vẫn hiển thị/giữ ảnh khi AI lỗi và cho chọn loại rác thủ công.
+- Typecheck ban đầu phát hiện kiểu union của header rỗng; đã khóa về `Record<string, string>` và typecheck pass. Full Mobile sau UI có 225/226 do một source guard còn đòi copy cũ; assertion được cập nhật theo thiết kế mới và chờ gate kế tiếp.
+- Hoàn tất Mobile: canonical proof/manual audit được hydrate; scanner không giả lập scan khi mở queue, hiển thị ảnh sinh viên, cho bổ sung ảnh reviewer tùy chọn, bắt buộc lý do từ chối; lịch sử và trung tâm thông báo cùng hiển thị lý do.
+- Hoàn tất Web Admin: Ecopoint ghép `STUDENT_PROOF`/`REVIEWER_PROOF` theo submission và mọi approve/reject đi qua transaction endpoint thay vì generic update.
+- Code review phát hiện `PENDING_REVIEW` chưa khóa theo `manualReviewUnlockedAt` và notification read còn cho vai trò ngoài student. Đã thêm test đỏ rồi sửa đồng thời ở PostgreSQL, FastAPI, Mobile và Web Admin.
+- Regression cuối: Backend 162/162; Mobile 234/234 và typecheck pass; Web Admin 275 passed, 16 skipped. `git diff --check` pass.
+- Migrate UAT không reset dữ liệu, khởi động backend/tunnel mới và build lại APK standalone. Artifact `dist/ecoloop-campus-uat.apk` có SHA-256 `52f1d190629555206de2a354d0e0029ef6782c1d45e49f43bead295fac733c87`.
+- UAT smoke qua public tunnel: database health `status=ok` đúng `ecoloop_campus_uat`; đăng nhập sinh viên thành công; `initial-data` có `submissions`, `proofImages` và `notifications`.
+- APK cuối khớp checksum và chữ ký Android v1/v2 hợp lệ. Re-review read-only xác nhận không còn Critical/Important finding.
