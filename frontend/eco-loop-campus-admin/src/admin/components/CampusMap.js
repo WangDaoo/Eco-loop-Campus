@@ -156,7 +156,9 @@ function addStationMarkers(layerGroup, stations, options = {}) {
       sticky: true,
     });
 
-    marker.on("click", () => onSelect?.(station));
+    marker.on("click", () => {
+      if (editingStationId !== station.id) onSelect?.(station);
+    });
     marker.on("dragstart", () => {
       if (editingStationId !== station.id) onSelect?.(station);
     });

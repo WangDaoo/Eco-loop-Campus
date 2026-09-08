@@ -27,6 +27,8 @@ test("CampusMap edits bin position by dragging the selected map marker instead o
 });
 
 test("CampusMap keeps edit mode active when dragging the editable marker", () => {
+  expect(source).not.toMatch(/marker\.on\("click", \(\) => onSelect\?\.\(station\)\)/);
+  expect(source).toMatch(/marker\.on\("click", \(\) => \{\s*if \(editingStationId !== station\.id\) onSelect\?\.\(station\);\s*\}\)/s);
   expect(source).not.toMatch(/marker\.on\("dragstart", \(\) => onSelect\?\.\(station\)\)/);
   expect(source).toMatch(/marker\.on\("dragstart", \(\) => \{\s*if \(editingStationId !== station\.id\) onSelect\?\.\(station\);\s*\}\)/s);
 });
