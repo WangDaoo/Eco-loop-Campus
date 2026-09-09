@@ -13,7 +13,7 @@ export type RootStackParamList = {
 export type StudentTabParamList = {
   Home: undefined;
   Rewards: undefined;
-  Submit: undefined;
+  Submit: { focusFeedback?: boolean } | undefined;
   Map: undefined;
   Profile: undefined;
 };

@@ -86,3 +86,9 @@ test('SubmitScreen renders localized waste type names and units from presentatio
   assert.doesNotMatch(source, /\{waste\.name\}<\/Text>/);
   assert.doesNotMatch(source, /Ecopoint\/\{waste\.unit\}/);
 });
+
+test('SubmitScreen can open directly on the real feedback form from a mission shortcut', () => {
+  assert.match(source, /focusFeedback/);
+  assert.match(source, /scrollToEnd/);
+  assert.match(source, /feedbackCardRef/);
+});

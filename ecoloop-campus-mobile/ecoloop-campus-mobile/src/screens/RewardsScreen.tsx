@@ -6,7 +6,7 @@ import { AppButton } from '../components/AppButton';
 import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
 import { Reward, RewardRedemption } from '../types';
-import { colors, radius } from '../theme/colors';
+import { colors } from '../theme/colors';
 
 function redemptionStatusLabel(status: RewardRedemption['status']) {
   const labels: Record<RewardRedemption['status'], string> = {
@@ -39,12 +39,11 @@ function getIconForReward(reward: Reward): RewardIcon {
 }
 
 export default function RewardsScreen() {
-  const { points, rewards, rewardRedemptions, requestRewardBatch } = useAppContext();
+  const { points, rewards, rewardRedemptions, requestReward } = useAppContext();
   const [activeCategory, setActiveCategory] = useState('Tất cả');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVoucher, setSelectedVoucher] = useState<Reward | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [cart, setCart] = useState<Record<string, number>>({});
 
   const categories = useMemo(() => {
     const names = rewards
@@ -64,32 +63,17 @@ export default function RewardsScreen() {
   }, [activeRedemption?.id]);
 
   const redeem = async (reward: Reward) => {
-    const cartItems = Object.entries({ ...cart, [reward.id]: Math.max(1, cart[reward.id] || 1) }).map(([rewardId, quantity]) => ({ rewardId, quantity }));
-    const total = cartItems.reduce((sum, item) => sum + (rewards.find(row => row.id === item.rewardId)?.costPoints || 0) * item.quantity, 0);
-    if (total > points) {
-      Alert.alert('Không thể tạo mã', `Bạn cần thêm ${total - points} Ecopoint.`);
+    if (reward.costPoints > points) {
+      Alert.alert('Không thể đổi quà', `Bạn cần thêm ${reward.costPoints - points} Ecopoint.`);
       return;
     }
-    const ok = await requestRewardBatch(cartItems);
+    const ok = await requestReward(reward);
     Alert.alert(
       ok ? 'Đã tạo mã đổi thưởng' : 'Không thể tạo mã',
       ok ? 'Đưa mã QR cho tình nguyện viên quét trong 15 phút. Điểm chỉ bị trừ sau khi xác nhận.' : 'Phần thưởng đã hết hàng hoặc dữ liệu không hợp lệ.'
     );
-    if (ok) { setSelectedVoucher(null); setCart({}); }
+    if (ok) setSelectedVoucher(null);
   };
-
-  const addToCart = (reward: Reward) => {
-    updateCart(reward, 1);
-    setSelectedVoucher(null);
-  };
-
-  const cartCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
-  const updateCart = (reward: Reward, delta: number) => setCart(current => {
-    const next = Math.max(0, Math.min(Number(reward.stock ?? 99), (current[reward.id] || 0) + delta));
-    const copy = { ...current };
-    if (next) copy[reward.id] = next; else delete copy[reward.id];
-    return copy;
-  });
 
   const filteredRewards = rewards.filter(reward => {
     if (searchQuery && !reward.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -227,14 +211,11 @@ export default function RewardsScreen() {
                 <View style={styles.modalDetails}>
                   <Text style={styles.detailsLabel}>Thông tin chi tiết</Text>
                   <Text style={styles.detailsText}>{selectedVoucher.description}</Text>
-                  <Text style={styles.detailsText}>Số lượng còn: {selectedVoucher.stock}</Text>
                 </View>
               </ScrollView>
 
               <View style={styles.modalFooter}>
-                <View style={styles.quantityRow}><Text style={styles.detailsLabel}>Số lượng</Text><Pressable onPress={() => updateCart(selectedVoucher, -1)}><Text style={styles.quantityButton}>-</Text></Pressable><Text>{cart[selectedVoucher.id] || 1}</Text><Pressable onPress={() => updateCart(selectedVoucher, 1)}><Text style={styles.quantityButton}>+</Text></Pressable></View>
-                <AppButton title="Thêm sản phẩm khác" onPress={() => addToCart(selectedVoucher)} disabled={Boolean(activeRedemption)} />
-                <AppButton title={`${cartCount ? 'Tạo 1 mã cho ' + cartCount + ' sản phẩm' : selectedVoucher.costPoints.toLocaleString('vi-VN') + ' điểm - Đổi ngay'}`} onPress={() => void redeem(selectedVoucher)} disabled={Boolean(activeRedemption)} />
+                <AppButton title="Đổi" onPress={() => void redeem(selectedVoucher)} disabled={Boolean(activeRedemption)} />
               </View>
             </View>
           </View>
@@ -563,23 +544,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
     lineHeight: 22,
-  },
-  quantityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-  },
-  quantityButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.ecoPill,
-    color: colors.ecoDarkBlue,
-    fontSize: 24,
-    fontWeight: '900',
-    textAlign: 'center',
-    lineHeight: 32,
   },
   modalFooter: {
     padding: 16,

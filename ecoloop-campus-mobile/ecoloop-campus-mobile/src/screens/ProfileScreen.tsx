@@ -4,19 +4,21 @@ import { useAppContext } from '../context/AppContext';
 import { Screen } from '../components/Screen';
 import { UserAvatar, resolveAvatarOption } from '../components/UserAvatar';
 import { getUserLeaderboardRank } from '../services/leaderboard';
+import { resolveFacultyDisplayName } from '../services/facultyPresentation';
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
 export default function ProfileScreen({ navigation }: any) {
-  const { currentUser: user, signOut, users, avatarOptions, updateAvatar, updatePassword, isLoading } = useAppContext();
+  const { currentUser: user, signOut, users, faculties, avatarOptions, updateAvatar, updatePassword, isLoading } = useAppContext();
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const selectedAvatar = resolveAvatarOption(user.avatarKey, avatarOptions);
+  const facultyLabel = resolveFacultyDisplayName(user, faculties);
   const currentRank = useMemo(() => getUserLeaderboardRank(users, user.id), [users, user.id]);
   const rankLabel = currentRank
     ? `Thứ hạng hiện tại của bạn: #${currentRank.rank}`
@@ -80,15 +82,15 @@ export default function ProfileScreen({ navigation }: any) {
         </Pressable>
 
         <View style={styles.profileSummary}>
-          <Text style={styles.summaryTitle}>{selectedAvatar.label}</Text>
-          <Text style={styles.summaryMeta}>{user.group || (user.role === 'volunteer' ? 'Tình nguyện viên' : 'Sinh viên')}</Text>
+          <Text style={styles.summaryTitle}>{user.name || selectedAvatar.label}</Text>
+          <Text style={styles.summaryMeta}>{facultyLabel}</Text>
           <Text style={styles.summaryPoints}>{Number(user.points || 0).toLocaleString('vi-VN')} Ecopoint</Text>
         </View>
 
         {user.role === 'student' || user.role === 'volunteer' ? (
           <View style={styles.studentDetails}>
             <View style={styles.detailRow}><Text style={styles.detailLabel}>Mã sinh viên</Text><Text style={styles.detailValue}>{user.studentCode || 'Chưa cập nhật'}</Text></View>
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Khoa</Text><Text style={styles.detailValue}>{user.facultyName || user.group || 'Chưa cập nhật'}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Khoa</Text><Text style={styles.detailValue}>{facultyLabel || 'Chưa cập nhật'}</Text></View>
             <View style={styles.detailRow}><Text style={styles.detailLabel}>Số điện thoại</Text><Text style={styles.detailValue}>{user.phoneNumber || 'Chưa cập nhật'}</Text></View>
           </View>
         ) : null}

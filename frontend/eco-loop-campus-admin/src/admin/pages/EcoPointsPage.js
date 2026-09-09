@@ -20,7 +20,6 @@ import {
   savePointRules,
   saveRewardCategory,
   saveRewardProduct,
-  saveRewardRedemption,
   updateRewardRedemption,
   updateRecyclingSubmissionReview,
 } from "../services/supabaseStore";
@@ -42,16 +41,19 @@ const normalizeLabelFilter = (value, options, fallback = "") => {
   return options.find(option => labelCode(option) === normalized) || fallback;
 };
 
-const REWARD_OPTIONS = [
-  { label: "Voucher căn tin 100 điểm", points: 100 },
-  { label: "Giấy chứng nhận xanh 300 điểm", points: 300 },
-  { label: "Quà học kỳ xanh 500 điểm", points: 500 },
-];
-
 const initialManualForm = { userId: "", points: 10, action: "Nộp rác sự kiện xanh" };
-const initialRewardForm = { userId: "", rewardLabel: REWARD_OPTIONS[0].label };
 const initialRewardCategoryForm = { id: "", name: "", description: "", status: "active", color: "#2F8F5B" };
 const initialRewardProductForm = { id: "", title: "", categoryId: "", categoryName: "", costPoints: 100, description: "", status: "active", color: "#2F8F5B" };
+
+const ECOPOINT_TABS = [
+  { id: "overview", label: "Tổng quan" },
+  { id: "manual", label: "Cộng điểm" },
+  { id: "rules", label: "Quy tắc điểm" },
+  { id: "catalog", label: "Sản phẩm" },
+  { id: "submissions", label: "Gửi rác" },
+  { id: "redemptions", label: "Đổi thưởng" },
+  { id: "rankings", label: "Xếp hạng" },
+];
 
 const SUBMISSION_STATUS_LABELS = {
   CREATED: "Chờ tình nguyện viên",
@@ -142,15 +144,14 @@ export default function EcoPointsPage() {
   const [rewardCategories, setRewardCategories] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [manualForm, setManualForm] = useState(initialManualForm);
-  const [rewardForm, setRewardForm] = useState(initialRewardForm);
   const [rewardCategoryForm, setRewardCategoryForm] = useState(initialRewardCategoryForm);
   const [rewardProductForm, setRewardProductForm] = useState(initialRewardProductForm);
   const [manualUserQuery, setManualUserQuery] = useState("");
-  const [rewardUserQuery, setRewardUserQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState("");
   const [toastTone, setToastTone] = useState("success");
+  const [activeTab, setActiveTab] = useState("overview");
 
   const showToast = (message, tone = "success") => {
     setToastTone(tone);
@@ -226,15 +227,6 @@ export default function EcoPointsPage() {
     const category = rewardCategories.find(item => item.id === product.categoryId);
     return { ...product, categoryName: category?.name || product.categoryName || "" };
   }), [rewardProducts, rewardCategories]);
-  const rewardOptions = useMemo(() => {
-    const catalogOptions = rewardProductsWithCategories
-      .filter(item => item.status === "active")
-      .map(item => ({ id: item.id, label: `${item.title} ${item.costPoints} điểm`, points: Number(item.costPoints || 0), categoryName: item.categoryName || "" }));
-    const catalogLabels = new Set(catalogOptions.map(item => labelCode(item.label)));
-    const legacyOptions = REWARD_OPTIONS.filter(item => !catalogLabels.has(labelCode(item.label)));
-    return [...catalogOptions, ...legacyOptions];
-  }, [rewardProductsWithCategories]);
-  const rewardSelectValue = rewardOptions.some(item => item.label === rewardForm.rewardLabel) ? rewardForm.rewardLabel : rewardOptions[0]?.label || "";
 
   const updateRule = (id, updates) => {
     setRules(current => current.map(rule => rule.id === id ? { ...rule, ...updates } : rule));
@@ -287,30 +279,6 @@ export default function EcoPointsPage() {
     setUsers(current => current.map(item => item.id === response.data.userId ? { ...item, points: Number(response.data.balanceAfter ?? (Number(item.points || 0) + Number(response.data.points || 0))) } : item));
     setError(response.error);
     showToast("Đã cộng điểm thủ công");
-  };
-
-  const submitReward = async event => {
-    event.preventDefault();
-    const rewardOption = rewardOptions.find(item => item.label === rewardSelectValue) || rewardOptions[0];
-    const selectedUser = users.find(item => item.id === rewardForm.userId);
-    if (!rewardForm.userId || !selectedUser) {
-      showToast("Chọn người đổi thưởng trước khi tạo yêu cầu", "danger");
-      return;
-    }
-    if (Number(selectedUser.points || 0) < rewardOption.points) {
-      showToast("Người dùng chưa đủ Ecopoint để đổi phần thưởng này", "danger");
-      return;
-    }
-    const response = await saveRewardRedemption({
-      userId: rewardForm.userId,
-      rewardLabel: rewardOption.label,
-      costPoints: rewardOption.points,
-      status: "pending",
-    });
-    const user = users.find(item => item.id === response.data.userId);
-    setRewardRequests(current => [{ ...response.data, userName: user?.name || response.data.userId, userGroup: user?.group || "" }, ...current.filter(item => item.id !== response.data.id)]);
-    setError(response.error);
-    showToast("Đã tạo yêu cầu đổi thưởng");
   };
 
   const submitRewardCategory = async event => {
@@ -476,6 +444,14 @@ export default function EcoPointsPage() {
 
   const rankedUsers = userLeaderboard.map((row, index) => ({ ...row, rank: index + 1 }));
   const rankedGroups = groupLeaderboard.map((row, index) => ({ ...row, rank: index + 1 }));
+  const positiveHistory = filteredHistory.filter(row => Number(row.points || 0) > 0);
+  const totalGrantedPoints = positiveHistory.reduce((sum, row) => sum + Number(row.points || 0), 0);
+  const pendingSubmissions = submissions.filter(row => canRejectSubmission(row));
+  const pendingSubmissionCount = pendingSubmissions.length;
+  const pendingRewardCount = rewardRequests.filter(row => row.status === "pending").length + rewardBatches.filter(row => row.status === "pending").length;
+  const activeRewardProductCount = rewardProductsWithCategories.filter(row => row.status === "active").length;
+  const filterTabs = ["overview", "manual", "rankings"];
+  const showFilters = filterTabs.includes(activeTab);
 
   return (
     <div className="eg-page">
@@ -486,217 +462,279 @@ export default function EcoPointsPage() {
         </div>
         <div className="eg-button-row">
           <button type="button" className="eg-secondary-btn" onClick={refreshData}>Tải lại dữ liệu</button>
-          <button type="button" className="eg-primary-btn" onClick={saveRules}>Lưu quy tắc điểm</button>
+          {activeTab === "rules" && <button type="button" className="eg-primary-btn" onClick={saveRules}>Lưu quy tắc điểm</button>}
         </div>
       </div>
 
       {loading && <section className="eg-card eg-state-card">Đang tải quy tắc điểm...</section>}
       {error && <section className="eg-alert">Không tải được dữ liệu từ backend PostgreSQL. Kiểm tra cấu hình hoặc quyền truy cập.</section>}
 
-      <section className="eg-card eg-filter-panel" aria-label="Bộ lọc Ecopoint">
-        <label>
-          Từ ngày
-          <input type="date" value={filters.dateFrom} onChange={event => updateFilter("dateFrom", event.target.value)} />
-        </label>
-        <label>
-          Đến ngày
-          <input type="date" value={filters.dateTo} onChange={event => updateFilter("dateTo", event.target.value)} />
-        </label>
-        <label>
-          Lớp/khoa
-          <select aria-label="Lớp/khoa" value={filters.userGroup} onChange={event => updateFilter("group", event.target.value)}>
-            <option value="">Tất cả</option>
-            {visibleUserGroups.map(group => <option key={group} value={group}>{group}</option>)}
-          </select>
-        </label>
-        <label>
-          Nhóm rác
-          <select value={filters.binGroup} onChange={event => updateFilter("binGroup", event.target.value)}>
-            <option value="">Tất cả</option>
-            {BIN_GROUPS.map(group => <option key={group.id} value={group.label}>{group.label}</option>)}
-          </select>
-        </label>
-      </section>
+      <nav className="eg-tab-list" role="tablist" aria-label="Khu vực quản lý Ecopoint">
+        {ECOPOINT_TABS.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={activeTab === tab.id ? "eg-tab-button is-active" : "eg-tab-button"}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
-      <div className="eg-dashboard-grid">
-        <section className="eg-card">
-          <div className="eg-card-head"><h2>Điểm thủ công</h2></div>
-          <form className="eg-form eg-inline-form" onSubmit={submitManualPoint}>
-            <SearchableUserPicker
-              label="Người nhận điểm"
-              searchLabel="Tìm người nhận điểm"
-              users={users}
-              value={manualForm.userId}
-              query={manualUserQuery}
-              onQueryChange={setManualUserQuery}
-              onSelect={user => setManualForm(current => ({ ...current, userId: user.id }))}
-            />
-            <label>
-              Số điểm
-              <input aria-label="Số điểm" type="number" value={manualForm.points} onChange={event => setManualForm(current => ({ ...current, points: event.target.value }))} />
-            </label>
-            <label>
-              Lý do
-              <input aria-label="Lý do" value={manualForm.action} onChange={event => setManualForm(current => ({ ...current, action: event.target.value }))} />
-            </label>
-            <button type="submit" className="eg-primary-btn">Cộng điểm thủ công</button>
-          </form>
+      {showFilters && (
+        <section className="eg-card eg-filter-panel" aria-label="Bộ lọc Ecopoint">
+          <label>
+            Từ ngày
+            <input type="date" value={filters.dateFrom} onChange={event => updateFilter("dateFrom", event.target.value)} />
+          </label>
+          <label>
+            Đến ngày
+            <input type="date" value={filters.dateTo} onChange={event => updateFilter("dateTo", event.target.value)} />
+          </label>
+          <label>
+            Lớp/khoa
+            <select aria-label="Lớp/khoa" value={filters.userGroup} onChange={event => updateFilter("group", event.target.value)}>
+              <option value="">Tất cả</option>
+              {visibleUserGroups.map(group => <option key={group} value={group}>{group}</option>)}
+            </select>
+          </label>
+          <label>
+            Nhóm rác
+            <select value={filters.binGroup} onChange={event => updateFilter("binGroup", event.target.value)}>
+              <option value="">Tất cả</option>
+              {BIN_GROUPS.map(group => <option key={group.id} value={group.label}>{group.label}</option>)}
+            </select>
+          </label>
         </section>
+      )}
 
-        <section className="eg-card">
-          <div className="eg-card-head"><h2>Quy đổi phần thưởng</h2></div>
-          <form className="eg-form eg-reward-redemption-form" onSubmit={submitReward}>
-            <SearchableUserPicker
-              label="Người đổi thưởng"
-              searchLabel="Tìm người đổi thưởng"
-              users={users}
-              value={rewardForm.userId}
-              query={rewardUserQuery}
-              onQueryChange={setRewardUserQuery}
-              onSelect={user => setRewardForm(current => ({ ...current, userId: user.id }))}
-            />
-            <label>
-              Mốc phần thưởng
-              <select aria-label="Mốc phần thưởng" value={rewardSelectValue} onChange={event => setRewardForm(current => ({ ...current, rewardLabel: event.target.value }))}>
-                {rewardOptions.map(option => <option key={option.label} value={option.label}>{option.label}</option>)}
-              </select>
-            </label>
-            <button type="submit" className="eg-primary-btn">Tạo yêu cầu đổi thưởng</button>
-          </form>
-        </section>
-      </div>
-
-      <section className="eg-card">
-        <div className="eg-card-head"><h2>Sản phẩm đổi thưởng</h2></div>
-        <form className="eg-form eg-reward-product-form" onSubmit={submitRewardCategory}>
-          <label>
-            Tên danh mục
-            <input aria-label="Tên danh mục quà tặng" value={rewardCategoryForm.name} onChange={event => setRewardCategoryForm(current => ({ ...current, name: event.target.value }))} />
-          </label>
-          <label>
-            Trạng thái danh mục
-            <select aria-label="Trạng thái danh mục quà tặng" value={rewardCategoryForm.status} onChange={event => setRewardCategoryForm(current => ({ ...current, status: event.target.value }))}>
-              <option value="active">Đang áp dụng</option>
-              <option value="inactive">Tạm ẩn</option>
-            </select>
-          </label>
-          <label>
-            Màu danh mục
-            <input aria-label="Màu danh mục quà tặng" type="color" value={rewardCategoryForm.color} onChange={event => setRewardCategoryForm(current => ({ ...current, color: event.target.value }))} />
-          </label>
-          <label className="eg-wide-field">
-            Mô tả danh mục
-            <textarea aria-label="Mô tả danh mục quà tặng" rows="2" value={rewardCategoryForm.description} onChange={event => setRewardCategoryForm(current => ({ ...current, description: event.target.value }))} />
-          </label>
-          <div className="eg-form-actions">
-            {rewardCategoryForm.id && <button type="button" className="eg-secondary-btn" onClick={() => setRewardCategoryForm(initialRewardCategoryForm)}>Tạo mới</button>}
-            <button type="submit" className="eg-primary-btn">Lưu danh mục quà tặng</button>
-          </div>
-        </form>
-        <DataTable columns={rewardCategoryColumns} rows={rewardCategories} emptyText="Chưa có danh mục quà tặng." />
-
-        <form className="eg-form eg-reward-product-form" onSubmit={submitRewardProduct}>
-          <label>
-            Tên sản phẩm
-            <input aria-label="Tên sản phẩm" value={rewardProductForm.title} onChange={event => setRewardProductForm(current => ({ ...current, title: event.target.value }))} />
-          </label>
-          <label>
-            Danh mục
-            <select aria-label="Danh mục sản phẩm" value={rewardProductForm.categoryId} onChange={event => setRewardProductForm(current => ({ ...current, categoryId: event.target.value, categoryName: rewardCategories.find(category => category.id === event.target.value)?.name || "" }))}>
-              <option value="">Chưa phân loại</option>
-              {rewardCategories.filter(category => category.status === "active" || category.id === rewardProductForm.categoryId).map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
-            </select>
-          </label>
-          <label>
-            Điểm cần đổi
-            <input aria-label="Điểm cần đổi" type="number" min="0" value={rewardProductForm.costPoints} onChange={event => setRewardProductForm(current => ({ ...current, costPoints: event.target.value }))} />
-          </label>
-          <label>
-            Trạng thái
-            <select aria-label="Trạng thái sản phẩm" value={rewardProductForm.status} onChange={event => setRewardProductForm(current => ({ ...current, status: event.target.value }))}>
-              <option value="active">Đang áp dụng</option>
-              <option value="inactive">Tạm ẩn</option>
-            </select>
-          </label>
-          <label>
-            Màu hiển thị
-            <input aria-label="Màu hiển thị" type="color" value={rewardProductForm.color} onChange={event => setRewardProductForm(current => ({ ...current, color: event.target.value }))} />
-          </label>
-          <label className="eg-wide-field">
-            Mô tả sản phẩm
-            <textarea aria-label="Mô tả sản phẩm" rows="3" value={rewardProductForm.description} onChange={event => setRewardProductForm(current => ({ ...current, description: event.target.value }))} />
-          </label>
-          <div className="eg-form-actions">
-            {rewardProductForm.id && <button type="button" className="eg-secondary-btn" onClick={() => setRewardProductForm(initialRewardProductForm)}>Tạo mới</button>}
-            <button type="submit" className="eg-primary-btn">Lưu sản phẩm đổi thưởng</button>
-          </div>
-        </form>
-        <DataTable columns={rewardProductColumns} rows={rewardProductsWithCategories} emptyText="Chưa có sản phẩm đổi thưởng." />
-      </section>
-
-      <section className="eg-card">
-        <div className="eg-card-head">
-          <div>
-            <h2>Giao dịch gửi rác</h2>
-            <p>Theo dõi QR sinh viên, ảnh minh chứng và trạng thái xác minh từ tình nguyện viên.</p>
-          </div>
-        </div>
-        <DataTable columns={submissionColumns} rows={submissions} emptyText="Chưa có giao dịch gửi rác." />
-      </section>
-
-      <div className="eg-rule-grid">
-        {rules.map(rule => (
-          <section className="eg-card eg-rule-card" key={rule.id}>
-            <div className="eg-card-head compact">
-              <div>
-                <h2>{rule.label}</h2>
-                <p>{rule.classKeys.join(", ")}</p>
-              </div>
-              <StatusBadge group={rule.binGroup}>{rule.binGroup}</StatusBadge>
+      <div className="eg-tab-panel">
+        {activeTab === "overview" && (
+          <>
+            <div className="eg-stat-grid">
+              <article className="eg-stat-card tone-green">
+                <div><span>Ecopoint đã cấp</span><strong>{totalGrantedPoints}</strong><small>{positiveHistory.length} lượt cộng theo bộ lọc</small></div>
+              </article>
+              <article className="eg-stat-card tone-orange">
+                <div><span>Giao dịch cần xử lý</span><strong>{pendingSubmissionCount}</strong><small>QR gửi rác còn mở</small></div>
+              </article>
+              <article className="eg-stat-card">
+                <div><span>Đổi thưởng chờ duyệt</span><strong>{pendingRewardCount}</strong><small>Yêu cầu và mã QR quà</small></div>
+              </article>
+              <article className="eg-stat-card tone-green">
+                <div><span>Sản phẩm đang đổi</span><strong>{activeRewardProductCount}</strong><small>{rewardCategories.length} danh mục quà tặng</small></div>
+              </article>
             </div>
-            <label>
-              Điểm cho {rule.binGroup}
-              <input type="number" min="0" value={rule.points} onChange={event => updateRule(rule.id, { points: Number(event.target.value) })} />
-            </label>
-            <label className="eg-switch">
-              <input type="checkbox" checked={rule.enabled} onChange={event => updateRule(rule.id, { enabled: event.target.checked })} />
-              <span>Đang áp dụng</span>
-            </label>
-          </section>
-        ))}
-      </div>
+            <div className="eg-dashboard-grid">
+              <section className="eg-card">
+                <div className="eg-card-head"><h2>Top sinh viên</h2></div>
+                {rankedUsers.length === 0 ? <p className="eg-muted-block">Chưa có điểm theo bộ lọc.</p> : (
+                  <div className="eg-ecopoint-rank-list">
+                    {rankedUsers.slice(0, 5).map(row => (
+                      <div key={row.id || row.name} className="eg-ecopoint-rank-item">
+                        <span className="eg-rank-number">{row.rank}</span>
+                        <div>
+                          <strong>{row.name}</strong>
+                          <span>{row.group || "Không rõ lớp/khoa"}</span>
+                        </div>
+                        <strong>{row.totalPoints}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+              <section className="eg-card">
+                <div className="eg-card-head"><h2>Việc cần xử lý</h2></div>
+                {pendingSubmissions.length === 0 ? <p className="eg-muted-block">Không có giao dịch gửi rác cần xử lý.</p> : (
+                  <div className="eg-ecopoint-action-list">
+                    {pendingSubmissions.slice(0, 5).map(row => (
+                      <button key={row.id || row.qrToken} type="button" className="eg-ecopoint-action-item" onClick={() => setActiveTab("submissions")}>
+                        <strong>{row.userName}</strong>
+                        <span>{row.wasteTypeName || "Chưa rõ loại rác"} · {row.qrToken}</span>
+                        <StatusBadge status={row.status}>{submissionStatusLabel(row.status)}</StatusBadge>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </>
+        )}
 
-      <div className="eg-dashboard-grid">
-        <section className="eg-card">
-          <div className="eg-card-head"><h2>Bảng xếp hạng cá nhân</h2></div>
-          <DataTable columns={userColumns} rows={rankedUsers} emptyText="Chưa có điểm theo bộ lọc." />
-        </section>
-        <section className="eg-card">
-          <div className="eg-card-head"><h2>Bảng xếp hạng lớp/khoa</h2></div>
-          <DataTable columns={groupColumns} rows={rankedGroups} emptyText="Chưa có lớp/khoa có điểm." />
-        </section>
-      </div>
+        {activeTab === "manual" && (
+          <>
+            <section className="eg-card">
+              <div className="eg-card-head"><h2>Điểm thủ công</h2></div>
+              <form className="eg-form eg-inline-form" onSubmit={submitManualPoint}>
+                <SearchableUserPicker
+                  label="Người nhận điểm"
+                  searchLabel="Tìm người nhận điểm"
+                  users={users}
+                  value={manualForm.userId}
+                  query={manualUserQuery}
+                  onQueryChange={setManualUserQuery}
+                  onSelect={user => setManualForm(current => ({ ...current, userId: user.id }))}
+                />
+                <label>
+                  Số điểm
+                  <input aria-label="Số điểm" type="number" value={manualForm.points} onChange={event => setManualForm(current => ({ ...current, points: event.target.value }))} />
+                </label>
+                <label>
+                  Lý do
+                  <input aria-label="Lý do" value={manualForm.action} onChange={event => setManualForm(current => ({ ...current, action: event.target.value }))} />
+                </label>
+                <button type="submit" className="eg-primary-btn">Cộng điểm thủ công</button>
+              </form>
+            </section>
+            <section className="eg-card">
+              <div className="eg-card-head"><h2>Lịch sử cộng điểm</h2></div>
+              <DataTable columns={historyColumns} rows={filteredHistory} emptyText="Chưa có lịch sử cộng điểm." />
+            </section>
+          </>
+        )}
 
-      <section className="eg-card">
-        <div className="eg-card-head"><h2>Lịch sử cộng điểm</h2></div>
-        <DataTable columns={historyColumns} rows={filteredHistory} emptyText="Chưa có lịch sử cộng điểm." />
-      </section>
-
-      <section className="eg-card">
-        <div className="eg-card-head"><h2>Yêu cầu đổi thưởng</h2></div>
-        <DataTable columns={rewardColumns} rows={rewardRequests} emptyText="Chưa có yêu cầu đổi thưởng." />
-      </section>
-      <section className="eg-card">
-        <div className="eg-card-head"><h2>Mã QR đổi thưởng</h2></div>
-        {rewardBatches.length === 0 ? <p>Chưa có mã QR đổi thưởng.</p> : rewardBatches.map(batch => (
-          <div key={batch.id} className="eg-list-row">
-            <div><strong>{batch.id}</strong><p>{batch.items?.map(item => `${item.rewardTitle} x${item.quantity}`).join(', ')}</p></div>
-            <div><StatusBadge group={batch.status}>{batch.status}</StatusBadge><div className="eg-button-row">
-              {batch.status === "fulfilled" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "cancelled")}>Hoàn tác đổi thưởng</button>}
-            </div></div>
+        {activeTab === "rules" && (
+          <div className="eg-rule-grid">
+            {rules.map(rule => (
+              <section className="eg-card eg-rule-card" key={rule.id}>
+                <div className="eg-card-head compact">
+                  <div>
+                    <h2>{rule.label}</h2>
+                    <p>{rule.classKeys.join(", ")}</p>
+                  </div>
+                  <StatusBadge group={rule.binGroup}>{rule.binGroup}</StatusBadge>
+                </div>
+                <label>
+                  Điểm cho {rule.binGroup}
+                  <input type="number" min="0" value={rule.points} onChange={event => updateRule(rule.id, { points: Number(event.target.value) })} />
+                </label>
+                <label className="eg-switch">
+                  <input type="checkbox" checked={rule.enabled} onChange={event => updateRule(rule.id, { enabled: event.target.checked })} />
+                  <span>Đang áp dụng</span>
+                </label>
+              </section>
+            ))}
           </div>
-        ))}
-      </section>
+        )}
+
+        {activeTab === "catalog" && (
+          <section className="eg-card">
+            <div className="eg-card-head"><h2>Sản phẩm đổi thưởng</h2></div>
+            <form className="eg-form eg-reward-product-form" onSubmit={submitRewardCategory}>
+              <label>
+                Tên danh mục
+                <input aria-label="Tên danh mục quà tặng" value={rewardCategoryForm.name} onChange={event => setRewardCategoryForm(current => ({ ...current, name: event.target.value }))} />
+              </label>
+              <label>
+                Trạng thái danh mục
+                <select aria-label="Trạng thái danh mục quà tặng" value={rewardCategoryForm.status} onChange={event => setRewardCategoryForm(current => ({ ...current, status: event.target.value }))}>
+                  <option value="active">Đang áp dụng</option>
+                  <option value="inactive">Tạm ẩn</option>
+                </select>
+              </label>
+              <label>
+                Màu danh mục
+                <input aria-label="Màu danh mục quà tặng" type="color" value={rewardCategoryForm.color} onChange={event => setRewardCategoryForm(current => ({ ...current, color: event.target.value }))} />
+              </label>
+              <label className="eg-wide-field">
+                Mô tả danh mục
+                <textarea aria-label="Mô tả danh mục quà tặng" rows="2" value={rewardCategoryForm.description} onChange={event => setRewardCategoryForm(current => ({ ...current, description: event.target.value }))} />
+              </label>
+              <div className="eg-form-actions">
+                {rewardCategoryForm.id && <button type="button" className="eg-secondary-btn" onClick={() => setRewardCategoryForm(initialRewardCategoryForm)}>Tạo mới</button>}
+                <button type="submit" className="eg-primary-btn">Lưu danh mục quà tặng</button>
+              </div>
+            </form>
+            <DataTable columns={rewardCategoryColumns} rows={rewardCategories} emptyText="Chưa có danh mục quà tặng." />
+
+            <form className="eg-form eg-reward-product-form" onSubmit={submitRewardProduct}>
+              <label>
+                Tên sản phẩm
+                <input aria-label="Tên sản phẩm" value={rewardProductForm.title} onChange={event => setRewardProductForm(current => ({ ...current, title: event.target.value }))} />
+              </label>
+              <label>
+                Danh mục
+                <select aria-label="Danh mục sản phẩm" value={rewardProductForm.categoryId} onChange={event => setRewardProductForm(current => ({ ...current, categoryId: event.target.value, categoryName: rewardCategories.find(category => category.id === event.target.value)?.name || "" }))}>
+                  <option value="">Chưa phân loại</option>
+                  {rewardCategories.filter(category => category.status === "active" || category.id === rewardProductForm.categoryId).map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Điểm cần đổi
+                <input aria-label="Điểm cần đổi" type="number" min="0" value={rewardProductForm.costPoints} onChange={event => setRewardProductForm(current => ({ ...current, costPoints: event.target.value }))} />
+              </label>
+              <label>
+                Trạng thái
+                <select aria-label="Trạng thái sản phẩm" value={rewardProductForm.status} onChange={event => setRewardProductForm(current => ({ ...current, status: event.target.value }))}>
+                  <option value="active">Đang áp dụng</option>
+                  <option value="inactive">Tạm ẩn</option>
+                </select>
+              </label>
+              <label>
+                Màu hiển thị
+                <input aria-label="Màu hiển thị" type="color" value={rewardProductForm.color} onChange={event => setRewardProductForm(current => ({ ...current, color: event.target.value }))} />
+              </label>
+              <label className="eg-wide-field">
+                Mô tả sản phẩm
+                <textarea aria-label="Mô tả sản phẩm" rows="3" value={rewardProductForm.description} onChange={event => setRewardProductForm(current => ({ ...current, description: event.target.value }))} />
+              </label>
+              <div className="eg-form-actions">
+                {rewardProductForm.id && <button type="button" className="eg-secondary-btn" onClick={() => setRewardProductForm(initialRewardProductForm)}>Tạo mới</button>}
+                <button type="submit" className="eg-primary-btn">Lưu sản phẩm đổi thưởng</button>
+              </div>
+            </form>
+            <DataTable columns={rewardProductColumns} rows={rewardProductsWithCategories} emptyText="Chưa có sản phẩm đổi thưởng." />
+          </section>
+        )}
+
+        {activeTab === "submissions" && (
+          <section className="eg-card">
+            <div className="eg-card-head">
+              <div>
+                <h2>Giao dịch gửi rác</h2>
+                <p>Theo dõi QR sinh viên, ảnh minh chứng và trạng thái xác minh từ tình nguyện viên.</p>
+              </div>
+            </div>
+            <DataTable columns={submissionColumns} rows={submissions} emptyText="Chưa có giao dịch gửi rác." />
+          </section>
+        )}
+
+        {activeTab === "redemptions" && (
+          <>
+            <section className="eg-card">
+              <div className="eg-card-head"><h2>Yêu cầu đổi thưởng</h2></div>
+              <DataTable columns={rewardColumns} rows={rewardRequests} emptyText="Chưa có yêu cầu đổi thưởng." />
+            </section>
+            <section className="eg-card">
+              <div className="eg-card-head"><h2>Mã QR đổi thưởng</h2></div>
+              {rewardBatches.length === 0 ? <p>Chưa có mã QR đổi thưởng.</p> : rewardBatches.map(batch => (
+                <div key={batch.id} className="eg-list-row">
+                  <div><strong>{batch.id}</strong><p>{batch.items?.map(item => `${item.rewardTitle} x${item.quantity}`).join(', ')}</p></div>
+                  <div><StatusBadge group={batch.status}>{batch.status}</StatusBadge><div className="eg-button-row">
+                    {batch.status === "fulfilled" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "cancelled")}>Hoàn tác đổi thưởng</button>}
+                  </div></div>
+                </div>
+              ))}
+            </section>
+          </>
+        )}
+
+        {activeTab === "rankings" && (
+          <div className="eg-dashboard-grid">
+            <section className="eg-card">
+              <div className="eg-card-head"><h2>Bảng xếp hạng cá nhân</h2></div>
+              <DataTable columns={userColumns} rows={rankedUsers} emptyText="Chưa có điểm theo bộ lọc." />
+            </section>
+            <section className="eg-card">
+              <div className="eg-card-head"><h2>Bảng xếp hạng lớp/khoa</h2></div>
+              <DataTable columns={groupColumns} rows={rankedGroups} emptyText="Chưa có lớp/khoa có điểm." />
+            </section>
+          </div>
+        )}
+      </div>
       <Toast message={toast} tone={toastTone} onClose={() => setToast("")} />
     </div>
   );

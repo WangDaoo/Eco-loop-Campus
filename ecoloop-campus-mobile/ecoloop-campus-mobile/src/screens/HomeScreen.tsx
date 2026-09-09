@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Pressable, StyleSheet, Text, View, Alert } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { SyncStatusBadge } from '../components/SyncStatusBadge';
@@ -25,12 +25,15 @@ export default function HomeScreen({ navigation }: Props) {
     setClickedTaskId(id);
     setTimeout(() => setClickedTaskId(null), 200);
 
-    if (actionLabel.toLowerCase().includes('gửi rác') || actionLabel.toLowerCase().includes('quét') || actionLabel.toLowerCase().includes('scan') || id === 'scan') {
+    const taskKey = `${id} ${actionLabel}`.toLowerCase();
+    if (taskKey.includes('phản hồi') || taskKey.includes('feedback')) {
+      navigation.navigate('Submit', { focusFeedback: true });
+    } else if (taskKey.includes('gửi rác') || taskKey.includes('quét') || taskKey.includes('scan') || id === 'scan') {
       navigation.navigate('Submit');
-    } else if (actionLabel.toLowerCase().includes('đổi') || actionLabel.toLowerCase().includes('quà') || id === 'redeem') {
+    } else if (taskKey.includes('đổi') || taskKey.includes('quà') || id === 'redeem') {
       navigation.navigate('Rewards');
     } else {
-      Alert.alert('Thành công', `Thực hiện hành động: ${actionLabel}`);
+      navigation.navigate('Submit');
     }
   };
 

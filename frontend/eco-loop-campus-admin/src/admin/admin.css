@@ -813,6 +813,135 @@ a.eg-priority-item:focus-visible {
   font: inherit;
 }
 
+.eg-tab-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px;
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius);
+  background: #f8fafc;
+}
+
+.eg-tab-button {
+  min-height: 38px;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--eg-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.eg-tab-button:hover,
+.eg-tab-button:focus-visible {
+  border-color: var(--eg-border-strong);
+  color: var(--eg-heading);
+  outline: none;
+}
+
+.eg-tab-button.is-active {
+  border-color: #bfdbfe;
+  background: #ffffff;
+  color: var(--eg-primary);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.eg-tab-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.eg-ecopoint-action-list {
+  display: grid;
+  gap: 10px;
+}
+
+.eg-ecopoint-rank-list {
+  display: grid;
+  gap: 8px;
+}
+
+.eg-ecopoint-rank-item {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius);
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.eg-ecopoint-rank-item div {
+  min-width: 0;
+}
+
+.eg-ecopoint-rank-item strong,
+.eg-ecopoint-rank-item span {
+  display: block;
+}
+
+.eg-ecopoint-rank-item div span {
+  color: var(--eg-muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eg-ecopoint-action-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius);
+  padding: 12px;
+  background: #ffffff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eg-ecopoint-action-item:hover,
+.eg-ecopoint-action-item:focus-visible {
+  border-color: var(--eg-border-strong);
+  background: #f8fbff;
+  outline: none;
+}
+
+.eg-ecopoint-action-item strong,
+.eg-ecopoint-action-item span {
+  min-width: 0;
+}
+
+.eg-ecopoint-action-item > strong,
+.eg-ecopoint-action-item > span {
+  grid-column: 1;
+}
+
+.eg-ecopoint-action-item span {
+  color: var(--eg-muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eg-ecopoint-action-item .eg-badge {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
 .eg-command-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2118,7 +2247,6 @@ a.eg-priority-item:focus-visible {
   justify-content: center;
 }
 
-.eg-reward-redemption-form,
 .eg-reward-product-form {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   align-items: end;
@@ -2244,7 +2372,6 @@ a.eg-priority-item:focus-visible {
   transform: rotate(-18deg);
 }
 
-.eg-reward-redemption-form .eg-primary-btn,
 .eg-reward-product-form .eg-primary-btn {
   min-height: 42px;
 }

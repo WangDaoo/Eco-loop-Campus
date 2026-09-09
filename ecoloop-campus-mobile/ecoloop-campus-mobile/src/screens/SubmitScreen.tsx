@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -40,8 +40,10 @@ function aiRuntimeLabel(suggestion: AiSuggestion) {
   return 'AI';
 }
 
-export default function SubmitScreen() {
+export default function SubmitScreen({ route }: any) {
   const { stations, wasteTypes, createSubmission, saveAiPrediction, submitFeedback, isLoading, syncSource } = useAppContext();
+  const scrollRef = useRef<ScrollView>(null);
+  const feedbackCardRef = useRef<View>(null);
   const [stationCameraPermission, requestStationCameraPermission] = useCameraPermissions();
   const isFocused = useIsFocused();
   const { width: windowWidth } = useWindowDimensions();
@@ -92,6 +94,12 @@ export default function SubmitScreen() {
     const timer = setInterval(() => setClockNow(new Date()), 15000);
     return () => clearInterval(timer);
   }, [latestSubmission]);
+
+  useEffect(() => {
+    if (!route?.params?.focusFeedback || !isFocused) return;
+    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 250);
+    return () => clearTimeout(timer);
+  }, [isFocused, route?.params?.focusFeedback]);
 
   const startStationScanner = async () => {
     if (!stationCameraPermission?.granted) {
@@ -227,7 +235,7 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
   };
 
   return (
-    <Screen style={styles.container} scroll noPadding>
+    <Screen style={styles.container} scroll noPadding scrollRef={scrollRef}>
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Khai báo Tái chế</Text>
@@ -390,7 +398,7 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
           </View>
         )}
 
-        <View style={styles.glassCard}>
+        <View ref={feedbackCardRef} style={styles.glassCard}>
           <Text style={styles.sectionTitle}>Báo cáo sự cố</Text>
           <View style={styles.typeRow}>
             {feedbackTypes.map(type => (

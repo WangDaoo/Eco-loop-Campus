@@ -171,9 +171,12 @@ Supabase is no longer the runtime database/auth provider. Some Supabase SQL file
 
 ### Ecopoint
 
-- Configure point rules for waste groups.
-- View point history and user leaderboard.
-- Reward redemptions are stored in PostgreSQL.
+- Admin page is organized into focused tabs: overview, manual points, point rules, reward products, recycling submissions, reward redemptions and leaderboard.
+- Overview shows Ecopoint KPIs, top students and pending recycling work without mixing every table into one long screen.
+- Configure point rules for waste groups from the dedicated point-rule tab.
+- Award manual points from the manual-points tab and keep point history visible for audit.
+- Manage reward categories and reward products from the reward product catalog tab.
+- Reward redemption history and reward QR batches are stored in PostgreSQL and are only reviewed/confirmed from admin; admins do not create reward redemptions manually on the Ecopoint page.
 - Points are awarded through backend transaction/RPC-style logic, not directly by the client.
 - QR flow blocks expired, reused, wrong-station and invalid tokens.
 
@@ -270,6 +273,12 @@ Default admin:
 
 ```text
 admin@school.edu.vn / 123456
+```
+
+UAT/demo data seeded with `backend/local_db/seed_utehy_demo_data.py` uses:
+
+```text
+admin@utehy.edu.vn / 123456
 ```
 
 Override admin before setup:

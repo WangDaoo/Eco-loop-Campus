@@ -1,4 +1,5 @@
 import { UserProfile } from '../types';
+import { resolveFacultyDisplayName } from './facultyPresentation';
 
 export type LeaderboardRow = {
   id: string;
@@ -23,7 +24,7 @@ export function selectLeaderboardUsers(users: UserProfile[], limit = 10): Leader
       rank: index + 1,
       name: user.name,
       points: safePoints(user.points),
-      displayMeta: user.group || user.role,
+      displayMeta: resolveFacultyDisplayName(user),
     }));
 }
 

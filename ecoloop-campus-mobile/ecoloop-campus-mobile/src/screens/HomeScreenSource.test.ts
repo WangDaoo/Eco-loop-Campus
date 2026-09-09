@@ -15,3 +15,8 @@ test('HomeScreen uses the refreshed campus task frame', () => {
   assert.match(source, /Nhiệm vụ tuần/);
   assert.match(source, /navigation\.navigate\('Submit'\)/);
 });
+
+test('HomeScreen opens the real feedback form for feedback missions', () => {
+  assert.match(source, /focusFeedback:\s*true/);
+  assert.doesNotMatch(source, /Thực hiện hành động: \$\{actionLabel\}/);
+});

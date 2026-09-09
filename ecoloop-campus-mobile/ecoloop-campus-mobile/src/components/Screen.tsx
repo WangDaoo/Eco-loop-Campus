@@ -11,6 +11,7 @@ interface ScreenProps extends ViewProps {
   noPadding?: boolean;
   scroll?: boolean;
   scrollEnabled?: boolean;
+  scrollRef?: React.Ref<ScrollView>;
   contentContainerStyle?: StyleProp<ViewStyle>;
   bottomClearance?: number;
 }
@@ -21,6 +22,7 @@ export function Screen({
   noPadding = false,
   scroll = false,
   scrollEnabled = true,
+  scrollRef,
   contentContainerStyle,
   bottomClearance = DEFAULT_BOTTOM_CLEARANCE,
   ...props
@@ -38,6 +40,7 @@ export function Screen({
     <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       {scroll ? (
         <ScrollView
+          ref={scrollRef}
           style={styles.container}
           scrollEnabled={scrollEnabled}
           contentContainerStyle={[styles.scrollContent, contentContainerStyle, { paddingBottom: bottomPadding }]}
