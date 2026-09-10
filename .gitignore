@@ -12,6 +12,7 @@ __pycache__/
 .pytest_cache/
 
 build/
+.build-public-*/
 dist/
 coverage/
 .cache/

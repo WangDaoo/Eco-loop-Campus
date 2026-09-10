@@ -45,6 +45,15 @@ Assert-Contains $frontendBat 'npm run build' 'start_frontend.bat must build the 
 Assert-Contains $frontendBat 'serve_cra_build.js' 'start_frontend.bat must serve the production build.'
 Assert-Contains $frontendBat 'release_ecoloop_port.ps1' 'start_frontend.bat must release stale Eco-loop web processes before binding the web port.'
 Assert-Contains $frontendBat 'set "WEB_PORT=3002"' 'start_frontend.bat must default web to port 3002 because 3000 is commonly occupied by desktop tools.'
+Assert-Contains $frontendBat 'set "BUILD_PATH=.build-public-' 'start_frontend.bat must build each public web release in a fresh CRA build directory.'
+Assert-Contains $frontendBat 'set "WEB_BUILD_DIR=' 'start_frontend.bat must serve the fresh build directory instead of the locked default build folder.'
+Assert-Contains $frontendBat 'WEB_BUILD_DIR%\index.html' 'start_frontend.bat must verify the fresh build output before serving it.'
+if ($frontendBat.IndexOf('release_ecoloop_port.ps1', [StringComparison]::OrdinalIgnoreCase) -gt $frontendBat.IndexOf('npm run build', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'start_frontend.bat must release stale web processes before npm run build so Windows does not keep generated build files open.'
+}
+if ($frontendBat.IndexOf('BUILD_PATH=', [StringComparison]::OrdinalIgnoreCase) -gt $frontendBat.IndexOf('npm run build', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'start_frontend.bat must set BUILD_PATH before npm run build.'
+}
 Assert-Contains (Read-RepoFile 'scripts\serve_cra_build.js') 'process.env.WEB_PORT || 3002' 'serve_cra_build.js must default web to port 3002 when launched directly.'
 
 Assert-Contains $serverSetupBat '-WithPostgres' 'setup_server_full.bat must install/check native PostgreSQL instead of Docker.'

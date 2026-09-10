@@ -15,7 +15,7 @@ param(
     [string] $CloudflaredPath = ''
 )
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot 'uat_process_helpers.ps1')
 
 if ([string]::IsNullOrWhiteSpace($CloudflaredPath)) {

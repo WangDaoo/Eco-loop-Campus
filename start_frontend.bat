@@ -41,6 +41,24 @@ if "%REACT_APP_API_URL%"=="" (
     )
 )
 
+cd /d "%PROJECT_DIR%"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\release_ecoloop_port.ps1" -Port %WEB_PORT% -Name "Eco-loop Campus Web" -ProjectDir "%PROJECT_DIR%"
+if errorlevel 1 (
+    echo [ERROR] Port web %WEB_PORT% dang bi chiem.
+    pause
+    exit /b 1
+)
+
+echo [INFO] Dang don cac thu muc build public cu neu khong bi khoa...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$frontend = [IO.Path]::GetFullPath('%FRONTEND_DIR%');" ^
+  "Get-ChildItem -LiteralPath $frontend -Directory -Filter '.build-public-*' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"
+
+set "BUILD_PATH=.build-public-%RANDOM%-%RANDOM%"
+set "WEB_BUILD_DIR=%FRONTEND_DIR%\%BUILD_PATH%"
+echo [INFO] Build web moi tai: %WEB_BUILD_DIR%
+
 cd /d "%FRONTEND_DIR%"
 
 if not exist "node_modules" (
@@ -61,14 +79,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-cd /d "%PROJECT_DIR%"
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\release_ecoloop_port.ps1" -Port %WEB_PORT% -Name "Eco-loop Campus Web" -ProjectDir "%PROJECT_DIR%"
-if errorlevel 1 (
-    echo [ERROR] Port web %WEB_PORT% dang bi chiem.
+if not exist "%WEB_BUILD_DIR%\index.html" (
+    echo [ERROR] Khong tim thay index.html trong build moi:
+    echo %WEB_BUILD_DIR%
     pause
     exit /b 1
 )
+
+cd /d "%PROJECT_DIR%"
 
 echo [INFO] Dang mo web public tunnel...
 start "Eco-loop Campus Web Public" powershell -NoExit -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%\run_cloudflared_tunnel.ps1" -Name "Eco-loop Campus Web" -Url "http://%WEB_HOST%:%WEB_PORT%" -OutFile "%RUNTIME_DIR%\web_public_url.txt"
