@@ -242,6 +242,22 @@ class AppEndpointTests(unittest.TestCase):
             ["https://admin.example.vn", "http://localhost:3000"],
         )
 
+    def test_cors_allows_https_cloudflare_quick_tunnel_origin(self):
+        response = self.client.options(
+            "/api/auth/login",
+            headers={
+                "Origin": "https://writings-nuke-coordinated-medications.trycloudflare.com",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers.get("access-control-allow-origin"),
+            "https://writings-nuke-coordinated-medications.trycloudflare.com",
+        )
+
     def test_predict_returns_model_not_loaded_when_model_missing(self):
         app.model = None
 

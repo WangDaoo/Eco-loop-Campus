@@ -83,6 +83,7 @@ def parse_cors_origins(raw_origins):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=parse_cors_origins(os.getenv("CORS_ORIGINS")),
+    allow_origin_regex=r"https://[A-Za-z0-9-]+\.trycloudflare\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
