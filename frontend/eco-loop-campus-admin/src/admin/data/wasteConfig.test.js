@@ -1,4 +1,4 @@
-import { getBinGroup, getGroupColor, getWasteLabel, normalizePrediction } from "./wasteConfig";
+import { DEFAULT_POINT_RULES, getBinGroup, getGroupColor, getWasteLabel, normalizePrediction } from "./wasteConfig";
 
 test("maps all AI classes into the expected school bin groups", () => {
   expect(getBinGroup("biological")).toBe("Hữu cơ");
@@ -11,6 +11,27 @@ test("maps all AI classes into the expected school bin groups", () => {
   expect(getBinGroup("clothes")).toBe("Còn lại");
   expect(getBinGroup("shoes")).toBe("Còn lại");
   expect(getBinGroup("trash")).toBe("Còn lại");
+});
+
+test("default point rules keep each AI class key separated by bin group", () => {
+  const groupsByClassKey = Object.fromEntries(
+    DEFAULT_POINT_RULES.map(rule => [rule.classKeys[0], rule.binGroup])
+  );
+
+  expect(DEFAULT_POINT_RULES).toHaveLength(10);
+  expect(DEFAULT_POINT_RULES.every(rule => rule.classKeys.length === 1)).toBe(true);
+  expect(groupsByClassKey).toEqual({
+    battery: "Pin / nguy hại",
+    biological: "Hữu cơ",
+    cardboard: "Tái chế",
+    clothes: "Còn lại",
+    glass: "Tái chế",
+    metal: "Tái chế",
+    paper: "Tái chế",
+    plastic: "Tái chế",
+    shoes: "Còn lại",
+    trash: "Còn lại",
+  });
 });
 
 test("falls back safely for unknown waste classes", () => {

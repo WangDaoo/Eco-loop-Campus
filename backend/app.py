@@ -1271,16 +1271,16 @@ def update_mobile_user_avatar(user_id, avatar_key):
 
 def prediction_bin_group(class_name, fallback="Khác"):
     groups = {
-        "battery": "Nguy hại",
+        "battery": "Pin / nguy hại",
         "biological": "Hữu cơ",
         "cardboard": "Tái chế",
         "glass": "Tái chế",
         "metal": "Tái chế",
         "paper": "Tái chế",
         "plastic": "Tái chế",
-        "clothes": "Tái sử dụng",
-        "shoes": "Tái sử dụng",
-        "trash": "Rác thường",
+        "clothes": "Còn lại",
+        "shoes": "Còn lại",
+        "trash": "Còn lại",
     }
     return groups.get(str(class_name or "").strip().lower(), fallback)
 

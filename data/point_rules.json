@@ -1,0 +1,82 @@
+[
+  {
+    "id": "POINT_RULE_BATTERY",
+    "label": "Pin",
+    "class_keys": ["battery"],
+    "bin_group": "Pin / nguy hại",
+    "points": 8,
+    "enabled": true
+  },
+  {
+    "id": "POINT_RULE_BIOLOGICAL",
+    "label": "Rác hữu cơ",
+    "class_keys": ["biological"],
+    "bin_group": "Hữu cơ",
+    "points": 3,
+    "enabled": true
+  },
+  {
+    "id": "POINT_RULE_CARDBOARD",
+    "label": "Bìa carton",
+    "class_keys": ["cardboard"],
+    "bin_group": "Tái chế",
+    "points": 5,
+    "enabled": true
+  },
+  {
+    "id": "POINT_RULE_CLOTHES",
+    "label": "Quần áo",
+    "class_keys": ["clothes"],
+    "bin_group": "Còn lại",
+    "points": 0,
+    "enabled": false
+  },
+  {
+    "id": "POINT_RULE_GLASS",
+    "label": "Thủy tinh",
+    "class_keys": ["glass"],
+    "bin_group": "Tái chế",
+    "points": 5,
+    "enabled": true
+  },
+  {
+    "id": "POINT_RULE_METAL",
+    "label": "Kim loại",
+    "class_keys": ["metal"],
+    "bin_group": "Tái chế",
+    "points": 5,
+    "enabled": true
+  },
+  {
+    "id": "POINT_RULE_PAPER",
+    "label": "Giấy",
+    "class_keys": ["paper"],
+    "bin_group": "Tái chế",
+    "points": 5,
+    "enabled": true
+  },
+  {
+    "id": "POINT_RULE_PLASTIC",
+    "label": "Nhựa",
+    "class_keys": ["plastic"],
+    "bin_group": "Tái chế",
+    "points": 5,
+    "enabled": true
+  },
+  {
+    "id": "POINT_RULE_SHOES",
+    "label": "Giày dép",
+    "class_keys": ["shoes"],
+    "bin_group": "Còn lại",
+    "points": 0,
+    "enabled": false
+  },
+  {
+    "id": "POINT_RULE_TRASH",
+    "label": "Rác còn lại",
+    "class_keys": ["trash"],
+    "bin_group": "Còn lại",
+    "points": 0,
+    "enabled": false
+  }
+]
