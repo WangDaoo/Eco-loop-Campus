@@ -20,6 +20,7 @@ declare
   v_scan jsonb;
   v_confirm jsonb;
   v_submission_id text;
+  v_qr_points integer;
   v_points integer;
 begin
   select payload into v_payload from _e2e_submission;
@@ -38,9 +39,17 @@ begin
     raise exception 'Expected POINT_CONFIRMED, got %', v_confirm;
   end if;
 
+  select coalesce(sum(points), 0) into v_qr_points
+  from point_history
+  where submission_id = v_submission_id
+    and source = 'qr_submission';
+  if v_qr_points <> 10 then
+    raise exception 'Expected 10 QR points, got %', v_qr_points;
+  end if;
+
   select points into v_points from users where id = 'E2E_STUDENT';
-  if v_points <> 10 then
-    raise exception 'Expected 10 points, got %', v_points;
+  if v_points < v_qr_points then
+    raise exception 'Expected at least % points, got %', v_qr_points, v_points;
   end if;
 end $$;
 
