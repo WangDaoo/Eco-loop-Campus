@@ -25,6 +25,24 @@ def test_auth_token_roundtrip_and_tamper_rejection():
     assert app.verify_auth_token(f"{token}tampered") is None
 
 
+@pytest.mark.parametrize(
+    "email",
+    [
+        "10123001@school.edu.vn",
+        "student.test@utehy.edu.vn",
+        "student.test@hyute.edu.vn",
+        "student.test@gmail.com",
+        "student.test@hotmail.com",
+    ],
+)
+def test_validate_school_email_accepts_supported_domains(email):
+    app.validate_school_email(email)
+
+
+def test_validate_school_email_rejects_unknown_domains():
+    with pytest.raises(app.AuthError, match="INVALID_SCHOOL_EMAIL"):
+        app.validate_school_email("student.test@example.com")
+
 def test_register_student_creates_active_account(client, monkeypatch):
     def fake_register_user_account(payload):
         assert payload["email"] == "student@school.edu.vn"

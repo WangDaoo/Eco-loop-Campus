@@ -1,0 +1,130 @@
+{
+  "waste_types": [
+    {
+      "id": "battery",
+      "name": "Pin / rác nguy hại",
+      "unit": "món",
+      "point_per_unit": 8,
+      "recycle_method": "Bỏ vào thùng Pin / nguy hại, không trộn với rác ướt hoặc rác tái chế thường.",
+      "status": "active"
+    },
+    {
+      "id": "biological",
+      "name": "Rác hữu cơ",
+      "unit": "kg",
+      "point_per_unit": 3,
+      "recycle_method": "Bỏ vào thùng Hữu cơ; ưu tiên rác thực phẩm, lá cây và vật liệu phân hủy sinh học.",
+      "status": "active"
+    },
+    {
+      "id": "cardboard",
+      "name": "Bìa carton",
+      "unit": "kg",
+      "point_per_unit": 5,
+      "recycle_method": "Gấp phẳng, giữ khô và bỏ vào nhóm thùng Tái chế.",
+      "status": "active"
+    },
+    {
+      "id": "clothes",
+      "name": "Quần áo / vải",
+      "unit": "kg",
+      "point_per_unit": 0,
+      "recycle_method": "Bỏ vào nhóm thùng Còn lại nếu không có đợt thu gom đồ vải riêng.",
+      "status": "active"
+    },
+    {
+      "id": "glass",
+      "name": "Thủy tinh",
+      "unit": "chai",
+      "point_per_unit": 5,
+      "recycle_method": "Rửa sạch, bọc an toàn nếu có cạnh sắc và bỏ vào nhóm thùng Tái chế.",
+      "status": "active"
+    },
+    {
+      "id": "metal",
+      "name": "Kim loại",
+      "unit": "món",
+      "point_per_unit": 5,
+      "recycle_method": "Rửa sạch lon/vỏ kim loại, ép gọn nếu có thể và bỏ vào nhóm thùng Tái chế.",
+      "status": "active"
+    },
+    {
+      "id": "paper",
+      "name": "Giấy",
+      "unit": "kg",
+      "point_per_unit": 5,
+      "recycle_method": "Giữ giấy khô, bó gọn và bỏ vào nhóm thùng Tái chế.",
+      "status": "active"
+    },
+    {
+      "id": "plastic",
+      "name": "Nhựa",
+      "unit": "kg",
+      "point_per_unit": 5,
+      "recycle_method": "Làm sạch, ép dẹp chai/hộp nhựa và bỏ vào nhóm thùng Tái chế.",
+      "status": "active"
+    },
+    {
+      "id": "shoes",
+      "name": "Giày dép",
+      "unit": "đôi",
+      "point_per_unit": 0,
+      "recycle_method": "Bỏ vào nhóm thùng Còn lại nếu không có đợt thu gom tái sử dụng riêng.",
+      "status": "active"
+    },
+    {
+      "id": "trash",
+      "name": "Rác còn lại",
+      "unit": "kg",
+      "point_per_unit": 0,
+      "recycle_method": "Bỏ vào nhóm thùng Còn lại; không tính Ecopoint.",
+      "status": "active"
+    }
+  ],
+  "missions": [
+    {
+      "id": "MISSION_RECYCLE_TODAY",
+      "title": "Gửi rác tái chế hôm nay",
+      "description": "Gửi một lượt rác thuộc nhóm Tái chế trong ngày.",
+      "target": 1,
+      "reward_points": 5,
+      "action_label": "Tạo QR gửi rác",
+      "event_type": "submission_confirmed",
+      "filter_waste_type_id": null,
+      "status": "active"
+    },
+    {
+      "id": "MISSION_ORGANIC_TODAY",
+      "title": "Gửi rác hữu cơ hôm nay",
+      "description": "Gửi một lượt rác hữu cơ được tình nguyện viên xác nhận.",
+      "target": 1,
+      "reward_points": 3,
+      "action_label": "Gửi rác hữu cơ",
+      "event_type": "submission_confirmed",
+      "filter_waste_type_id": "biological",
+      "status": "active"
+    },
+    {
+      "id": "MISSION_BIN_FULL_REPORT_APPROVED",
+      "title": "Báo cáo thùng đầy",
+      "description": "Gửi báo cáo thùng đầy; nhận điểm sau khi admin xử lý/duyệt.",
+      "target": 1,
+      "reward_points": 2,
+      "action_label": "Gửi phản hồi",
+      "event_type": "feedback_bin_full_resolved",
+      "filter_waste_type_id": null,
+      "status": "active"
+    },
+    {
+      "id": "MISSION_GREEN_3_DAY_STREAK",
+      "title": "Chuỗi 3 ngày xanh",
+      "description": "Có hoạt động xanh trong 3 ngày để nhận điểm thưởng.",
+      "target": 3,
+      "reward_points": 10,
+      "action_label": "Tiếp tục",
+      "event_type": "submission_confirmed",
+      "filter_waste_type_id": null,
+      "status": "active"
+    }
+  ]
+}
