@@ -166,6 +166,42 @@ def test_feedback_event_is_idempotent_and_rewarded_by_backend(
     )
 
 
+def test_admin_resolving_bin_full_feedback_advances_approved_feedback_mission(
+    postgres_test_url, seed_operating_catalog, api_client
+):
+    configure_mission(postgres_test_url, "feedback_bin_full_resolved", reward_points=2)
+    student_headers = login_headers(api_client, "student.a@hyute.edu.vn")
+    admin_headers = login_headers(api_client, "admin.test@hyute.edu.vn")
+
+    response = api_client.post(
+        "/api/mobile/feedback",
+        headers=student_headers,
+        json={"type": "bin_full", "message": "Thùng tại nhà A đã đầy."},
+    )
+    assert response.status_code == 201
+    feedback_id = response.json()["data"]["id"]
+
+    first_review = api_client.patch(
+        f"/api/admin/feedback/{feedback_id}",
+        headers=admin_headers,
+        json={"status": "resolved", "adminNote": "Đã điều phối thu gom."},
+    )
+    second_review = api_client.patch(
+        f"/api/admin/feedback/{feedback_id}",
+        headers=admin_headers,
+        json={"status": "resolved", "adminNote": "Duyệt lại không cộng thêm."},
+    )
+
+    assert first_review.status_code == 200
+    assert second_review.status_code == 200
+    assert mission_state(postgres_test_url) == (
+        (1, True, "completed"),
+        1002,
+        1,
+        1,
+    )
+
+
 def test_concurrent_final_events_reward_a_mission_only_once(
     postgres_test_url, seed_operating_catalog
 ):

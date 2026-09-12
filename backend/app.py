@@ -458,7 +458,11 @@ def normalize_phone_number(value):
     return phone_number
 
 def validate_school_email(email):
-    if not re.fullmatch(r"[A-Z0-9._%+\-]+@(utehy|hyute)\.edu\.vn", email, re.IGNORECASE):
+    if not re.fullmatch(
+        r"[A-Z0-9._%+\-]+@(?:(?:school|utehy|hyute)\.edu\.vn|(?:gmail|hotmail)\.com)",
+        email,
+        re.IGNORECASE,
+    ):
         raise AuthError(400, "INVALID_SCHOOL_EMAIL")
 
 def profile_is_complete(role, student_code, faculty_code, phone_number):
@@ -1385,6 +1389,15 @@ def update_feedback_status(feedback_id, payload, admin_id):
             row = cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Không tìm thấy phản hồi")
+            if status == "resolved":
+                cursor.execute(
+                    """
+                    select apply_mission_event(user_id, 'feedback_bin_full_resolved', id, null, 1)
+                    from feedback
+                    where id = %s and category = 'bin_full' and user_id is not null
+                    """,
+                    (feedback_id,),
+                )
             connection.commit()
     return admin_row_to_json(ADMIN_RESOURCES["feedback"]["columns"], row)
 

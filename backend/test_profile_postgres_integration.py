@@ -138,8 +138,8 @@ def test_registration_requires_each_profile_field(
 @pytest.mark.parametrize(
     ("updates", "expected_detail"),
     [
-        ({"email": "student@gmail.com"}, "INVALID_SCHOOL_EMAIL"),
         ({"email": "not-an-email"}, "INVALID_SCHOOL_EMAIL"),
+        ({"email": "student@gmail"}, "INVALID_SCHOOL_EMAIL"),
         ({"studentCode": "x"}, "INVALID_STUDENT_CODE"),
         ({"facultyCode": "unknown-faculty"}, "INVALID_FACULTY"),
         ({"phoneNumber": "123"}, "INVALID_PHONE_NUMBER"),
