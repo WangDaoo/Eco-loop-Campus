@@ -39,7 +39,17 @@ where lower(email) like 'e2e%'
 """
 
 MOJIBAKE_REPLACEMENTS = {
+    "Khoa C? kh? ??ng l?c": "Khoa Cơ khí động lực",
+    "Khoa ?i?n ? ?i?n t?": "Khoa Điện - Điện tử",
+    "Khoa C?ng ngh? May v? Th?i trang": "Khoa Công nghệ May và Thời trang",
+    "Khoa C?ng ngh? H?a h?c v? M?i tr??ng": "Khoa Công nghệ Hóa học và Môi trường",
     "Khoa C?ng ngh? th?ng tin": "Khoa Công nghệ thông tin",
+    "Khoa C? kh?": "Khoa Cơ khí",
+    "Khoa Kinh t?": "Khoa Kinh tế",
+    "Khoa Ngo?i ng?": "Khoa Ngoại ngữ",
+    "Khoa S? ph?m K? thu?t": "Khoa Sư phạm Kỹ thuật",
+    "Khoa Khoa h?c c? b?n": "Khoa Khoa học cơ bản",
+    "Khoa L? lu?n ch?nh tr?": "Khoa Lý luận chính trị",
     "X?c nh?n QR t?i ch?": "Xác nhận QR tái chế",
     "C?ng ?i?m t? giao d?ch QR": "Cộng điểm từ giao dịch QR",
     "?i?u ch?nh": "Điều chỉnh",
@@ -158,27 +168,40 @@ def test_id_where(extra=None):
     return " or ".join(parts)
 
 
-def cleanup_test_data(cursor, dry_run):
+def reward_catalog_safe_id_where(extra=None):
+    parts = [
+        "id like 'E2E\\_%' escape '\\'",
+        "id like 'TEST-%'",
+        "id like 'TEST\\_%' escape '\\'",
+    ]
+    if extra:
+        parts.append(extra)
+    return " or ".join(parts)
+
+
+def delete_specs():
     test_users = test_user_where()
     e2e_qr_tokens = test_id_where("lower(qr_token) like 'e2e%'")
     utehy_submission_tokens = test_id_where("lower(qr_token) like 'e2e%' or qr_token like 'ECL-SUB-UTEHY-%'")
     utehy_station_tokens = test_id_where("lower(qr_token) like 'e2e%' or qr_token like 'ECL-SUB-UTEHY-%' or qr_token like 'ECL-ST-UTEHY-%'")
     e2e_predictions = test_id_where("lower(image_name) like 'e2e%' or lower(source) like 'e2e%' or lower(image_url) like '%e2e%' or lower(image_url) like '%utehy-%'")
     e2e_feedback = test_id_where("lower(user_name) like 'e2e%'")
-    delete_specs = [
+    e2e_rewards = reward_catalog_safe_id_where("lower(title) like 'e2e%'")
+    e2e_reward_categories = reward_catalog_safe_id_where("lower(name) like 'e2e%'")
+    return [
         ("point_history", f"source = 'utehy_demo_seed' or lower(source) like 'e2e%' or user_id in (select id from users where {test_users}) or prediction_id in (select id from predictions where lower(image_name) like 'e2e%' or {test_id_where()}) or submission_id in (select id from recycling_submissions where {e2e_qr_tokens})"),
         ("proof_images", f"{test_id_where()} or submission_id in (select id from recycling_submissions where {e2e_qr_tokens}) or lower(image_url) like '%e2e%' or lower(image_url) like '%utehy-%'"),
         ("qr_scan_logs", f"{utehy_station_tokens} or scanned_by in (select id from users where {test_users})"),
         ("mission_events", f"{test_id_where()} or user_id in (select id from users where {test_users}) or mission_id like 'UTEHY\\_%' escape '\\'"),
         ("user_missions", f"{test_id_where()} or user_id in (select id from users where {test_users}) or mission_id like 'UTEHY\\_%' escape '\\'"),
-        ("reward_redemption_items", f"{test_id_where()} or batch_id in (select id from reward_redemption_batches where {e2e_qr_tokens}) or reward_id like 'UTEHY\\_%' escape '\\'"),
+        ("reward_redemption_items", f"{reward_catalog_safe_id_where()} or batch_id in (select id from reward_redemption_batches where {e2e_qr_tokens})"),
         ("reward_redemption_batches", f"{e2e_qr_tokens} or student_id in (select id from users where {test_users})"),
-        ("reward_redemptions", f"{test_id_where()} or user_id in (select id from users where {test_users}) or reward_id like 'UTEHY\\_%' escape '\\'"),
+        ("reward_redemptions", f"{reward_catalog_safe_id_where()} or user_id in (select id from users where {test_users})"),
         ("feedback", f"{e2e_feedback} or user_id in (select id from users where {test_users})"),
         ("recycling_submissions", f"{utehy_submission_tokens} or user_id in (select id from users where {test_users}) or bin_id like 'UTEHY\\_%' escape '\\' or waste_type_id like 'UTEHY\\_%' escape '\\'"),
         ("predictions", f"{e2e_predictions} or user_id in (select id from users where {test_users}) or bin_id like 'UTEHY\\_%' escape '\\'"),
-        ("rewards", f"{test_id_where()} or category_id like 'UTEHY\\_%' escape '\\'"),
-        ("reward_categories", test_id_where()),
+        ("rewards", f"{e2e_rewards} or category_id like 'E2E\\_%' escape '\\'"),
+        ("reward_categories", e2e_reward_categories),
         ("point_rules", test_id_where()),
         ("missions", test_id_where()),
         ("users", test_users),
@@ -187,8 +210,10 @@ def cleanup_test_data(cursor, dry_run):
         ("avatar_presets", "key like 'UTEHY\\_%' escape '\\' or key like 'E2E\\_%' escape '\\' or lower(image_url) like '%utehy-%'"),
     ]
 
+
+def cleanup_test_data(cursor, dry_run):
     summary = {}
-    for table_name, where_sql in delete_specs:
+    for table_name, where_sql in delete_specs():
         if dry_run:
             summary[table_name] = select_count(cursor, table_name, where_sql)
         else:

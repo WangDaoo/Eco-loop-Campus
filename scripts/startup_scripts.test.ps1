@@ -26,6 +26,7 @@ $publicReleaseBat = Read-RepoFile 'setup_public_release.bat'
 $buildApkFromApiBat = Read-RepoFile 'build_apk_from_api.bat'
 $laptopBat = Read-RepoFile 'scripts\start_laptop_server.bat'
 $cleanupUtehyDemoBat = Read-RepoFile 'scripts\cleanup_utehy_demo_data.bat'
+$seedBaseDataBat = Read-RepoFile 'scripts\seed_base_data.bat'
 $portScript = Read-RepoFile 'scripts\release_ecoloop_port.ps1'
 $initPostgresScript = Read-RepoFile 'backend\local_db\init_local_postgres.ps1'
 $dockerCompose = Read-RepoFile 'docker-compose.yml'
@@ -111,6 +112,12 @@ Assert-Contains $laptopBat 'http://127.0.0.1:3002' 'start_laptop_server.bat must
 
 Assert-Contains $cleanupUtehyDemoBat 'init_local_postgres.ps1' 'cleanup_utehy_demo_data.bat must apply the latest schema before deleting seeded rows.'
 Assert-Contains $cleanupUtehyDemoBat 'cleanup_utehy_demo_data.py' 'cleanup_utehy_demo_data.bat must run the UTEHY cleanup script.'
+
+Assert-Contains $seedBaseDataBat 'init_local_postgres.ps1' 'seed_base_data.bat must apply the latest schema before seeding base data.'
+Assert-Contains $seedBaseDataBat 'seed_waste_types_and_missions.py' 'seed_base_data.bat must restore waste types and weekly missions.'
+Assert-Contains $seedBaseDataBat 'seed_point_rules.py' 'seed_base_data.bat must restore point rules.'
+Assert-Contains $seedBaseDataBat 'seed_reward_catalog.py' 'seed_base_data.bat must restore old reward categories and products.'
+Assert-Contains $seedBaseDataBat 'cleanup_test_data_and_mojibake.py" --apply' 'seed_base_data.bat must repair known mojibake after schema/init before restoring base catalog data.'
 
 Assert-Contains $dockerCompose '${WEB_PORT:-3002}:3000' 'docker-compose.yml must expose the web host port as 3002 by default.'
 Assert-Contains $dockerEnvExample 'WEB_PORT=3002' '.env.docker.example must default web to port 3002.'
