@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import csv
 import hashlib
 import hmac
 import io
@@ -10,13 +11,16 @@ import time
 import uuid
 import re
 import unicodedata
+import zipfile
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from xml.sax.saxutils import escape as xml_escape
 from urllib.parse import unquote, urlparse
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
@@ -1135,6 +1139,244 @@ def delete_admin_resource(resource, item_id):
     if not deleted:
         raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu")
     return {"ok": True}
+
+REPORT_STUDENT_HEADERS = [
+    ("fullName", "Họ tên"),
+    ("studentCode", "Mã sinh viên"),
+    ("faculty", "Khoa"),
+    ("group", "Lớp"),
+    ("contributionCount", "Số lần đóng góp"),
+    ("totalPoints", "Tổng điểm"),
+]
+
+def parse_report_date(value):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10]).isoformat()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ngày lọc không hợp lệ")
+
+def student_code_from_user(student_code, email):
+    cleaned = str(student_code or "").strip()
+    if cleaned:
+        return cleaned
+    return str(email or "").split("@", 1)[0].strip()
+
+def increment_day(day_map, day, key, amount=1):
+    if not day:
+        return
+    if day not in day_map:
+        day_map[day] = {
+            "date": day,
+            "contributions": 0,
+            "activeStudents": 0,
+            "studentIds": set(),
+            "points": 0,
+            "feedback": 0,
+            "rewardRedemptions": 0,
+        }
+    day_map[day][key] += amount
+
+def finalize_daily_rows(day_map):
+    rows = []
+    for day in sorted(day_map):
+        row = day_map[day]
+        rows.append({
+            "date": row["date"],
+            "contributions": row["contributions"],
+            "activeStudents": len(row["studentIds"]),
+            "points": row["points"],
+            "feedback": row["feedback"],
+            "rewardRedemptions": row["rewardRedemptions"],
+        })
+    return rows
+
+def build_student_contribution_report(date_from=None, date_to=None):
+    start = parse_report_date(date_from)
+    end = parse_report_date(date_to)
+    database_url = require_database_url()
+    date_filter = """
+        (%s::date is null or {field} >= %s::date)
+        and (%s::date is null or {field} < (%s::date + interval '1 day'))
+    """
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select u.id, u.name, u.email, u.student_code, u.faculty_code,
+                       coalesce(f.name, u."group", '') as faculty_name,
+                       coalesce(u."group", '') as class_group,
+                       u.points
+                from users u
+                left join faculties f on f.code = u.faculty_code
+                where u.role = 'student'
+                order by coalesce(u.student_code, u.email), u.name
+                """
+            )
+            users = cursor.fetchall()
+            cursor.execute(
+                f"""
+                select id, user_id, coalesce(verified_at, created_at)::date::text
+                from recycling_submissions
+                where status = 'POINT_CONFIRMED'
+                  and {date_filter.format(field='coalesce(verified_at, created_at)')}
+                """,
+                (start, start, end, end),
+            )
+            submissions = cursor.fetchall()
+            cursor.execute(
+                f"""
+                select id, user_id, points, timestamp::date::text
+                from point_history
+                where user_id is not null
+                  and {date_filter.format(field='timestamp')}
+                """,
+                (start, start, end, end),
+            )
+            point_rows = cursor.fetchall()
+            cursor.execute(
+                f"""
+                select id, timestamp::date::text
+                from feedback
+                where {date_filter.format(field='timestamp')}
+                """,
+                (start, start, end, end),
+            )
+            feedback_rows = cursor.fetchall()
+            cursor.execute(
+                f"""
+                select id, created_at::date::text
+                from reward_redemption_batches
+                where {date_filter.format(field='created_at')}
+                """,
+                (start, start, end, end),
+            )
+            reward_rows = cursor.fetchall()
+
+    contribution_counts = {}
+    point_totals = {}
+    day_map = {}
+    for _id, user_id, day in submissions:
+        contribution_counts[user_id] = contribution_counts.get(user_id, 0) + 1
+        increment_day(day_map, day, "contributions")
+        if day:
+            day_map[day]["studentIds"].add(user_id)
+    for _id, user_id, points, day in point_rows:
+        value = int(points or 0)
+        point_totals[user_id] = point_totals.get(user_id, 0) + value
+        increment_day(day_map, day, "points", value)
+    for _id, day in feedback_rows:
+        increment_day(day_map, day, "feedback")
+    for _id, day in reward_rows:
+        increment_day(day_map, day, "rewardRedemptions")
+
+    student_rows = []
+    for user_id, name, email, student_code, _faculty_code, faculty, class_group, _points in users:
+        student_rows.append({
+            "id": user_id,
+            "fullName": name,
+            "studentCode": student_code_from_user(student_code, email),
+            "faculty": faculty or "",
+            "group": class_group or "",
+            "contributionCount": contribution_counts.get(user_id, 0),
+            "totalPoints": point_totals.get(user_id, 0),
+        })
+    daily_rows = finalize_daily_rows(day_map)
+    active_students = sum(1 for row in student_rows if row["contributionCount"] > 0)
+    total_contributions = sum(row["contributionCount"] for row in student_rows)
+    total_points = sum(row["totalPoints"] for row in student_rows)
+    return {
+        "filters": {"dateFrom": start or "", "dateTo": end or ""},
+        "summary": {
+            "totalContributions": total_contributions,
+            "activeStudents": active_students,
+            "totalPoints": total_points,
+            "averageContributionsPerDay": round(total_contributions / len(daily_rows), 2) if daily_rows else 0,
+        },
+        "dailyRows": daily_rows,
+        "studentRows": student_rows,
+    }
+
+def csv_bytes_from_rows(headers, rows):
+    stream = io.StringIO()
+    writer = csv.writer(stream)
+    writer.writerow([label for _key, label in headers])
+    for row in rows:
+        writer.writerow([row.get(key, "") for key, _label in headers])
+    return ("\ufeff" + stream.getvalue()).encode("utf-8")
+
+def xlsx_bytes_from_rows(headers, rows):
+    def cell(value):
+        return f'<c t="inlineStr"><is><t>{xml_escape(str(value or ""))}</t></is></c>'
+    sheet_rows = [
+        "<row>" + "".join(cell(label) for _key, label in headers) + "</row>",
+        *["<row>" + "".join(cell(row.get(key, "")) for key, _label in headers) + "</row>" for row in rows],
+    ]
+    sheet_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f"<sheetData>{''.join(sheet_rows)}</sheetData></worksheet>"
+    )
+    workbook_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheets><sheet name="Diem ren luyen" sheetId="1" r:id="rId1"/></sheets></workbook>'
+    )
+    rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        "</Relationships>"
+    )
+    workbook_rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        "</Relationships>"
+    )
+    content_types_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        "</Types>"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types_xml)
+        archive.writestr("_rels/.rels", rels_xml)
+        archive.writestr("xl/workbook.xml", workbook_xml)
+        archive.writestr("xl/_rels/workbook.xml.rels", workbook_rels_xml)
+        archive.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+    return buffer.getvalue()
+
+@app.get("/api/admin/reports/student-contributions")
+def admin_student_contribution_report(dateFrom: str | None = None, dateTo: str | None = None, authorization: str | None = Header(default=None)):
+    require_admin_user(authorization)
+    return {"data": build_student_contribution_report(dateFrom, dateTo)}
+
+@app.get("/api/admin/reports/student-contributions/export")
+def admin_student_contribution_export(format: str = "csv", dateFrom: str | None = None, dateTo: str | None = None, authorization: str | None = Header(default=None)):
+    require_admin_user(authorization)
+    report = build_student_contribution_report(dateFrom, dateTo)
+    filename = f"eco-loop-diem-ren-luyen-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    if format.lower() == "xlsx":
+        return Response(
+            content=xlsx_bytes_from_rows(REPORT_STUDENT_HEADERS, report["studentRows"]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.xlsx"'},
+        )
+    if format.lower() != "csv":
+        raise HTTPException(status_code=400, detail="Định dạng xuất không hợp lệ")
+    return Response(
+        content=csv_bytes_from_rows(REPORT_STUDENT_HEADERS, report["studentRows"]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
 
 @app.get("/api/admin/{resource}")
 def admin_list_resource(resource: str, authorization: str | None = Header(default=None)):
