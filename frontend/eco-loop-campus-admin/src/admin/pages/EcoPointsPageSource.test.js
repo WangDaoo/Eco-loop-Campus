@@ -18,9 +18,23 @@ test("EcoPointsPage keeps reward catalog and redemption history management", () 
   expect(source).toMatch(/Lưu danh mục quà tặng/);
   expect(source).toMatch(/Lưu sản phẩm đổi thưởng/);
   expect(source).toMatch(/Yêu cầu đổi thưởng/);
-  expect(source).toMatch(/Mã QR đổi thưởng/);
+  expect(source).toMatch(/Lịch sử đổi thưởng đã xử lý/);
   expect(source).toMatch(/updateRewardRedemption/);
   expect(source).toMatch(/finalizeRewardRedemptionBatch/);
+});
+
+test("EcoPointsPage fills reward batch requests into the main redemption table", () => {
+  expect(source).toMatch(/const rewardExchangeRows = useMemo/);
+  expect(source).toMatch(/String\(row\.status \|\| ""\)\.toLowerCase\(\) === "pending"/);
+  expect(source).toMatch(/rows=\{rewardExchangeRows\}/);
+  expect(source).not.toMatch(/rows=\{rewardRequests\}/);
+});
+
+test("EcoPointsPage keeps only processed reward batches in the lower history section", () => {
+  expect(source).toMatch(/const processedRewardRows = useMemo/);
+  expect(source).toMatch(/String\(row\.status \|\| ""\)\.toLowerCase\(\) !== "pending"/);
+  expect(source).toMatch(/processedRewardRows\.map/);
+  expect(source).not.toMatch(/rewardBatches\.map\(batch => \(/);
 });
 
 test("EcoPointsPage groups management areas into focused tabs", () => {

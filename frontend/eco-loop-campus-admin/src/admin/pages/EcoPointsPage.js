@@ -243,6 +243,42 @@ export default function EcoPointsPage() {
     const category = rewardCategories.find(item => item.id === product.categoryId);
     return { ...product, categoryName: category?.name || product.categoryName || "" };
   }), [rewardProducts, rewardCategories]);
+  const allRewardExchangeRows = useMemo(() => {
+    const legacyRows = rewardRequests.map(item => ({
+      ...item,
+      exchangeType: "legacy",
+      qrToken: item.qrToken || "",
+      requestedAt: item.requestedAt || item.createdAt,
+    }));
+    const batchRows = rewardBatches.map(batch => {
+      const user = users.find(row => row.id === (batch.studentId || batch.userId));
+      const items = Array.isArray(batch.items) ? batch.items : [];
+      const rewardLabel = items.length
+        ? items.map(item => `${item.rewardTitle || item.rewardLabel || item.rewardId} x${item.quantity || 1}`).join(", ")
+        : batch.rewardLabel || batch.rewardId || "Mã đổi thưởng";
+      const costPoints = Number(batch.totalPoints ?? batch.costPoints ?? items.reduce((sum, item) => sum + Number(item.pointsTotal || 0), 0));
+      return {
+        ...batch,
+        exchangeType: "batch",
+        userId: batch.studentId || batch.userId,
+        userName: user?.name || batch.userName || batch.studentId || batch.userId || "Chưa rõ người dùng",
+        userGroup: user?.group || batch.userGroup || "",
+        rewardLabel,
+        costPoints: Number.isFinite(costPoints) ? costPoints : 0,
+        requestedAt: batch.requestedAt || batch.createdAt,
+        reviewedAt: batch.reviewedAt || batch.fulfilledAt || batch.scannedAt,
+      };
+    });
+    return [...batchRows, ...legacyRows].sort((a, b) => new Date(b.requestedAt || b.createdAt || 0) - new Date(a.requestedAt || a.createdAt || 0));
+  }, [rewardBatches, rewardRequests, users]);
+  const rewardExchangeRows = useMemo(
+    () => allRewardExchangeRows.filter(row => String(row.status || "").toLowerCase() === "pending"),
+    [allRewardExchangeRows]
+  );
+  const processedRewardRows = useMemo(
+    () => allRewardExchangeRows.filter(row => String(row.status || "").toLowerCase() !== "pending"),
+    [allRewardExchangeRows]
+  );
 
   const updateRule = (id, updates) => {
     setRules(current => current.map(rule => rule.id === id ? { ...rule, ...updates } : rule));
@@ -395,13 +431,23 @@ export default function EcoPointsPage() {
   const rewardColumns = [
     { key: "userName", label: "Người đổi", render: row => <strong>{row.userName}</strong> },
     { key: "rewardLabel", label: "Phần thưởng" },
+    { key: "qrToken", label: "Mã QR", render: row => row.qrToken || row.id || "-" },
     { key: "costPoints", label: "Điểm", render: row => <strong>{row.costPoints}</strong> },
     { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status} /> },
     { key: "requestedAt", label: "Thời gian", render: row => row.requestedAt ? formatDate(row.requestedAt) : "Chưa rõ" },
     {
       key: "actions",
       label: "Thao tác",
-      render: row => row.status === "pending" ? (
+      render: row => row.exchangeType === "batch" && row.status === "pending" ? (
+        <div className="eg-table-actions">
+          <button type="button" className="eg-small-btn success" onClick={() => void finalizeBatch(row, "fulfilled")}>Duyệt</button>
+          <button type="button" className="eg-small-btn danger" onClick={() => void finalizeBatch(row, "expired")}>Hủy mã</button>
+        </div>
+      ) : row.exchangeType === "batch" && row.status === "fulfilled" ? (
+        <div className="eg-table-actions">
+          <button type="button" className="eg-small-btn" onClick={() => void finalizeBatch(row, "cancelled")}>Hoàn tác</button>
+        </div>
+      ) : row.status === "pending" ? (
         <div className="eg-table-actions">
           <button type="button" className="eg-small-btn success" onClick={() => reviewReward(row, "approved")}>Duyệt</button>
           <button type="button" className="eg-small-btn danger" onClick={() => reviewReward(row, "rejected")}>Từ chối</button>
@@ -465,7 +511,7 @@ export default function EcoPointsPage() {
   const totalGrantedPoints = positiveHistory.reduce((sum, row) => sum + Number(row.points || 0), 0);
   const pendingSubmissions = submissions.filter(row => canRejectSubmission(row));
   const pendingSubmissionCount = pendingSubmissions.length;
-  const pendingRewardCount = rewardRequests.filter(row => row.status === "pending").length + rewardBatches.filter(row => row.status === "pending").length;
+  const pendingRewardCount = rewardExchangeRows.filter(row => row.status === "pending").length;
   const activeRewardProductCount = rewardProductsWithCategories.filter(row => row.status === "active").length;
   const filterTabs = ["overview", "manual", "rankings"];
   const showFilters = filterTabs.includes(activeTab);
@@ -723,17 +769,15 @@ export default function EcoPointsPage() {
           <>
             <section className="eg-card">
               <div className="eg-card-head"><h2>Yêu cầu đổi thưởng</h2></div>
-              <DataTable columns={rewardColumns} rows={rewardRequests} emptyText="Chưa có yêu cầu đổi thưởng." />
+              <DataTable columns={rewardColumns} rows={rewardExchangeRows} emptyText="Chưa có yêu cầu đổi thưởng." />
             </section>
             <section className="eg-card">
-              <div className="eg-card-head"><h2>Mã QR đổi thưởng</h2></div>
-              {rewardBatches.length === 0 ? <p>Chưa có mã QR đổi thưởng.</p> : rewardBatches.map(batch => (
-                <div key={batch.id} className="eg-list-row">
-                  <div><strong>{batch.id}</strong><p>{batch.items?.map(item => `${item.rewardTitle} x${item.quantity}`).join(', ')}</p></div>
-                  <div><StatusBadge group={batch.status}>{batch.status}</StatusBadge><div className="eg-button-row">
-                    {batch.status === "pending" && <button type="button" className="eg-primary-btn" onClick={() => void finalizeBatch(batch, "fulfilled")}>Duyệt</button>}
-                    {batch.status === "pending" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "expired")}>Hủy mã</button>}
-                    {batch.status === "fulfilled" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "cancelled")}>Hoàn tác đổi thưởng</button>}
+              <div className="eg-card-head"><h2>Lịch sử đổi thưởng đã xử lý</h2></div>
+              {processedRewardRows.length === 0 ? <p>Chưa có đổi thưởng đã xử lý.</p> : processedRewardRows.map(row => (
+                <div key={row.id} className="eg-list-row">
+                  <div><strong>{row.id}</strong><p>{row.items?.map(item => `${item.rewardTitle} x${item.quantity}`).join(', ') || row.rewardLabel}</p></div>
+                  <div><StatusBadge group={row.status}>{row.status}</StatusBadge><div className="eg-button-row">
+                    {row.exchangeType === "batch" && row.status === "fulfilled" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(row, "cancelled")}>Hoàn tác đổi thưởng</button>}
                   </div></div>
                 </div>
               ))}

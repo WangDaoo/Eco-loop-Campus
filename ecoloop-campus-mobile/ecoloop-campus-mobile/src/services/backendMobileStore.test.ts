@@ -251,3 +251,17 @@ test('backend mobile store surfaces backend errors without Supabase fallback wor
     /PostgreSQL chưa sẵn sàng/
   );
 });
+
+test('backend mobile store maps proof image backend error to a helpful QR message', async () => {
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage: memoryStorage(),
+    initialToken: 'token-1',
+    fetcher: async () => response({ detail: 'PROOF_IMAGE_REQUIRED', code: 'PROOF_IMAGE_REQUIRED' }, false, 400),
+  });
+
+  await assert.rejects(
+    () => store.createSubmission('student-1', { binId: 'bin-1', wasteTypeId: 'paper', quantity: 1 }, []),
+    /Hãy chụp ảnh hoặc tải ảnh rác lên trước khi tạo mã QR/
+  );
+});
