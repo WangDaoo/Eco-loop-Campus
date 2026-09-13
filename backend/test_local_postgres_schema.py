@@ -3,6 +3,7 @@ from pathlib import Path
 
 SCHEMA_PATH = Path(__file__).parent / "local_db" / "schema.sql"
 BOOTSTRAP_ADMIN_PATH = Path(__file__).parent / "local_db" / "bootstrap_admin.sql"
+SMOKE_QR_FLOW_PATH = Path(__file__).parent / "local_db" / "smoke_qr_flow.sql"
 
 
 def test_local_postgres_schema_is_standalone():
@@ -77,3 +78,10 @@ def test_local_postgres_has_bootstrap_admin_script_without_demo_rows():
     assert "waste_types" not in sql
     assert "rewards" not in sql
     assert "missions" not in sql
+
+def test_qr_smoke_flow_checks_qr_points_not_total_user_points():
+    sql = SMOKE_QR_FLOW_PATH.read_text(encoding="utf-8").lower()
+
+    assert "source = 'qr_submission'" in sql
+    assert "expected 10 qr points" in sql
+    assert "expected 10 points" not in sql
