@@ -103,6 +103,7 @@ test('AppProvider refreshes backend data when the mobile app returns to foregrou
 
 test('AppProvider refreshes current user points from backend polling data', () => {
   assert.match(source, /refreshedProfile/);
+  assert.match(source, /data\.currentUser/);
   assert.match(source, /setCurrentUser\(current => current\.id === refreshedProfile\.id/);
 });
 

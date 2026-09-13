@@ -1441,7 +1441,8 @@ def request_mobile_reward(user_id, reward_id):
 @app.get("/api/mobile/initial-data")
 def mobile_initial_data(authorization: str | None = Header(default=None)):
     user = require_role_user(authorization, {"student", "volunteer", "admin"})
-    return load_mobile_initial_data(user)
+    data = load_mobile_initial_data(user)
+    return {**data, "currentUser": user}
 
 @app.patch("/api/mobile/users/me/avatar")
 def mobile_update_avatar(payload: dict, authorization: str | None = Header(default=None)):

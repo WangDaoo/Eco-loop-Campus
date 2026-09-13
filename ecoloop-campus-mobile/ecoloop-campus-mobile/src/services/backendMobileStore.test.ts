@@ -136,6 +136,48 @@ test('backend mobile store loads initial data from PostgreSQL backend payload', 
   assert.equal(data.avatarOptions[0].imageUrl, 'https://api.example.test/uploads/avatars/leaf.png');
 });
 
+test('backend mobile store prefers currentUser from polling data for live point refresh', async () => {
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage: memoryStorage(),
+    fetcher: async () => response({
+      currentUser: { id: 'student-1', name: 'Sinh viên', email: 'student@school.edu.vn', role: 'student', status: 'active', points: 25 },
+      users: [{ id: 'student-1', name: 'Sinh viên', email: 'student@school.edu.vn', role: 'student', status: 'active', points: 5 }],
+      stations: [],
+      wasteTypes: [],
+      predictions: [],
+      submissions: [{
+        id: 'sub-1',
+        userId: 'student-1',
+        binId: 'bin-e1',
+        wasteTypeId: 'paper',
+        quantity: 1,
+        unit: 'kg',
+        qrToken: 'ECL-SUB-1',
+        status: 'POINT_CONFIRMED',
+        createdAt: '2026-09-13T10:00:00.000Z',
+        expiredAt: '2026-09-13T10:45:00.000Z',
+        actualQuantity: 1,
+      }],
+      pointTransactions: [{ id: 'point-1', userId: 'student-1', submissionId: 'sub-1', points: 20, source: 'qr_submission', status: 'confirmed' }],
+      feedbacks: [],
+      missions: [],
+      rewards: [],
+      rewardRedemptions: [],
+      proofImages: [],
+      qrScanLogs: [],
+      avatarOptions: [],
+    }),
+  });
+
+  const data = await store.loadInitialData({ id: 'student-1', name: 'Sinh viên', email: 'student@school.edu.vn', role: 'student', group: '', points: 5, status: 'active' });
+
+  assert.equal(data.users[0].id, 'student-1');
+  assert.equal(data.users[0].points, 25);
+  assert.equal(data.submissions[0].status, 'POINT_CONFIRMED');
+  assert.equal(data.pointTransactions[0].submissionId, 'sub-1');
+});
+
 test('backend mobile store normalizes relative user avatar URLs from PostgreSQL backend', async () => {
   const store = createBackendMobileStore({
     baseUrl: 'https://api.example.test',

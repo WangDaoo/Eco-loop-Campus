@@ -49,6 +49,7 @@ type StorageLike = {
 };
 
 export type MobileInitialData = {
+  currentUser?: UserProfile;
   users: UserProfile[];
   stations: BinStation[];
   wasteTypes: WasteType[];
@@ -323,6 +324,11 @@ export function createBackendMobileStore({
     async loadInitialData(profile) {
       const payload = await request('/api/mobile/initial-data');
       const proofImages = (payload.proofImages ?? []).map((row: Row) => normalizeProofImage(row, endpointBaseUrl));
+      const currentUser = payload.currentUser ? normalizeUser(payload.currentUser, endpointBaseUrl) : undefined;
+      const users = (payload.users ?? []).map((row: Row) => normalizeUser(row, endpointBaseUrl));
+      const usersWithCurrent = currentUser
+        ? [currentUser, ...users.filter((item: UserProfile) => item.id !== currentUser.id)]
+        : users;
       const submissions = attachProofImagesToSubmissions(
         (payload.submissions ?? []).map((row: Row) => mapSubmissionRow(row)),
         proofImages
@@ -332,7 +338,8 @@ export function createBackendMobileStore({
       const rewardRedemptions = (payload.rewardRedemptions ?? []).map((row: Row) => mapRewardRedemptionRow(row));
       const qrScanLogs = (payload.qrScanLogs ?? []).map((row: Row) => mapQrScanLogRow(row));
       return {
-        users: (payload.users ?? []).map((row: Row) => normalizeUser(row, endpointBaseUrl)),
+        currentUser,
+        users: usersWithCurrent,
         stations: (payload.stations ?? []).map((row: Row) => mapBinRow(row)),
         wasteTypes: (payload.wasteTypes ?? []).map((row: Row) => mapWasteTypeRow(row)),
         predictions: profile.role === 'student' ? predictions.filter((item: PredictionRecord) => item.userId === profile.id) : predictions,
