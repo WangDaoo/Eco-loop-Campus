@@ -454,6 +454,14 @@ create table if not exists proof_images (
   note text not null default ''
 );
 
+create table if not exists bin_collections (
+  id text primary key default gen_random_uuid()::text,
+  bin_id text not null references bins(id) on delete cascade,
+  collected_by text references users(id) on delete set null,
+  collected_at timestamptz not null default now(),
+  note text not null default ''
+);
+
 create table if not exists ai_training_samples (
   id text primary key,
   prediction_id text references predictions(id) on delete set null,
@@ -752,6 +760,7 @@ create index if not exists idx_bins_status on bins(status);
 create index if not exists idx_recycling_submissions_user_id on recycling_submissions(user_id);
 create index if not exists idx_recycling_submissions_bin_id on recycling_submissions(bin_id);
 create index if not exists idx_recycling_submissions_status on recycling_submissions(status);
+create index if not exists idx_bin_collections_bin_id_collected_at on bin_collections(bin_id, collected_at desc);
 create index if not exists idx_qr_scan_logs_qr_token on qr_scan_logs(qr_token);
 create index if not exists idx_point_history_submission_id on point_history(submission_id);
 create index if not exists idx_user_missions_user_id on user_missions(user_id);

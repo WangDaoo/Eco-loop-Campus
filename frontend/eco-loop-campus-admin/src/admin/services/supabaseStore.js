@@ -921,6 +921,27 @@ export async function listBins() {
   return listResource("bins", fromBin);
 }
 
+export async function getBinContents(binId) {
+  try {
+    const payload = await requestBackend(`/api/admin/bins/${encodeURIComponent(binId)}/contents`);
+    return result(payload.data || { binId, lastCollectedAt: null, totalQuantity: 0, items: [], collections: [] }, BACKEND);
+  } catch (error) {
+    return result(null, BACKEND, error);
+  }
+}
+
+export async function collectBin(binId, note = "") {
+  try {
+    const payload = await requestBackend(`/api/admin/bins/${encodeURIComponent(binId)}/collect`, {
+      method: "POST",
+      body: { note },
+    });
+    return result(payload.data || null, BACKEND);
+  } catch (error) {
+    return result(null, BACKEND, error);
+  }
+}
+
 export async function saveBin(bin) {
   const id = typeof bin.id === "string" ? bin.id.trim() : "";
   const name = typeof bin.name === "string" ? bin.name.trim() : "";

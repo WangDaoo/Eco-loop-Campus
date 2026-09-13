@@ -823,6 +823,8 @@ CAMEL_ALIASES = {
     "expired_at": "expiredAt",
     "verified_by": "verifiedBy",
     "verified_at": "verifiedAt",
+    "collected_by": "collectedBy",
+    "collected_at": "collectedAt",
     "actual_quantity": "actualQuantity",
     "volunteer_note": "volunteerNote",
     "prediction_id": "predictionId",
@@ -1377,6 +1379,117 @@ def admin_student_contribution_export(format: str = "csv", dateFrom: str | None 
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
     )
+
+BIN_COLLECTION_COLUMNS = ["id", "bin_id", "collected_by", "collected_at", "note"]
+
+def json_number(value):
+    if value is None:
+        return 0
+    numeric = float(value)
+    return int(numeric) if numeric.is_integer() else numeric
+
+def get_admin_bin_contents(bin_id):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select id from bins where id = %s", (bin_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Không tìm thấy thùng rác")
+
+            cursor.execute(
+                "select max(collected_at) from bin_collections where bin_id = %s",
+                (bin_id,),
+            )
+            last_collected_at = cursor.fetchone()[0]
+
+            cursor.execute(
+                """
+                select s.waste_type_id,
+                       coalesce(w.name, s.waste_type_id, 'Không rõ') as waste_type_name,
+                       coalesce(sum(coalesce(s.actual_quantity, s.quantity)), 0) as quantity,
+                       coalesce(nullif(s.unit, ''), w.unit, 'item') as unit
+                from recycling_submissions s
+                left join waste_types w on w.id = s.waste_type_id
+                where s.bin_id = %s
+                  and upper(s.status) = 'POINT_CONFIRMED'
+                  and (
+                    %s is null
+                    or coalesce(s.verified_at, s.created_at) > %s
+                  )
+                group by s.waste_type_id, w.name, s.unit, w.unit
+                order by waste_type_name asc
+                """,
+                (bin_id, last_collected_at, last_collected_at),
+            )
+            item_rows = cursor.fetchall()
+
+            cursor.execute(
+                f"""
+                select {", ".join(quote_identifier(column) for column in BIN_COLLECTION_COLUMNS)}
+                from bin_collections
+                where bin_id = %s
+                order by collected_at desc
+                """,
+                (bin_id,),
+            )
+            collection_rows = cursor.fetchall()
+
+    items = [
+        {
+            "wasteTypeId": row[0],
+            "wasteTypeName": row[1],
+            "quantity": json_number(row[2]),
+            "unit": row[3] or "item",
+        }
+        for row in item_rows
+    ]
+    return {
+        "binId": bin_id,
+        "lastCollectedAt": last_collected_at.isoformat() if last_collected_at else None,
+        "totalQuantity": json_number(sum(float(item["quantity"]) for item in items)),
+        "items": items,
+        "collections": [admin_row_to_json(BIN_COLLECTION_COLUMNS, row) for row in collection_rows],
+    }
+
+def collect_admin_bin(actor_id, bin_id, payload):
+    note = str((payload or {}).get("note") or "").strip()
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select id from bins where id = %s for update", (bin_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Không tìm thấy thùng rác")
+            cursor.execute(
+                """
+                insert into bin_collections (bin_id, collected_by, note)
+                values (%s, %s, %s)
+                returning id, bin_id, collected_by, collected_at, note
+                """,
+                (bin_id, actor_id, note),
+            )
+            row = cursor.fetchone()
+            cursor.execute(
+                """
+                update bins
+                set capacity = 0,
+                    status = case when status = 'full' then 'active' else status end,
+                    updated_at = now()
+                where id = %s
+                """,
+                (bin_id,),
+            )
+        connection.commit()
+    return admin_row_to_json(BIN_COLLECTION_COLUMNS, row)
+
+@app.get("/api/admin/bins/{bin_id}/contents")
+def admin_bin_contents(bin_id: str, authorization: str | None = Header(default=None)):
+    require_admin_user(authorization)
+    return {"data": get_admin_bin_contents(bin_id)}
+
+@app.post("/api/admin/bins/{bin_id}/collect")
+def admin_collect_bin(bin_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_admin_user(authorization)
+    return {"data": collect_admin_bin(user["id"], bin_id, payload)}
 
 @app.get("/api/admin/{resource}")
 def admin_list_resource(resource: str, authorization: str | None = Header(default=None)):

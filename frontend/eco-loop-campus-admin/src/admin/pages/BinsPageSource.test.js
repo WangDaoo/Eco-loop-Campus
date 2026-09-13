@@ -25,3 +25,11 @@ test('BinsPage QR modal uses specific QR classes so station code text is not dra
   expect(source).toMatch(/className="eg-qr-code-text"/);
   expect(source).not.toMatch(/<div>\{selectedQr\.qrCode\}<\/div>/);
 });
+
+test('BinsPage exposes current contents and collection history for each bin', () => {
+  expect(source).toMatch(/getBinContents/);
+  expect(source).toMatch(/collectBin/);
+  expect(source).toMatch(/Đã thu gom/);
+  expect(source).toMatch(/Nội dung hiện tại/);
+  expect(source).toMatch(/Lịch sử thu gom/);
+});

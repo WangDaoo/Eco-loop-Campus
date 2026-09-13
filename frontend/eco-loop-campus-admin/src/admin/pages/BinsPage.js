@@ -8,7 +8,7 @@ import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { BIN_GROUPS } from "../data/wasteConfig";
 import campusTopo from "../assets/campus-topo.svg";
-import { applyBinRealtimeChange, buildStationQrCode, buildStationQrPayload, listBins, listRecyclingSubmissions, saveBin, subscribeBins, updateBinStatus } from "../services/supabaseStore";
+import { applyBinRealtimeChange, buildStationQrCode, buildStationQrPayload, collectBin, getBinContents, listBins, listRecyclingSubmissions, saveBin, subscribeBins, updateBinStatus } from "../services/supabaseStore";
 
 const emptyForm = {
   id: "",
@@ -88,6 +88,10 @@ export default function BinsPage() {
   const [statusFilter, setStatusFilter] = useState(() => normalizeStatusFilter(searchParams.get("status")));
   const [selectedQr, setSelectedQr] = useState(null);
   const [historyBin, setHistoryBin] = useState(null);
+  const [contentsBin, setContentsBin] = useState(null);
+  const [binContents, setBinContents] = useState(null);
+  const [contentsLoading, setContentsLoading] = useState(false);
+  const [collectionSaving, setCollectionSaving] = useState(false);
   const [submissions, setSubmissions] = useState([]);
   const [editingBin, setEditingBin] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -135,6 +139,39 @@ export default function BinsPage() {
     setError(response.error);
     setToastTone("success");
     setToast("Đã cập nhật trạng thái thùng");
+  };
+
+  const openContents = async bin => {
+    setContentsBin(bin);
+    setBinContents(null);
+    setContentsLoading(true);
+    const response = await getBinContents(bin.id);
+    setBinContents(response.data);
+    setContentsLoading(false);
+    if (response.error) {
+      setToastTone("danger");
+      setToast("Không tải được nội dung thùng.");
+    }
+  };
+
+  const collectContents = async () => {
+    if (!contentsBin || collectionSaving) return;
+    setCollectionSaving(true);
+    const response = await collectBin(contentsBin.id, "Admin xác nhận đã thu gom");
+    if (!response.data) {
+      setCollectionSaving(false);
+      setToastTone("danger");
+      setToast("Không ghi nhận được đợt thu gom.");
+      return;
+    }
+    const refreshed = await getBinContents(contentsBin.id);
+    setBinContents(refreshed.data);
+    setBins(current => current.map(item => item.id === contentsBin.id
+      ? { ...item, capacity: 0, status: statusCode(item.status) === "full" ? "active" : item.status }
+      : item));
+    setCollectionSaving(false);
+    setToastTone("success");
+    setToast("Đã ghi nhận thu gom. Lượng rác hiện tại đã về 0.");
   };
 
   const openCreateForm = () => {
@@ -280,6 +317,7 @@ export default function BinsPage() {
       render: row => (
         <div className="eg-table-actions">
           <button type="button" className="eg-small-btn" aria-label={`QR ${row.id}`} onClick={() => setSelectedQr(row)}><QrCode size={15} weight="bold" aria-hidden="true" /> QR</button>
+          <button type="button" className="eg-small-btn" aria-label={`Nội dung ${row.id}`} onClick={() => openContents(row)}>Nội dung</button>
           <button type="button" className="eg-small-btn" aria-label={`Lịch sử ${row.id}`} onClick={() => setHistoryBin(row)}>Lịch sử</button>
           <button type="button" className="eg-small-btn" aria-label={`Sửa ${row.id}`} onClick={() => openEditForm(row)}><PencilSimple size={15} weight="bold" aria-hidden="true" /> Sửa</button>
           <button type="button" className="eg-small-btn" onClick={() => toggleStatus(row)}>{statusCode(row.status) === "maintenance" ? "Hoạt động" : "Bảo trì"}</button>
@@ -348,6 +386,43 @@ export default function BinsPage() {
             rows={confirmedHistory}
             emptyText="Chưa có vật phẩm nào được xác nhận."
           />
+        )}
+      </Modal>
+
+      <Modal open={Boolean(contentsBin)} title={contentsBin ? `Nội dung hiện tại - ${contentsBin.name}` : "Nội dung hiện tại"} onClose={() => setContentsBin(null)}>
+        {contentsLoading && <p className="eg-muted-block">Đang tải nội dung thùng...</p>}
+        {!contentsLoading && binContents && (
+          <div className="eg-bin-contents">
+            <div className="eg-filter-row">
+              <strong>Tổng hiện tại: {binContents.totalQuantity || 0}</strong>
+              <span className="eg-muted-block">
+                Thu gom gần nhất: {binContents.lastCollectedAt ? new Date(binContents.lastCollectedAt).toLocaleString("vi-VN") : "Chưa thu gom"}
+              </span>
+            </div>
+            <DataTable
+              columns={[
+                { key: "wasteTypeName", label: "Loại rác", render: row => <strong>{row.wasteTypeName || row.wasteTypeId}</strong> },
+                { key: "quantity", label: "Số lượng", render: row => `${row.quantity} ${row.unit || ""}` },
+              ]}
+              rows={binContents.items || []}
+              emptyText="Thùng đang trống."
+            />
+            <div className="eg-section-heading"><strong>Lịch sử thu gom</strong></div>
+            <DataTable
+              columns={[
+                { key: "collectedAt", label: "Thời gian", render: row => row.collectedAt ? new Date(row.collectedAt).toLocaleString("vi-VN") : "Không rõ" },
+                { key: "collectedBy", label: "Người xác nhận" },
+                { key: "note", label: "Ghi chú" },
+              ]}
+              rows={binContents.collections || []}
+              emptyText="Chưa có đợt thu gom nào."
+            />
+            <div className="eg-form-actions">
+              <button type="button" className="eg-primary-btn" onClick={collectContents} disabled={collectionSaving}>
+                {collectionSaving ? "Đang ghi nhận..." : "Đã thu gom"}
+              </button>
+            </div>
+          </div>
         )}
       </Modal>
 

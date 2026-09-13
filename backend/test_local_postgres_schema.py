@@ -41,6 +41,7 @@ def test_local_postgres_schema_defines_operating_tables_and_rpc():
         "user_missions",
         "reward_redemptions",
         "recycling_submissions",
+        "bin_collections",
         "qr_scan_logs",
         "proof_images",
     ]

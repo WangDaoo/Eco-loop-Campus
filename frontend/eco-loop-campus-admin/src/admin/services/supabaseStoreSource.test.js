@@ -35,6 +35,13 @@ test("supabaseStore routes runtime data through backend PostgreSQL API", () => {
   expect(source).toMatch(/\/api\/auth\/login/);
 });
 
+test("supabaseStore exposes current bin contents and collection actions through backend", () => {
+  expect(source).toMatch(/\/api\/admin\/bins\/\$\{encodeURIComponent\(binId\)\}\/contents/);
+  expect(source).toMatch(/\/api\/admin\/bins\/\$\{encodeURIComponent\(binId\)\}\/collect/);
+  expect(source).toMatch(/export async function getBinContents/);
+  expect(source).toMatch(/export async function collectBin/);
+});
+
 test("DashboardPage does not expose runtime demo seeding or source fallback pills", () => {
   expect(dashboardSource).not.toMatch(/seedDefaults/);
   expect(dashboardSource).not.toMatch(/Khởi tạo dữ liệu mẫu/);

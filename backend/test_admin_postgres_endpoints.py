@@ -176,6 +176,59 @@ def test_admin_resource_rejects_unknown_resource(client, monkeypatch):
 
     assert response.status_code == 404
 
+def test_admin_bin_contents_lists_current_waste_and_collection_history(client, monkeypatch):
+    patch_current_user(monkeypatch, "admin")
+    monkeypatch.setattr(
+        app,
+        "get_admin_bin_contents",
+        lambda bin_id: {
+            "binId": bin_id,
+            "lastCollectedAt": "2026-09-13T08:00:00+00:00",
+            "totalQuantity": 3,
+            "items": [
+                {"wasteTypeId": "plastic", "wasteTypeName": "Nhựa", "quantity": 2, "unit": "chai"},
+                {"wasteTypeId": "paper", "wasteTypeName": "Giấy", "quantity": 1, "unit": "kg"},
+            ],
+            "collections": [
+                {"id": "collection-1", "collectedAt": "2026-09-13T08:00:00+00:00", "collectedBy": "admin-1", "note": ""},
+            ],
+        },
+        raising=False,
+    )
+
+    response = client.get("/api/admin/bins/bin-1/contents", headers=bearer("admin"))
+
+    assert response.status_code == 200
+    assert response.json()["data"]["binId"] == "bin-1"
+    assert response.json()["data"]["items"][0]["quantity"] == 2
+    assert len(response.json()["data"]["collections"]) == 1
+
+def test_admin_collect_bin_creates_collection_without_deleting_submission_history(client, monkeypatch):
+    patch_current_user(monkeypatch, "admin")
+    captured = {}
+
+    def fake_collect(actor_id, bin_id, payload):
+        captured.update({"actorId": actor_id, "binId": bin_id, "payload": payload})
+        return {
+            "id": "collection-2",
+            "binId": bin_id,
+            "collectedBy": actor_id,
+            "collectedAt": "2026-09-13T09:00:00+00:00",
+            "note": "Đã thu gom",
+        }
+
+    monkeypatch.setattr(app, "collect_admin_bin", fake_collect, raising=False)
+
+    response = client.post(
+        "/api/admin/bins/bin-1/collect",
+        json={"note": "Đã thu gom"},
+        headers=bearer("admin"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["id"] == "collection-2"
+    assert captured == {"actorId": "admin-1", "binId": "bin-1", "payload": {"note": "Đã thu gom"}}
+
 def test_admin_resource_whitelists_point_history():
     config = app.admin_resource_config("point-history")
 
