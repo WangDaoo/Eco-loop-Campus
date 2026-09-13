@@ -33,6 +33,12 @@ if errorlevel 1 (
 echo.
 echo Neu danh sach tren dung, go APPLY-CLEANUP de thuc thi.
 set /p CONFIRM=Nhap xac nhan: 
+for /f "tokens=* delims= " %%A in ("%CONFIRM%") do set "CONFIRM=%%A"
+:trim_confirm_tail
+if defined CONFIRM if "%CONFIRM:~-1%"==" " (
+  set "CONFIRM=%CONFIRM:~0,-1%"
+  goto trim_confirm_tail
+)
 if /I not "%CONFIRM%"=="APPLY-CLEANUP" (
   echo [INFO] Da huy. Database chua bi thay doi.
   exit /b 0
