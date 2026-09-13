@@ -8,7 +8,7 @@ import StatusBadge from "../components/StatusBadge";
 import { BIN_GROUPS } from "../data/wasteConfig";
 import { downloadCsv } from "../services/csv";
 import { buildReportSummary, filterReportData, makeDailyReportData, makeReportCsvRows } from "../services/reportMetrics";
-import { listBins, listFeedback, listPointHistory, listPredictions } from "../services/supabaseStore";
+import { downloadStudentContributionReport, listBins, listFeedback, listPointHistory, listPredictions, listStudentContributionReport } from "../services/supabaseStore";
 
 function countBy(items, getKey) {
   return items.reduce((acc, item) => {
@@ -43,10 +43,17 @@ function normalizeLabelFilter(value, options) {
 
 export default function ReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const dateFromFilter = searchParams.get("dateFrom") || "";
+  const dateToFilter = searchParams.get("dateTo") || "";
+  const dateFilters = {
+    dateFrom: dateFromFilter,
+    dateTo: dateToFilter,
+  };
   const [predictions, setPredictions] = useState([]);
   const [bins, setBins] = useState([]);
   const [feedback, setFeedback] = useState([]);
   const [pointHistory, setPointHistory] = useState([]);
+  const [studentReport, setStudentReport] = useState({ summary: {}, dailyRows: [], studentRows: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -54,31 +61,33 @@ export default function ReportsPage() {
     let active = true;
     async function loadData() {
       setLoading(true);
-      const [predictionResult, binResult, feedbackResult, pointResult] = await Promise.all([
+      const [predictionResult, binResult, feedbackResult, pointResult, studentReportResult] = await Promise.all([
         listPredictions(),
         listBins(),
         listFeedback(),
         listPointHistory(),
+        listStudentContributionReport({ dateFrom: dateFromFilter, dateTo: dateToFilter }),
       ]);
       if (!active) return;
       setPredictions(predictionResult.data);
       setBins(binResult.data);
       setFeedback(feedbackResult.data);
       setPointHistory(pointResult.data);
-      setError([predictionResult, binResult, feedbackResult, pointResult].find(item => item.error)?.error || null);
+      setStudentReport(studentReportResult.data);
+      setError([predictionResult, binResult, feedbackResult, pointResult, studentReportResult].find(item => item.error)?.error || null);
       setLoading(false);
     }
     loadData();
     return () => {
       active = false;
     };
-  }, []);
+  }, [dateFromFilter, dateToFilter]);
 
   const buildingOptions = uniqueValues(bins, "building");
   const binGroupOptions = BIN_GROUPS.map(group => group.label);
   const filters = {
-    dateFrom: searchParams.get("dateFrom") || "",
-    dateTo: searchParams.get("dateTo") || "",
+    dateFrom: dateFilters.dateFrom,
+    dateTo: dateFilters.dateTo,
     building: normalizeLabelFilter(searchParams.get("building"), buildingOptions),
     binGroup: normalizeLabelFilter(searchParams.get("binGroup"), binGroupOptions),
   };
@@ -111,6 +120,17 @@ export default function ReportsPage() {
     labels: groupRows.map(row => row.group),
     datasets: [{ label: "Lượt quét", data: groupRows.map(row => row.scans), backgroundColor: BIN_GROUPS.map(group => group.color), borderRadius: 8 }],
   };
+  const studentSummary = studentReport.summary || {};
+  const dailyRows = Array.isArray(studentReport.dailyRows) ? studentReport.dailyRows : [];
+  const studentRows = Array.isArray(studentReport.studentRows) ? studentReport.studentRows : [];
+  const studentTrendData = {
+    labels: dailyRows.map(row => row.date),
+    datasets: [
+      { label: "Lượt đóng góp", data: dailyRows.map(row => row.contributions), borderColor: "#2f80ed", backgroundColor: "rgba(47,128,237,0.12)", tension: 0.35, fill: true },
+      { label: "Ecopoint", data: dailyRows.map(row => row.points), borderColor: "#16a34a", backgroundColor: "rgba(22,163,74,0.12)", tension: 0.35, fill: true },
+      { label: "Đổi thưởng", data: dailyRows.map(row => row.rewardRedemptions), borderColor: "#b45309", backgroundColor: "rgba(180,83,9,0.12)", tension: 0.35, fill: true },
+    ],
+  };
 
   const columns = [
     { key: "group", label: "Nhóm thùng", render: row => <StatusBadge group={row.group}>{row.group}</StatusBadge> },
@@ -119,6 +139,36 @@ export default function ReportsPage() {
     { key: "feedback", label: "Phản hồi" },
     { key: "fullBins", label: "Thùng đầy" },
   ];
+  const studentColumns = [
+    { key: "fullName", label: "Họ tên" },
+    { key: "studentCode", label: "Mã sinh viên" },
+    { key: "faculty", label: "Khoa" },
+    { key: "group", label: "Lớp" },
+    { key: "contributionCount", label: "Số lần đóng góp" },
+    { key: "totalPoints", label: "Tổng điểm" },
+  ];
+  const dailyColumns = [
+    { key: "date", label: "Ngày" },
+    { key: "contributions", label: "Lượt đóng góp" },
+    { key: "activeStudents", label: "Số sinh viên tham gia" },
+    { key: "points", label: "Ecopoint" },
+    { key: "feedback", label: "Phản hồi" },
+    { key: "rewardRedemptions", label: "Đổi thưởng" },
+  ];
+  const downloadStudentReport = async format => {
+    const response = await downloadStudentContributionReport(format, dateFilters);
+    if (response.error || !response.data?.blob) {
+      setError(response.error || new Error("Không xuất được danh sách"));
+      return;
+    }
+    const extension = format === "xlsx" ? "xlsx" : "csv";
+    const url = URL.createObjectURL(response.data.blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `eco-loop-diem-ren-luyen.${extension}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="eg-page">
@@ -158,6 +208,34 @@ export default function ReportsPage() {
         <div className="eg-card-head"><h2>Bảng tổng hợp</h2></div>
         <DataTable columns={columns} rows={groupRows} />
       </section>
+
+      <section className="eg-card">
+        <div className="eg-card-head">
+          <div>
+            <h2>Danh sách điểm rèn luyện</h2>
+            <p>Xuất danh sách sinh viên theo khoảng thời gian đang lọc.</p>
+          </div>
+          <div className="eg-button-row">
+            <button type="button" className="eg-secondary-btn" onClick={() => void downloadStudentReport("csv")}><DownloadSimple size={18} /> Tải danh sách CSV</button>
+            <button type="button" className="eg-primary-btn" onClick={() => void downloadStudentReport("xlsx")}><DownloadSimple size={18} /> Tải danh sách Excel</button>
+          </div>
+        </div>
+        <div className="eg-stat-grid">
+          <StatCard title="Lượt đóng góp" value={studentSummary.totalContributions || 0} hint="Lượt nộp rác đã xác nhận" />
+          <StatCard title="Sinh viên tham gia" value={studentSummary.activeStudents || 0} hint="Có ít nhất 1 lượt đóng góp" tone="green" />
+          <StatCard title="Tổng điểm" value={studentSummary.totalPoints || 0} hint="Trong khoảng thời gian lọc" tone="orange" />
+          <StatCard title="Trung bình/ngày" value={studentSummary.averageContributionsPerDay || 0} hint="Theo ngày có hoạt động" tone="red" />
+        </div>
+        <DataTable columns={studentColumns} rows={studentRows} emptyText="Chưa có sinh viên đóng góp trong khoảng thời gian này" />
+      </section>
+
+      <section className="eg-card">
+        <div className="eg-card-head"><h2>Biến động theo ngày</h2></div>
+        <DataTable columns={dailyColumns} rows={dailyRows} emptyText="Chưa có dữ liệu theo ngày" />
+      </section>
+      <div className="eg-dashboard-grid">
+        <ChartPanel title="Thống kê theo ngày" subtitle="Lượt đóng góp, Ecopoint và đổi thưởng" type="line" data={studentTrendData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } } }} />
+      </div>
     </div>
   );
 }

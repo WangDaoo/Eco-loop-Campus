@@ -1147,7 +1147,7 @@ test("reports page grouped table counts dirty full bin status", async () => {
 
   expect(await screen.findByRole("heading", { name: /báo cáo/i })).toBeInTheDocument();
   await waitFor(() => expect(screen.getByText(/theo bộ lọc hiện tại/i)).toBeInTheDocument());
-  const reportsTable = screen.getByRole("table");
+  const reportsTable = screen.getAllByRole("table")[0];
   const recycleRow = within(reportsTable).getByText("Tái chế").closest("tr");
   expect(within(recycleRow).getByText("1")).toBeInTheDocument();
 });

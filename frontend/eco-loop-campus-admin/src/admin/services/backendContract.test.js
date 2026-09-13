@@ -38,3 +38,11 @@ test("admin submission review uses state-machine endpoints, not generic resource
   expect(source).toMatch(/\/api\/admin\/point-adjustments/);
   expect(source).toMatch(/reward-redemption-batches\/\$\{encodeURIComponent\(batchId\)\}\/finalize/);
 });
+
+test("admin report service supports student contribution JSON and file exports", () => {
+  const source = fs.readFileSync(path.join(__dirname, "supabaseStore.js"), "utf8");
+  expect(source).toMatch(/export async function listStudentContributionReport/);
+  expect(source).toMatch(/export async function downloadStudentContributionReport/);
+  expect(source).toMatch(/\/api\/admin\/reports\/student-contributions\/export/);
+  expect(source).toMatch(/format=\$\{normalizedFormat\}/);
+});

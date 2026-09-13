@@ -74,6 +74,23 @@ async function requestBackend(path, options = {}) {
   return response.json();
 }
 
+async function requestBackendBlob(path) {
+  const response = await fetch(`${apiUrl()}${path}`, { headers: authHeaders() });
+  if (!response.ok) throw new Error(await readError(response));
+  return {
+    blob: await response.blob(),
+    contentDisposition: response.headers.get("content-disposition") || "",
+  };
+}
+
+function reportQuery(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+  if (filters.dateTo) params.set("dateTo", filters.dateTo);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 async function listResource(resource, mapper = item => item) {
   try {
     const payload = await requestBackend(RESOURCE_PATHS[resource]);
@@ -1004,6 +1021,30 @@ export async function listPointHistory() {
   return result(data, BACKEND, error);
 }
 
+export async function listStudentContributionReport(filters = {}) {
+  try {
+    const payload = await requestBackend(`/api/admin/reports/student-contributions${reportQuery(filters)}`);
+    return result(payload.data || { filters: {}, summary: {}, dailyRows: [], studentRows: [] });
+  } catch (error) {
+    return result({ filters: {}, summary: {}, dailyRows: [], studentRows: [] }, BACKEND, error);
+  }
+}
+
+export async function downloadStudentContributionReport(format, filters = {}) {
+  const normalizedFormat = String(format || "").toLowerCase();
+  if (!["csv", "xlsx"].includes(normalizedFormat)) {
+    return result(null, BACKEND, new Error("Invalid report format"));
+  }
+  try {
+    const response = await requestBackendBlob(
+      `/api/admin/reports/student-contributions/export${reportQuery(filters)}${reportQuery(filters) ? "&" : "?"}format=${normalizedFormat}`
+    );
+    return result(response, BACKEND);
+  } catch (error) {
+    return result(null, BACKEND, error);
+  }
+}
+
 export async function saveManualPointHistory(record) {
   const userId = typeof record.userId === "string" ? record.userId.trim() : "";
   const action = typeof record.action === "string" ? record.action.trim() : "";
@@ -1214,4 +1255,5 @@ export const __testing = {
   fromUser,
   toUser,
   requestBackend,
+  requestBackendBlob,
 };

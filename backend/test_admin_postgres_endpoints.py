@@ -181,3 +181,90 @@ def test_admin_resource_whitelists_point_history():
 
     assert config["table"] == "point_history"
     assert "user_id" in config["columns"]
+
+
+def test_admin_student_contribution_report_aggregates_students_and_days(monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self.query_index = -1
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return False
+        def execute(self, query, params=()):
+            self.query_index += 1
+            self.params = params
+        def fetchall(self):
+            datasets = [
+                [
+                    ("student-1", "Nguyễn Văn An", "10123001@school.edu.vn", "10123001", "information-technology", "Khoa Công nghệ thông tin", "12523W.4", 30),
+                    ("student-2", "Trần Thị Bình", "10123002@school.edu.vn", "10123002", "economics", "Khoa Kinh tế", "12523W.4", 5),
+                ],
+                [
+                    ("sub-1", "student-1", "2026-09-10"),
+                    ("sub-2", "student-1", "2026-09-11"),
+                ],
+                [("ph-1", "student-1", 12, "2026-09-10")],
+                [("fb-1", "2026-09-10")],
+                [("rw-1", "2026-09-11")],
+            ]
+            return datasets[self.query_index]
+    class FakeConnection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return False
+        def cursor(self):
+            return FakeCursor()
+    monkeypatch.setattr(app, "require_database_url", lambda: "postgresql://test", raising=False)
+    monkeypatch.setattr(app.psycopg, "connect", lambda _url: FakeConnection(), raising=False)
+
+    report = app.build_student_contribution_report("2026-09-01", "2026-09-30")
+
+    assert report["summary"] == {
+        "totalContributions": 2,
+        "activeStudents": 1,
+        "totalPoints": 12,
+        "averageContributionsPerDay": 1,
+    }
+    assert report["studentRows"][0] == {
+        "id": "student-1",
+        "fullName": "Nguyễn Văn An",
+        "studentCode": "10123001",
+        "faculty": "Khoa Công nghệ thông tin",
+        "group": "12523W.4",
+        "contributionCount": 2,
+        "totalPoints": 12,
+    }
+    assert report["dailyRows"][0] == {
+        "date": "2026-09-10",
+        "contributions": 1,
+        "activeStudents": 1,
+        "points": 12,
+        "feedback": 1,
+        "rewardRedemptions": 0,
+    }
+
+
+def test_admin_student_contribution_report_export_csv_and_xlsx(client, monkeypatch):
+    patch_current_user(monkeypatch, "admin")
+    report = {
+        "filters": {"dateFrom": "2026-09-01", "dateTo": "2026-09-30"},
+        "summary": {"totalContributions": 1, "activeStudents": 1, "totalPoints": 5, "averageContributionsPerDay": 1},
+        "dailyRows": [],
+        "studentRows": [
+            {"id": "student-1", "fullName": "Nguyễn Văn An", "studentCode": "10123001", "faculty": "Khoa Công nghệ thông tin", "group": "12523W.4", "contributionCount": 1, "totalPoints": 5},
+        ],
+    }
+    monkeypatch.setattr(app, "build_student_contribution_report", lambda date_from=None, date_to=None: report, raising=False)
+
+    csv_response = client.get("/api/admin/reports/student-contributions/export?format=csv", headers=bearer("admin"))
+    xlsx_response = client.get("/api/admin/reports/student-contributions/export?format=xlsx", headers=bearer("admin"))
+
+    assert csv_response.status_code == 200
+    assert csv_response.headers["content-type"].startswith("text/csv")
+    assert csv_response.content.startswith(b"\xef\xbb\xbf")
+    assert "Nguyễn Văn An" in csv_response.text
+    assert xlsx_response.status_code == 200
+    assert xlsx_response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert xlsx_response.content.startswith(b"PK")
