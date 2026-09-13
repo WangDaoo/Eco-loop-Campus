@@ -1,5 +1,7 @@
 begin;
 
+update missions set status = 'inactive';
+
 insert into users (id, name, email, role, status)
 values
   ('E2E_STUDENT', 'E2E Student', 'e2e.student@local.test', 'student', 'active'),

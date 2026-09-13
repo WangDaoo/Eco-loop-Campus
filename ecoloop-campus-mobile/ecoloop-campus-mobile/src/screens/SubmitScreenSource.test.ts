@@ -81,14 +81,28 @@ test('SubmitScreen QR card uses natural Vietnamese confirmation copy', () => {
 test('SubmitScreen renders localized waste type names and units from presentation helpers', () => {
   assert.match(source, /getWasteTypeDisplayName/);
   assert.match(source, /getWasteUnitDisplayLabel/);
-  assert.match(source, /getWasteTypeDisplayName\(wasteTypes,\s*waste\.id\)/);
+  assert.match(source, /getWasteTypeDisplayName\(activeWasteTypes,\s*waste\.id\)/);
   assert.match(source, /Ecopoint\/\{getWasteUnitDisplayLabel\(waste\.unit\)\}/);
   assert.doesNotMatch(source, /\{waste\.name\}<\/Text>/);
   assert.doesNotMatch(source, /Ecopoint\/\{waste\.unit\}/);
+});
+
+test('SubmitScreen exposes active waste types for manual selection and hydrates the first choice', () => {
+  assert.match(source, /activeWasteTypes/);
+  assert.match(source, /item\.status\s*===\s*['"]active['"]/);
+  assert.match(source, /setWasteTypeId\(activeWasteTypes\[0\]\.id\)/);
+  assert.match(source, /Chọn loại rác thủ công/);
+  assert.match(source, /Chưa có danh mục loại rác hoạt động/);
 });
 
 test('SubmitScreen can open directly on the real feedback form from a mission shortcut', () => {
   assert.match(source, /focusFeedback/);
   assert.match(source, /scrollToEnd/);
   assert.match(source, /feedbackCardRef/);
+});
+
+test('SubmitScreen requires a captured or uploaded waste image before creating a QR submission', () => {
+  assert.match(source, /Chưa có ảnh rác/);
+  assert.match(source, /aiSuggestion\?\.sourceUri/);
+  assert.match(source, /proofImageUrl:\s*aiSuggestion\.sourceUri/);
 });

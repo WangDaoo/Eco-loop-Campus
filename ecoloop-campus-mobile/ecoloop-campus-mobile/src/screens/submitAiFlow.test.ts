@@ -26,6 +26,7 @@ test('AI suggestion still returns when saving prediction to Supabase fails', asy
   assert.equal(result.wasteType?.id, 'plastic-bottle');
   assert.match(result.saveWarning ?? '', /AI đã nhận diện thành công/);
   assert.match(result.saveWarning ?? '', /storage timeout/);
+  assert.equal(result.sourceUri, undefined);
 });
 
 

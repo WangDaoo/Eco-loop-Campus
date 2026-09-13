@@ -8,7 +8,7 @@ import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { BIN_GROUPS } from "../data/wasteConfig";
 import campusTopo from "../assets/campus-topo.svg";
-import { applyBinRealtimeChange, buildStationQrCode, buildStationQrPayload, listBins, saveBin, subscribeBins, updateBinStatus } from "../services/supabaseStore";
+import { applyBinRealtimeChange, buildStationQrCode, buildStationQrPayload, listBins, listRecyclingSubmissions, saveBin, subscribeBins, updateBinStatus } from "../services/supabaseStore";
 
 const emptyForm = {
   id: "",
@@ -87,6 +87,8 @@ export default function BinsPage() {
   const [bins, setBins] = useState([]);
   const [statusFilter, setStatusFilter] = useState(() => normalizeStatusFilter(searchParams.get("status")));
   const [selectedQr, setSelectedQr] = useState(null);
+  const [historyBin, setHistoryBin] = useState(null);
+  const [submissions, setSubmissions] = useState([]);
   const [editingBin, setEditingBin] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
@@ -99,10 +101,11 @@ export default function BinsPage() {
     let active = true;
     async function loadData() {
       setLoading(true);
-      const response = await listBins();
+      const [response, submissionResponse] = await Promise.all([listBins(), listRecyclingSubmissions()]);
       if (!active) return;
       setBins(response.data);
-      setError(response.error);
+      setSubmissions(submissionResponse.data);
+      setError(response.error || submissionResponse.error);
       setLoading(false);
     }
     loadData();
@@ -232,6 +235,9 @@ export default function BinsPage() {
     if (statusFilter === "attention") return needsAttention(bin);
     return statusCode(bin.status) === statusFilter;
   }), [bins, statusFilter]);
+  const confirmedHistory = useMemo(() => submissions
+    .filter(item => item.binId === historyBin?.id && String(item.status || "").toUpperCase() === "POINT_CONFIRMED")
+    .sort((a, b) => new Date(b.verifiedAt || b.createdAt || 0) - new Date(a.verifiedAt || a.createdAt || 0)), [submissions, historyBin]);
   const binGroupOptions = useMemo(() => {
     const labels = new Set(BIN_GROUPS.map(group => group.label));
     bins.forEach(bin => {
@@ -274,6 +280,7 @@ export default function BinsPage() {
       render: row => (
         <div className="eg-table-actions">
           <button type="button" className="eg-small-btn" aria-label={`QR ${row.id}`} onClick={() => setSelectedQr(row)}><QrCode size={15} weight="bold" aria-hidden="true" /> QR</button>
+          <button type="button" className="eg-small-btn" aria-label={`Lịch sử ${row.id}`} onClick={() => setHistoryBin(row)}>Lịch sử</button>
           <button type="button" className="eg-small-btn" aria-label={`Sửa ${row.id}`} onClick={() => openEditForm(row)}><PencilSimple size={15} weight="bold" aria-hidden="true" /> Sửa</button>
           <button type="button" className="eg-small-btn" onClick={() => toggleStatus(row)}>{statusCode(row.status) === "maintenance" ? "Hoạt động" : "Bảo trì"}</button>
         </div>
@@ -324,6 +331,23 @@ export default function BinsPage() {
               <DownloadSimple size={16} weight="bold" aria-hidden="true" /> Mở kiểm thử AI
             </a>
           </div>
+        )}
+      </Modal>
+
+      <Modal open={Boolean(historyBin)} title={historyBin ? `Lịch sử vật phẩm - ${historyBin.name}` : "Lịch sử vật phẩm"} onClose={() => setHistoryBin(null)}>
+        {confirmedHistory.length === 0 ? (
+          <p className="eg-muted-block">Chưa có vật phẩm nào được xác nhận cho thùng này.</p>
+        ) : (
+          <DataTable
+            columns={[
+              { key: "wasteTypeName", label: "Loại rác", render: row => <strong>{row.wasteTypeName || row.wasteTypeId}</strong> },
+              { key: "actualQuantity", label: "Số lượng", render: row => `${row.actualQuantity || row.quantity} ${row.unit || ""}` },
+              { key: "userName", label: "Sinh viên", render: row => row.userName || row.userId },
+              { key: "verifiedAt", label: "Xác nhận lúc", render: row => row.verifiedAt ? new Date(row.verifiedAt).toLocaleString("vi-VN") : "Không rõ" },
+            ]}
+            rows={confirmedHistory}
+            emptyText="Chưa có vật phẩm nào được xác nhận."
+          />
         )}
       </Modal>
 

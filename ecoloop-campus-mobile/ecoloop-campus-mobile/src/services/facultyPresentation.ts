@@ -3,9 +3,15 @@ import { Faculty, UserProfile } from '../types';
 const DEFAULT_FACULTY_LABELS: Record<string, string> = {
   'information-technology': 'Khoa Công nghệ thông tin',
   'mechanical-engineering': 'Khoa Cơ khí',
+  'automotive-engineering': 'Khoa Cơ khí Động lực',
   'electrical-electronics': 'Khoa Điện - Điện tử',
+  'garment-fashion': 'Khoa Công nghệ May và Thời trang',
   'chemical-environmental': 'Khoa Công nghệ Hóa học và Môi trường',
   economics: 'Khoa Kinh tế',
+  'foreign-languages': 'Khoa Ngoại ngữ',
+  'technical-education': 'Khoa Sư phạm Kỹ thuật',
+  'basic-sciences': 'Khoa Khoa học cơ bản',
+  'political-theory': 'Khoa Lý luận chính trị',
 };
 
 function clean(value: unknown) {

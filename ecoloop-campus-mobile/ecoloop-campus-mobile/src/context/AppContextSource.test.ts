@@ -101,6 +101,11 @@ test('AppProvider refreshes backend data when the mobile app returns to foregrou
   assert.match(source, /hydrateRemoteData\(currentUser\)/);
 });
 
+test('AppProvider refreshes current user points from backend polling data', () => {
+  assert.match(source, /refreshedProfile/);
+  assert.match(source, /setCurrentUser\(current => current\.id === refreshedProfile\.id/);
+});
+
 test('AppProvider routes incomplete legacy accounts to profile completion without hydrating business data', () => {
   assert.match(source, /faculties: Faculty\[\]/);
   assert.match(source, /remoteStore\.loadFaculties\(\)/);

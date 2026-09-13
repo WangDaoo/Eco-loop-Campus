@@ -101,6 +101,7 @@ def test_confirmed_submission_advances_mission_once_and_rewards_once(
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
             "quantity": 1,
+            "proofImageUrl": "/uploads/proofs/test-mission.jpg",
         },
     ).json()["data"]
     scan = api_client.post(

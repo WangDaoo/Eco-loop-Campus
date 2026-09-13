@@ -6,11 +6,16 @@ import { Screen } from '../components/Screen';
 import { RootStackParamList, UserRole } from '../types';
 import { useAppContext } from '../context/AppContext';
 import { colors, radius } from '../theme/colors';
+import { resolveFacultyDisplayName } from '../services/facultyPresentation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  if (message === 'INVALID_SCHOOL_EMAIL') {
+    return 'Email không hợp lệ, vui lòng thử lại';
+  }
+  return message;
 }
 
 export default function RegisterScreen({ navigation }: Props) {
@@ -24,6 +29,14 @@ export default function RegisterScreen({ navigation }: Props) {
   const [facultyOpen, setFacultyOpen] = useState(false);
   const [role, setRole] = useState<UserRole>('student');
   const selectedFaculty = faculties.find(item => item.code === facultyCode);
+  const facultyLabel = (faculty?: typeof selectedFaculty) => faculty
+    ? resolveFacultyDisplayName({
+        role: 'student',
+        facultyCode: faculty.code,
+        facultyName: faculty.name,
+        group: '',
+      }, faculties)
+    : '';
   const formComplete = Boolean(
     name.trim() && email.trim() && password.trim() && studentCode.trim() && facultyCode && phoneNumber.trim()
   );
@@ -62,7 +75,7 @@ export default function RegisterScreen({ navigation }: Props) {
             <RoleButton label="Sinh viên" selected={role === 'student'} onPress={() => setRole('student')} />
             <RoleButton label="Tình nguyện viên" selected={role === 'volunteer'} onPress={() => setRole('volunteer')} />
           </View>
-          <Text style={styles.subtitle}>{role === 'student' ? 'Đăng ký bằng email sinh viên.' : 'Gửi yêu cầu cấp quyền trực trạm. Admin sẽ phê duyệt trước khi sử dụng.'}</Text>
+          <Text style={styles.subtitle}>{role === 'student' ? 'Dùng email liên hệ và mã sinh viên của bạn.' : 'Gửi yêu cầu cấp quyền trực trạm. Admin sẽ phê duyệt trước khi sử dụng.'}</Text>
           <TextInput value={name} onChangeText={setName} placeholder="Họ và tên" style={styles.input} placeholderTextColor={colors.muted} />
           <TextInput value={email} onChangeText={setEmail} placeholder="Email" style={styles.input} placeholderTextColor={colors.muted} keyboardType="email-address" autoCapitalize="none" />
           <TextInput value={studentCode} onChangeText={setStudentCode} placeholder="Mã sinh viên" style={styles.input} placeholderTextColor={colors.muted} autoCapitalize="characters" />
@@ -74,7 +87,7 @@ export default function RegisterScreen({ navigation }: Props) {
               accessibilityLabel="Chọn khoa HYUTE"
             >
               <Text style={selectedFaculty ? styles.inputText : styles.placeholder}>
-                {selectedFaculty?.name ?? 'Chọn khoa HYUTE'}
+                {facultyLabel(selectedFaculty) || 'Chọn khoa HYUTE'}
               </Text>
             </Pressable>
             {facultyOpen ? (
@@ -88,7 +101,7 @@ export default function RegisterScreen({ navigation }: Props) {
                       setFacultyOpen(false);
                     }}
                   >
-                    <Text style={styles.facultyText}>{faculty.name}</Text>
+                    <Text style={styles.facultyText}>{facultyLabel(faculty)}</Text>
                   </Pressable>
                 ))}
               </View>

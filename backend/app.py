@@ -466,7 +466,7 @@ def validate_school_email(email):
         raise AuthError(400, "INVALID_SCHOOL_EMAIL")
 
 def profile_is_complete(role, student_code, faculty_code, phone_number):
-    if role not in {"student", "volunteer"}:
+    if role != "student":
         return True
     return all((student_code, faculty_code, phone_number))
 
@@ -714,7 +714,7 @@ def require_role_user(authorization, allowed_roles):
     user = current_user_from_authorization(authorization)
     if user.get("role") not in allowed_roles:
         raise HTTPException(status_code=403, detail="Tài khoản không có quyền thực hiện thao tác này")
-    if user.get("role") in {"student", "volunteer"} and user.get("requiresProfileCompletion"):
+    if user.get("role") == "student" and user.get("requiresProfileCompletion"):
         raise HTTPException(status_code=403, detail="PROFILE_INCOMPLETE")
     return user
 
@@ -812,6 +812,7 @@ CAMEL_ALIASES = {
     "mission_id": "missionId",
     "points_each": "pointsEach",
     "points_total": "pointsTotal",
+    "total_cost_points": "totalCostPoints",
     "waste_type_id": "wasteTypeId",
     "qr_token": "qrToken",
     "qr_signature": "qrSignature",
@@ -821,6 +822,8 @@ CAMEL_ALIASES = {
     "actual_quantity": "actualQuantity",
     "volunteer_note": "volunteerNote",
     "prediction_id": "predictionId",
+    "corrected_class": "correctedClass",
+    "corrected_waste_type_id": "correctedWasteTypeId",
     "admin_note": "adminNote",
     "image_name": "imageName",
     "image_url": "imageUrl",
@@ -899,8 +902,8 @@ ADMIN_RESOURCES = {
     },
     "predictions": {
         "table": "predictions",
-        "columns": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url"],
-        "writable": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url"],
+        "columns": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url", "corrected_class", "corrected_waste_type_id"],
+        "writable": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url", "corrected_class", "corrected_waste_type_id"],
         "order": "timestamp desc",
     },
     "reward-redemptions": {
@@ -911,14 +914,14 @@ ADMIN_RESOURCES = {
     },
     "reward-redemption-batches": {
         "table": "reward_redemption_batches",
-        "columns": ["id", "student_id", "qr_token", "created_at", "expires_at", "status", "scanned_by", "scanned_at", "fulfilled_at", "updated_at"],
+        "columns": ["id", "student_id", "qr_token", "created_at", "expires_at", "total_cost_points", "status", "scanned_by", "scanned_at", "fulfilled_at", "updated_at"],
         "writable": [],
         "order": "created_at desc",
     },
     "recycling-submissions": {
         "table": "recycling_submissions",
-        "columns": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "created_at", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
-        "writable": ["id", "user_id", "bin_id", "waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
+        "columns": ["id", "user_id", "bin_id", "waste_type_id", "prediction_id", "corrected_class", "corrected_waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "created_at", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
+        "writable": ["id", "user_id", "bin_id", "waste_type_id", "prediction_id", "corrected_class", "corrected_waste_type_id", "quantity", "unit", "qr_token", "qr_signature", "status", "expired_at", "verified_by", "verified_at", "actual_quantity", "volunteer_note"],
         "order": "created_at desc",
     },
     "qr-scan-logs": {
@@ -1024,7 +1027,7 @@ def attach_reward_batch_items(rows):
 
 def mobile_reward_batch_row(batch):
     items = batch.get("items") or []
-    total_points = sum(int(item.get("pointsTotal") or 0) for item in items)
+    total_points = int(batch.get("totalCostPoints") or 0) or sum(int(item.get("pointsTotal") or 0) for item in items)
     return {
         **batch,
         "userId": batch.get("studentId"),
@@ -1480,6 +1483,11 @@ def mobile_scan_reward_redemption(payload: dict, authorization: str | None = Hea
     user = require_role_user(authorization, {"volunteer", "admin"})
     return {"data": scan_reward_redemption_batch_account(user["id"], payload)}
 
+@app.post("/api/mobile/reward-redemptions/{batch_id}/cancel")
+def mobile_cancel_reward_redemption(batch_id: str, payload: dict, authorization: str | None = Header(default=None)):
+    user = require_role_user(authorization, {"student"})
+    return {"data": cancel_reward_redemption_batch_account(user["id"], batch_id, payload)}
+
 @app.post("/api/admin/reward-redemption-batches/{batch_id}/finalize")
 def admin_finalize_reward_redemption(batch_id: str, payload: dict, authorization: str | None = Header(default=None)):
     user = require_admin_user(authorization)
@@ -1562,6 +1570,9 @@ def require_positive_decimal(value):
 
 def create_recycling_submission_account(user_id, payload):
     quantity = require_positive_decimal(qr_payload_value(payload, "quantity"))
+    proof_image_url = qr_payload_value(payload, "proofImageUrl", "proof_image_url", default="")
+    if not str(proof_image_url or "").strip():
+        raise HTTPException(status_code=400, detail="PROOF_IMAGE_REQUIRED")
     return call_postgres_json_function(
         "create_recycling_submission",
         [
@@ -1569,6 +1580,9 @@ def create_recycling_submission_account(user_id, payload):
             qr_payload_value(payload, "binId", "bin_id"),
             qr_payload_value(payload, "wasteTypeId", "waste_type_id"),
             quantity,
+            proof_image_url,
+            qr_payload_value(payload, "proofImageHash", "proof_image_hash", default=""),
+            qr_payload_value(payload, "predictionId", "prediction_id", default=""),
         ],
     )
 
@@ -1596,7 +1610,44 @@ def scan_reward_redemption_batch_account(actor_id, payload):
     return result
 
 def finalize_reward_redemption_batch_account(actor_id, batch_id, payload):
-    return call_postgres_json_function("finalize_reward_redemption_batch", [batch_id, actor_id, payload.get("status"), payload.get("note", "")])
+    result = call_postgres_json_function("finalize_reward_redemption_batch", [batch_id, actor_id, payload.get("status"), payload.get("note", "")])
+    rows = list_mobile_reward_batches()
+    batch = next((row for row in rows if row.get("id") == batch_id), None)
+    return {**(batch or {}), **result}
+
+def cancel_reward_redemption_batch_account(student_id, batch_id, payload):
+    database_url = require_database_url()
+    try:
+        with psycopg.connect(database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select student_id, status
+                    from reward_redemption_batches
+                    where id = %s
+                    for update
+                    """,
+                    (batch_id,),
+                )
+                row = cursor.fetchone()
+                if not row or row[0] != student_id:
+                    raise HTTPException(status_code=404, detail="REWARD_BATCH_NOT_FOUND")
+                if row[1] != "pending":
+                    raise HTTPException(status_code=400, detail="INVALID_REDEMPTION_STATUS")
+                cursor.execute(
+                    """
+                    update reward_redemption_batches
+                    set status = 'expired', updated_at = now()
+                    where id = %s
+                    """,
+                    (batch_id,),
+                )
+            connection.commit()
+    except HTTPException:
+        raise
+    rows = list_mobile_reward_batches(student_id)
+    batch = next((row for row in rows if row.get("id") == batch_id), None)
+    return batch or {"id": batch_id, "status": "expired", "studentId": student_id}
 
 def adjust_manual_points_account(admin_id, payload):
     return call_postgres_json_function("adjust_manual_points", [payload.get("userId") or payload.get("user_id"), admin_id, payload.get("points"), payload.get("reason"), payload.get("referenceType", "manual_point"), payload.get("referenceId", "")])
@@ -1611,11 +1662,113 @@ def scan_recycling_submission_account(volunteer_id, payload):
         ],
     )
 
+def archive_ai_correction_for_submission(submission_id, actor_id):
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select s.prediction_id, s.corrected_class, s.corrected_waste_type_id,
+                       p.class, pi.id, pi.image_url, pi.note
+                from recycling_submissions s
+                join predictions p on p.id = s.prediction_id
+                join lateral (
+                  select id, image_url, note
+                  from proof_images
+                  where submission_id = s.id and status <> 'rejected'
+                  order by captured_at desc
+                  limit 1
+                ) pi on true
+                where s.id = %s and nullif(s.corrected_class, '') is not null
+                """,
+                (submission_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            prediction_id, corrected_class, corrected_waste_type_id, original_class, proof_id, image_url, proof_note = row
+            raw_url = str(image_url or "")
+            if not raw_url.startswith("/uploads/"):
+                return None
+            if raw_url.startswith("/uploads/proofs/"):
+                uploads_root = PROOF_UPLOADS_DIR.resolve()
+                source = (uploads_root / raw_url.removeprefix("/uploads/proofs/")).resolve()
+            elif raw_url.startswith("/uploads/predictions/"):
+                uploads_root = PREDICTION_UPLOADS_DIR.resolve()
+                source = (uploads_root / raw_url.removeprefix("/uploads/predictions/")).resolve()
+            else:
+                uploads_root = UPLOADS_DIR.resolve()
+                source = (uploads_root / raw_url.removeprefix("/uploads/")).resolve()
+            try:
+                source.relative_to(uploads_root)
+            except ValueError:
+                return None
+            if not source.is_file():
+                return None
+
+            normalized_class = str(corrected_class or "").strip().lower()
+            if not re.fullmatch(r"[a-z0-9_-]+", normalized_class):
+                return None
+            destination_root = TRAINING_DATASET_DIR.resolve()
+            destination_dir = (destination_root / normalized_class).resolve()
+            try:
+                destination_dir.relative_to(destination_root)
+            except ValueError:
+                return None
+
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
+            suffix = source.suffix.lower()
+            if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}:
+                suffix = ".jpg"
+            destination = destination_dir / f"submission-{digest}{suffix}"
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            if not destination.exists():
+                shutil.copy2(source, destination)
+
+            cursor.execute(
+                """
+                select id from ai_training_samples
+                where submission_id = %s and proof_id = %s and corrected_class = %s
+                limit 1
+                """,
+                (submission_id, proof_id, normalized_class),
+            )
+            existing = cursor.fetchone()
+            if existing:
+                return {"id": existing[0], "exportedPath": str(destination)}
+
+            sample_id = str(uuid.uuid4())
+            cursor.execute(
+                """
+                insert into ai_training_samples
+                  (id, prediction_id, submission_id, proof_id, original_class, corrected_class,
+                   corrected_waste_type_id, corrected_by, note, annotation_status, image_path,
+                   exported_at, export_class)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'exported', %s, now(), %s)
+                """,
+                (
+                    sample_id,
+                    prediction_id,
+                    submission_id,
+                    proof_id,
+                    original_class or "",
+                    normalized_class,
+                    corrected_waste_type_id,
+                    actor_id,
+                    proof_note or "AI correction sau khi xác nhận minh chứng",
+                    str(destination),
+                    normalized_class,
+                ),
+            )
+        connection.commit()
+    return {"id": sample_id, "exportedPath": str(destination)}
+
 def confirm_recycling_submission_account(volunteer_id, submission_id, payload):
     actual_quantity = require_positive_decimal(
         qr_payload_value(payload, "actualQuantity", "actual_quantity")
     )
-    return call_postgres_json_function(
+    result = call_postgres_json_function(
         "confirm_recycling_submission",
         [
             submission_id,
@@ -1624,6 +1777,16 @@ def confirm_recycling_submission_account(volunteer_id, submission_id, payload):
             qr_payload_value(payload, "note", default=""),
         ],
     )
+    archive_ai_correction_for_submission(submission_id, volunteer_id)
+    submission = next(
+        (row for row in list_rows_from_config(ADMIN_RESOURCES["recycling-submissions"], "id = %s", (submission_id,)) if row.get("id") == submission_id),
+        None,
+    )
+    point = next(
+        (row for row in list_rows_from_config(POINT_HISTORY_CONFIG, "submission_id = %s", (submission_id,)) if row.get("submissionId") == submission_id),
+        None,
+    )
+    return {**result, "submission": submission, "point": point}
 
 def reject_recycling_submission_account(volunteer_id, submission_id, payload):
     return call_postgres_json_function(
@@ -1696,6 +1859,7 @@ def save_submission_proof_image(submission_id, file_name, content_type, content,
             )
             row = cursor.fetchone()
         connection.commit()
+    archive_ai_correction_for_submission(submission_id, actor.get("id") if actor else None)
     return to_proof_image(row)
 
 def save_prediction_upload(file_name, content_type, content):

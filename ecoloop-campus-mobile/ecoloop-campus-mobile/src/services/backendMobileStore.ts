@@ -104,6 +104,7 @@ export type BackendMobileStore = {
   requestReward(userId: string, reward: Reward): Promise<RewardRedemption>;
   requestRewardBatch(userId: string, items: Array<{ rewardId: string; quantity: number }>, rewards: Reward[]): Promise<RewardRedemption>;
   scanRewardRedemption(qrToken: string): Promise<{ id: string; status: string; pointsSpent: number; studentId: string }>;
+  cancelRewardRedemption(batchId: string): Promise<RewardRedemption>;
 };
 
 const DEFAULT_API_URL = 'http://10.0.2.2:8000';
@@ -125,6 +126,20 @@ function normalizeAvatar(row: Row, baseUrl: string) {
 function normalizeUser(row: Row, baseUrl: string) {
   const mapped = mapUserRow(row);
   return { ...mapped, avatarUrl: buildBackendAssetUrl(mapped.avatarUrl, baseUrl) };
+}
+
+function normalizePrediction(row: Row, baseUrl: string) {
+  const mapped = mapPredictionRow(row);
+  return {
+    ...mapped,
+    imageUrl: buildBackendAssetUrl(mapped.imageUrl, baseUrl),
+    thumbnailUrl: buildBackendAssetUrl(mapped.thumbnailUrl, baseUrl),
+  };
+}
+
+function normalizeProofImage(row: Row, baseUrl: string) {
+  const mapped = mapProofImageRow(row);
+  return { ...mapped, imageUrl: buildBackendAssetUrl(mapped.imageUrl, baseUrl) ?? mapped.imageUrl };
 }
 
 function readiness(data: Pick<MobileInitialData, 'stations' | 'wasteTypes'>): OperatingReadiness {
@@ -207,6 +222,22 @@ export function createBackendMobileStore({
     return response.json() as Promise<Row>;
   }
 
+  function isLocalImageUri(uri?: string) {
+    const value = String(uri ?? '').trim();
+    return Boolean(value) && !/^https?:\/\//i.test(value) && !value.startsWith('/uploads/');
+  }
+
+  async function uploadPredictionImage(input: SavePredictionInput) {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: input.imageUri,
+      name: input.imageName ?? 'waste-capture.jpg',
+      type: input.mimeType ?? 'image/jpeg',
+    } as any);
+    const payload = await request('/api/uploads/predictions', { method: 'POST', body: formData });
+    return payload.data as Row;
+  }
+
   return {
     async checkSchema() {
       const payload = await request('/api/health/db');
@@ -278,12 +309,12 @@ export function createBackendMobileStore({
 
     async loadInitialData(profile) {
       const payload = await request('/api/mobile/initial-data');
-      const proofImages = (payload.proofImages ?? []).map((row: Row) => mapProofImageRow(row));
+      const proofImages = (payload.proofImages ?? []).map((row: Row) => normalizeProofImage(row, endpointBaseUrl));
       const submissions = attachProofImagesToSubmissions(
         (payload.submissions ?? []).map((row: Row) => mapSubmissionRow(row)),
         proofImages
       );
-      const predictions = (payload.predictions ?? []).map((row: Row) => mapPredictionRow(row));
+      const predictions = (payload.predictions ?? []).map((row: Row) => normalizePrediction(row, endpointBaseUrl));
       const pointTransactions = (payload.pointTransactions ?? []).map((row: Row) => mapPointHistoryRow(row));
       const rewardRedemptions = (payload.rewardRedemptions ?? []).map((row: Row) => mapRewardRedemptionRow(row));
       const qrScanLogs = (payload.qrScanLogs ?? []).map((row: Row) => mapQrScanLogRow(row));
@@ -315,8 +346,18 @@ export function createBackendMobileStore({
     },
 
     async saveAiPrediction(_userId, input) {
-      const payload = await request('/api/mobile/predictions', { method: 'POST', body: input });
-      return mapPredictionRow(payload.data ?? {});
+      let payloadInput = input;
+      if (!payloadInput.imageUrl && isLocalImageUri(payloadInput.imageUri)) {
+        const upload = await uploadPredictionImage(payloadInput);
+        payloadInput = {
+          ...payloadInput,
+          imageUrl: String(upload.imageUrl ?? ''),
+          thumbnailUrl: String(upload.thumbnailUrl ?? upload.imageUrl ?? ''),
+          imageName: String(upload.imageName ?? payloadInput.imageName ?? 'waste-capture.jpg'),
+        };
+      }
+      const payload = await request('/api/mobile/predictions', { method: 'POST', body: payloadInput });
+      return normalizePrediction(payload.data ?? {}, endpointBaseUrl);
     },
 
     async markSubmissionScanned(qrToken, _volunteerId, stationId) {
@@ -404,6 +445,13 @@ export function createBackendMobileStore({
     async scanRewardRedemption(qrToken) {
       const payload = await request('/api/mobile/reward-redemptions/scan', { method: 'POST', body: { qrToken } });
       return payload.data ?? {};
+    },
+    async cancelRewardRedemption(batchId) {
+      const payload = await request(`/api/mobile/reward-redemptions/${encodeURIComponent(batchId)}/cancel`, {
+        method: 'POST',
+        body: { note: 'Sinh viên hủy mã đổi thưởng' },
+      });
+      return mapRewardRedemptionRow(payload.data ?? {});
     },
   };
 }

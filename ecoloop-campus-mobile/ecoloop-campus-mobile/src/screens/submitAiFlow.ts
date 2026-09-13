@@ -69,7 +69,7 @@ export async function buildSubmitAiSuggestion({
     ...prediction,
     predictedClass: displayClass,
     predictionId: savedPrediction?.id,
-    sourceUri: asset.uri,
+    sourceUri: savedPrediction?.imageUrl,
     wasteType,
     note,
     saveWarning

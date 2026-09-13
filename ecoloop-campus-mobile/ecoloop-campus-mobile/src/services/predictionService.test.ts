@@ -139,6 +139,9 @@ test('suggestWasteTypeFromClass maps 10 AI classes to current mobile waste types
   assert.equal(suggestWasteTypeFromClass('plastic', wasteTypes)?.id, 'plastic-bottle');
   assert.equal(suggestWasteTypeFromClass('paper', wasteTypes)?.id, 'paper');
   assert.equal(suggestWasteTypeFromClass('cardboard', wasteTypes)?.id, 'paper');
+  assert.equal(suggestWasteTypeFromClass('Bìa carton', [
+    { id: 'UTEHY_WASTE_CARDBOARD', name: 'Bìa carton', unit: 'kg', pointPerUnit: 9, recycleMethod: 'Gấp phẳng', status: 'active' }
+  ])?.id, 'UTEHY_WASTE_CARDBOARD');
   assert.equal(suggestWasteTypeFromClass('metal', wasteTypes)?.id, 'metal-can');
   assert.equal(suggestWasteTypeFromClass('biological', wasteTypes)?.id, 'organic');
   assert.equal(suggestWasteTypeFromClass('battery', wasteTypes)?.id, 'hazardous');

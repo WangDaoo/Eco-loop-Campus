@@ -80,6 +80,26 @@ def test_volunteer_scans_reward_batch(client, monkeypatch):
     assert response.json()["data"]["status"] == "fulfilled"
     assert response.json()["data"]["pointsSpent"] == 20
 
+def test_student_cancels_reward_batch(client, monkeypatch):
+    patch_current_user(monkeypatch, "student")
+    captured = {}
+
+    def fake_cancel(user_id, batch_id, payload):
+        captured.update(user_id=user_id, batch_id=batch_id, payload=payload)
+        return {"id": batch_id, "status": "expired", "studentId": user_id}
+
+    monkeypatch.setattr(app, "cancel_reward_redemption_batch_account", fake_cancel, raising=False)
+    response = client.post(
+        "/api/mobile/reward-redemptions/batch-1/cancel",
+        json={"note": "Hủy mã"},
+        headers=bearer("student"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "expired"
+    assert captured["user_id"] == "student-1"
+    assert captured["batch_id"] == "batch-1"
+
 def test_only_admin_can_finalize_reward_batch(client, monkeypatch):
     patch_current_user(monkeypatch, "volunteer")
     response = client.post(

@@ -31,6 +31,10 @@ function findEcoToken(value: string) {
   return value.match(/ECL-SUB-[A-Z0-9-]+/i)?.[0] ?? value.match(/ECO-[A-Z0-9-]+/i)?.[0];
 }
 
+function findRewardToken(value: string) {
+  return value.match(/ECL-REWARD-[A-Z0-9-]+/i)?.[0];
+}
+
 export function buildStationQrCode(stationId: string) {
   return `ECL-ST-${slug(stationId)}`;
 }
@@ -68,6 +72,32 @@ export function extractSubmissionQrToken(payload: string) {
   }
 
   return direct ? normalizeToken(direct) : normalizeToken(raw);
+}
+
+export function extractRewardRedemptionQrToken(payload: string) {
+  const raw = payload.trim();
+  if (!raw) return '';
+
+  const direct = findRewardToken(raw);
+  if (direct && direct.length === raw.length) return normalizeToken(direct);
+
+  try {
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    const token = json.qrToken ?? json.qr_token ?? json.token;
+    if (typeof token === 'string' && findRewardToken(token)) return normalizeToken(token);
+  } catch {
+    // QR đổi thưởng có thể là token thuần hoặc deep link, không phải JSON.
+  }
+
+  try {
+    const url = new URL(raw);
+    const token = url.searchParams.get('token') ?? url.searchParams.get('qrToken') ?? url.searchParams.get('qr_token');
+    if (token && findRewardToken(token)) return normalizeToken(token);
+  } catch {
+    // Không phải URL hợp lệ, tiếp tục tìm token trong chuỗi.
+  }
+
+  return direct ? normalizeToken(direct) : '';
 }
 
 export function buildSubmissionQrPayload(submission: SubmissionQrInput) {

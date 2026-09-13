@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildStationQrCode, buildStationQrPayload, buildSubmissionQrPayload, extractStationQrCandidates, extractStationQrCode, extractSubmissionQrToken } from './qrPayload';
+import { buildStationQrCode, buildStationQrPayload, buildSubmissionQrPayload, extractRewardRedemptionQrToken, extractStationQrCandidates, extractStationQrCode, extractSubmissionQrToken } from './qrPayload';
 
 test('extractSubmissionQrToken accepts a plain Eco-loop v1 token and legacy tokens', () => {
   assert.equal(extractSubmissionQrToken(' ecl-sub-20260812112233-123456 '), 'ECL-SUB-20260812112233-123456');
@@ -27,6 +27,13 @@ test('buildSubmissionQrPayload keeps token scan-compatible and includes v1 metad
   assert.equal(parsed.type, 'eco-loop-submission');
   assert.equal(parsed.version, 1);
   assert.equal(parsed.expiredAt, '2026-08-23T10:00:00.000Z');
+});
+
+test('extractRewardRedemptionQrToken reads reward token from JSON QR payload v1', () => {
+  const payload = JSON.stringify({ type: 'eco-loop-reward-redemption', version: 1, qrToken: 'ECL-REWARD-ABC123' });
+
+  assert.equal(extractRewardRedemptionQrToken(payload), 'ECL-REWARD-ABC123');
+  assert.equal(extractRewardRedemptionQrToken(' ecl-reward-def456 '), 'ECL-REWARD-DEF456');
 });
 
 test('station QR helpers build and read Eco-loop station payload v1', () => {

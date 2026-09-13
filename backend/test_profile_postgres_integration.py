@@ -229,6 +229,39 @@ def test_legacy_student_must_complete_profile_before_business_actions(
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
             "quantity": 1,
+            "proofImageUrl": "/uploads/predictions/profile-test.jpg",
         },
     )
     assert allowed.status_code == 201
+
+
+def test_active_volunteer_without_student_profile_can_use_business_actions(
+    postgres_test_url, seed_operating_catalog, api_client
+):
+    with psycopg.connect(postgres_test_url) as connection:
+        connection.execute(
+            """
+            update users
+            set student_code = null, faculty_code = null, phone_number = null
+            where id = %s
+            """,
+            (SEED_IDS["volunteer_a"],),
+        )
+        connection.commit()
+
+    login = api_client.post(
+        "/api/auth/login",
+        json={"email": "volunteer.a@hyute.edu.vn", "password": TEST_PASSWORD},
+    )
+    assert login.status_code == 200
+    assert login.json()["user"]["requiresProfileCompletion"] is False
+    headers = {"Authorization": f"Bearer {login.json()['token']}"}
+
+    response = api_client.post(
+        "/api/mobile/recycling-submissions/scan",
+        headers=headers,
+        json={"qrToken": "ECL-SUB-NOT-FOUND", "stationId": SEED_IDS["bin_a"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["result"] == "INVALID_TOKEN"

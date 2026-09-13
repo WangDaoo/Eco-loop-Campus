@@ -19,3 +19,9 @@ test('RewardsScreen reward modal keeps a single redeem action', () => {
   assert.doesNotMatch(source, /Thêm sản phẩm khác/);
   assert.doesNotMatch(source, /Tạo 1 mã/);
 });
+
+test('RewardsScreen lets students cancel an active reward QR before it is scanned', () => {
+  assert.match(source, /cancelRewardRedemption/);
+  assert.match(source, /title="Hủy mã"/);
+  assert.match(source, /Mã đổi thưởng đã được hủy/);
+});

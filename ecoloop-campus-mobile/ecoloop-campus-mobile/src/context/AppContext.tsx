@@ -57,6 +57,7 @@ type AppContextValue = {
   updatePassword: (email: string, currentPassword: string, newPassword: string) => Promise<void>;
   requestReward: (reward: Reward) => Promise<boolean>;
   requestRewardBatch: (items: Array<{ rewardId: string; quantity: number }>) => Promise<boolean>;
+  cancelRewardRedemption: (batchId: string) => Promise<boolean>;
   createSubmission: (input: CreateSubmissionInput) => Promise<RecyclingSubmission>;
   saveAiPrediction: (input: SavePredictionInput) => Promise<PredictionRecord | undefined>;
   submitFeedback: (input: CreateFeedbackInput) => Promise<Feedback | undefined>;
@@ -144,6 +145,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const data = await remoteStore.loadInitialData(profile);
         const state = resolveRemoteHydrationState(data, remoteStore.getOperatingReadiness(data));
         setUsers(state.users);
+        const refreshedProfile = state.users.find(item => item.id === profile.id);
+        if (refreshedProfile) setCurrentUser(current => current.id === refreshedProfile.id ? { ...current, ...refreshedProfile } : current);
         setStations(state.stations);
         setWasteTypes(state.wasteTypes);
         setAiPredictions(state.predictions);
@@ -449,6 +452,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const cancelRewardRedemption = async (batchId: string) => {
+    try {
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để hủy mã đổi thưởng.');
+      const redemption = await remoteStore.cancelRewardRedemption(batchId);
+      setRewardRedemptions(current => [redemption, ...current.filter(item => item.id !== redemption.id)]);
+      await hydrateRemoteData(currentUser);
+      return true;
+    } catch (error) {
+      return failRemoteMutation(error);
+    }
+  };
+
   const scanRewardRedemption = async (qrToken: string) => {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để quét mã đổi thưởng.');
@@ -490,6 +505,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updatePassword,
       requestReward,
       requestRewardBatch,
+      cancelRewardRedemption,
       createSubmission,
       saveAiPrediction,
       submitFeedback,
@@ -519,6 +535,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       rewards,
       feedbacks,
       avatarOptions,
+      cancelRewardRedemption,
       faculties,
       rewardRedemptions,
       qrScanLogs,

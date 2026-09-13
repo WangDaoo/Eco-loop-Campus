@@ -39,7 +39,7 @@ function getIconForReward(reward: Reward): RewardIcon {
 }
 
 export default function RewardsScreen() {
-  const { points, rewards, rewardRedemptions, requestReward } = useAppContext();
+  const { points, rewards, rewardRedemptions, requestReward, cancelRewardRedemption } = useAppContext();
   const [activeCategory, setActiveCategory] = useState('Tất cả');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVoucher, setSelectedVoucher] = useState<Reward | null>(null);
@@ -75,6 +75,15 @@ export default function RewardsScreen() {
     if (ok) setSelectedVoucher(null);
   };
 
+  const cancelActiveRedemption = async () => {
+    if (!activeRedemption) return;
+    const ok = await cancelRewardRedemption(activeRedemption.id);
+    Alert.alert(
+      ok ? 'Mã đổi thưởng đã được hủy' : 'Không thể hủy mã',
+      ok ? 'Bạn có thể tạo mã đổi thưởng mới.' : 'Mã này có thể đã được xử lý hoặc hết hạn.'
+    );
+  };
+
   const filteredRewards = rewards.filter(reward => {
     if (searchQuery && !reward.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     if (activeCategory !== 'Tất cả' && reward.categoryName !== activeCategory) return false;
@@ -89,6 +98,7 @@ export default function RewardsScreen() {
           <QRCode value={JSON.stringify({ type: 'eco-loop-reward-redemption', version: 1, qrToken: activeRedemption.qrToken })} size={180} />
           <Text style={styles.qrCountdown}>Còn {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</Text>
           <Text style={styles.detailsText}>Đưa mã này cho tình nguyện viên quét. Điểm chỉ bị trừ sau khi xác nhận.</Text>
+          <AppButton title="Hủy mã" variant="light" onPress={cancelActiveRedemption} />
         </View>
       )}
       <View style={styles.headerCard}>

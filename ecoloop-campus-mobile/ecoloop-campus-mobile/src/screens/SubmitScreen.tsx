@@ -11,7 +11,7 @@ import { RecyclingSubmission, WasteType } from '../types';
 import { colors, radius } from '../theme/colors';
 import { predictionService, suggestWasteTypeFromClass } from '../services/predictionService';
 import { getSubmissionExpiryInfo } from '../services/submissionExpiry';
-import { getWasteTypeDisplayName, getWasteUnitDisplayLabel } from '../services/submissionPresentation';
+import { getSubmissionStatusLabel, getWasteTypeDisplayName, getWasteUnitDisplayLabel, isSubmissionQrActive } from '../services/submissionPresentation';
 import { buildSubmitAiSuggestion, SubmitAiSuggestion } from './submitAiFlow';
 import { buildSubmissionQrPayload, extractStationQrCandidates } from '../services/qrPayload';
 import { launchImageLibraryWithFallback } from '../services/imagePickerFallback';
@@ -41,7 +41,7 @@ function aiRuntimeLabel(suggestion: AiSuggestion) {
 }
 
 export default function SubmitScreen({ route }: any) {
-  const { stations, wasteTypes, createSubmission, saveAiPrediction, submitFeedback, isLoading, syncSource } = useAppContext();
+  const { stations, wasteTypes, submissions, createSubmission, saveAiPrediction, submitFeedback, isLoading, syncSource } = useAppContext();
   const scrollRef = useRef<ScrollView>(null);
   const feedbackCardRef = useRef<View>(null);
   const [stationCameraPermission, requestStationCameraPermission] = useCameraPermissions();
@@ -62,10 +62,18 @@ export default function SubmitScreen({ route }: any) {
   const [clockNow, setClockNow] = useState(new Date());
 
   const selectedStation = useMemo(() => stations.find(item => item.id === stationId) ?? stations[0], [stationId, stations]);
-  const selectedWaste = useMemo(() => wasteTypes.find(item => item.id === wasteTypeId) ?? wasteTypes[0], [wasteTypeId, wasteTypes]);
+  const activeWasteTypes = useMemo(() => wasteTypes.filter(item => item.status === 'active'), [wasteTypes]);
+  const selectedWaste = useMemo(
+    () => activeWasteTypes.find(item => item.id === wasteTypeId) ?? activeWasteTypes[0],
+    [activeWasteTypes, wasteTypeId]
+  );
   const quantityNumber = Number(quantity.replace(',', '.'));
   const estimatedPoints = selectedWaste && Number.isFinite(quantityNumber) ? Math.max(0, Math.round(quantityNumber * selectedWaste.pointPerUnit)) : 0;
-  const qrExpiryInfo = latestSubmission ? getSubmissionExpiryInfo(latestSubmission.expiredAt, clockNow) : null;
+  const displayedSubmission = useMemo(
+    () => latestSubmission ? submissions.find(item => item.id === latestSubmission.id) ?? latestSubmission : null,
+    [latestSubmission, submissions]
+  );
+  const qrExpiryInfo = displayedSubmission ? getSubmissionExpiryInfo(displayedSubmission.expiredAt, clockNow) : null;
   const stationScannerSize = Math.max(220, Math.min(300, windowWidth - 96));
   const stationScanFrameSize = Math.min(210, stationScannerSize - 48);
 
@@ -73,6 +81,16 @@ export default function SubmitScreen({ route }: any) {
     if (!stations.length) return;
     if (!stations.some(station => station.id === stationId)) setStationId(stations[0].id);
   }, [stationId, stations]);
+
+  useEffect(() => {
+    if (!activeWasteTypes.length) {
+      if (wasteTypeId) setWasteTypeId('');
+      return;
+    }
+    if (!activeWasteTypes.some(waste => waste.id === wasteTypeId)) {
+      setWasteTypeId(activeWasteTypes[0].id);
+    }
+  }, [activeWasteTypes, wasteTypeId]);
 
   useEffect(() => {
     if (!isFocused) {
@@ -144,9 +162,19 @@ export default function SubmitScreen({ route }: any) {
       Alert.alert('Số lượng chưa đúng', 'Nhập số lượng lớn hơn 0.');
       return;
     }
+    if (!aiSuggestion?.sourceUri) {
+      Alert.alert('Chưa có ảnh rác', 'Hãy chụp ảnh hoặc tải ảnh rác lên trước khi tạo mã QR.');
+      return;
+    }
 
     try {
-      const submission = await createSubmission({ binId: stationId, wasteTypeId, quantity: quantityNumber });
+      const submission = await createSubmission({
+        binId: stationId,
+        wasteTypeId,
+        quantity: quantityNumber,
+        proofImageUrl: aiSuggestion.sourceUri,
+        predictionId: aiSuggestion.predictionId,
+      });
       setLatestSubmission(submission);
     } catch (error) {
       Alert.alert('Không tạo được QR', messageOf(error));
@@ -160,7 +188,7 @@ export default function SubmitScreen({ route }: any) {
         asset,
         source,
         stationId,
-        wasteTypes,
+        wasteTypes: activeWasteTypes,
         predictImage: input => predictionService.predictImage(input),
         saveAiPrediction,
         suggestWasteTypeFromClass,
@@ -341,9 +369,15 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
              )}
           </View>
 
-          <Text style={styles.sectionTitle}>3. Loại rác & Khối lượng</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {wasteTypes.map(waste => {
+          <Text style={styles.sectionTitle}>3. Chọn loại rác thủ công</Text>
+          {activeWasteTypes.length === 0 ? (
+            <View style={styles.emptyWasteTypes}>
+              <Text style={styles.emptyWasteTypesTitle}>Chưa có danh mục loại rác hoạt động</Text>
+              <Text style={styles.emptyWasteTypesText}>Admin cần tạo hoặc mở loại rác trong PostgreSQL trước khi tạo mã QR.</Text>
+            </View>
+          ) : (
+            <View style={styles.wasteTypeList}>
+            {activeWasteTypes.map(waste => {
               const isActive = wasteTypeId === waste.id;
               return (
                 <Pressable
@@ -351,12 +385,13 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
                   style={[styles.chip, isActive && styles.chipActive]}
                   onPress={() => setWasteTypeId(waste.id)}
                 >
-                  <Text style={[styles.chipTitle, isActive && styles.chipTextActive]} numberOfLines={2}>{getWasteTypeDisplayName(wasteTypes, waste.id)}</Text>
+                  <Text style={[styles.chipTitle, isActive && styles.chipTextActive]} numberOfLines={2}>{getWasteTypeDisplayName(activeWasteTypes, waste.id)}</Text>
                   <Text style={[styles.chipMeta, isActive && styles.chipTextActive]}>{waste.pointPerUnit} Ecopoint/{getWasteUnitDisplayLabel(waste.unit)}</Text>
                 </Pressable>
               );
             })}
-          </ScrollView>
+            </View>
+          )}
 
           <View style={styles.inputContainer}>
              <TextInput
@@ -376,25 +411,30 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
           <AppButton title={isLoading ? 'Đang tạo...' : 'TẠO MÃ QR'} disabled={isLoading} onPress={handleCreate} />
         </View>
 
-        {latestSubmission && qrExpiryInfo && (
+        {displayedSubmission && qrExpiryInfo && (
           <View style={[styles.glassCard, styles.qrCard, qrExpiryInfo.expired && styles.qrCardExpired]}>
             <Text style={styles.qrTitle}>MÃ QR CỦA BẠN</Text>
-            {qrExpiryInfo.expired ? (
+            {!isSubmissionQrActive(displayedSubmission.status) ? (
+              <View style={styles.qrExpiredBox}>
+                <Text style={styles.qrExpiredTitle}>{getSubmissionStatusLabel(displayedSubmission.status)}</Text>
+                <Text style={styles.qrExpiredText}>Giao dịch đã được cập nhật trên hệ thống.</Text>
+              </View>
+            ) : qrExpiryInfo.expired ? (
               <View style={styles.qrExpiredBox}>
                 <Text style={styles.qrExpiredTitle}>Mã QR đã hết hạn</Text>
                 <Text style={styles.qrExpiredText}>Tạo mã QR mới trước khi đưa cho tình nguyện viên xác nhận.</Text>
               </View>
             ) : (
               <View style={styles.qrPlaceholder}>
-                <QRCode value={buildSubmissionQrPayload(latestSubmission)} size={164} backgroundColor="#ffffff" color="#111827" />
+                <QRCode value={buildSubmissionQrPayload(displayedSubmission)} size={164} backgroundColor="#ffffff" color="#111827" />
               </View>
             )}
-            <Text style={styles.qrPlaceholderText} numberOfLines={1} ellipsizeMode="middle">{latestSubmission.qrToken}</Text>
+            <Text style={styles.qrPlaceholderText} numberOfLines={1} ellipsizeMode="middle">{displayedSubmission.qrToken}</Text>
             <Text style={styles.qrInstruction}>Đưa mã QR này cho Tình nguyện viên tại trạm Eco-loop để xác nhận số lượng thực tế và cộng Ecopoint.</Text>
             <Text style={styles.qrMeta}>Điểm được cộng sau khi lượt gửi rác được xác nhận.</Text>
-            <Text style={[styles.qrExpiryLabel, qrExpiryInfo.expired && styles.qrExpiryExpired]}>{qrExpiryInfo.label}</Text>
+            <Text style={[styles.qrExpiryLabel, (qrExpiryInfo.expired || !isSubmissionQrActive(displayedSubmission.status)) && styles.qrExpiryExpired]}>{qrExpiryInfo.label}</Text>
             <Text style={styles.qrMeta}>{qrExpiryInfo.detail}</Text>
-            {qrExpiryInfo.expired && <AppButton title="Tạo mã QR mới" variant="light" disabled={isLoading} onPress={handleCreate} />}
+            {isSubmissionQrActive(displayedSubmission.status) && qrExpiryInfo.expired && <AppButton title="Tạo mã QR mới" variant="light" disabled={isLoading} onPress={handleCreate} />}
           </View>
         )}
 
@@ -471,6 +511,10 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     gap: 12,
   },
+  wasteTypeList: {
+    gap: 10,
+    marginBottom: 4,
+  },
   chip: {
     backgroundColor: '#ffffff',
     paddingHorizontal: 16,
@@ -478,9 +522,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     borderColor: '#e5e7eb',
-    marginRight: 12,
-    minWidth: 140,
-    maxWidth: 200,
+    minHeight: 64,
+    width: '100%',
+    justifyContent: 'center',
   },
   chipActive: {
     backgroundColor: '#10b981',
@@ -499,6 +543,25 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: '#ffffff',
+  },
+  emptyWasteTypes: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fdba74',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 4,
+  },
+  emptyWasteTypesTitle: {
+    color: '#9a3412',
+    fontWeight: '900',
+    fontSize: 15,
+  },
+  emptyWasteTypesText: {
+    color: '#7c2d12',
+    fontWeight: '600',
+    lineHeight: 20,
+    marginTop: 6,
   },
   stationScannerBox: {
     alignSelf: 'center',

@@ -8,7 +8,7 @@ import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
 import { launchImageLibraryWithFallback } from '../services/imagePickerFallback';
-import { extractSubmissionQrToken } from '../services/qrPayload';
+import { extractRewardRedemptionQrToken, extractSubmissionQrToken } from '../services/qrPayload';
 import { getSubmissionStatusLabel, getWasteTypeDisplayName } from '../services/submissionPresentation';
 import { colors, radius } from '../theme/colors';
 import type { RecyclingSubmission } from '../types';
@@ -122,18 +122,19 @@ export default function ScannerScreen() {
   };
 
   const loadQr = async (qrToken: string) => {
-    const token = extractSubmissionQrToken(qrToken);
-    if (!token) {
-      Alert.alert('Chưa có QR', 'Nhập hoặc quét QR giao dịch.');
-      return;
-    }
-    if (token.startsWith('ECL-REWARD-')) {
+    const rewardToken = extractRewardRedemptionQrToken(qrToken);
+    if (rewardToken) {
       try {
-        await scanRewardRedemption(token);
+        await scanRewardRedemption(rewardToken);
         Alert.alert('Đổi thưởng thành công', 'Điểm đã được trừ và yêu cầu đổi thưởng đã được xác nhận.');
       } catch (error) {
         Alert.alert('Không thể đổi thưởng', messageOf(error));
       }
+      return;
+    }
+    const token = extractSubmissionQrToken(qrToken);
+    if (!token) {
+      Alert.alert('Chưa có QR', 'Nhập hoặc quét QR giao dịch.');
       return;
     }
     const scannedPending = submissions.find(item => item.qrToken.trim().toUpperCase() === token && item.status === 'QR_SCANNED');

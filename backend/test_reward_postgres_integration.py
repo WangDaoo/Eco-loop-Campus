@@ -35,7 +35,7 @@ def read_reward_state(database_url, batch_id):
     with psycopg.connect(database_url) as connection:
         batch = connection.execute(
             """
-            select status, scanned_by, scanned_at, fulfilled_at
+            select status, scanned_by, scanned_at, fulfilled_at, total_cost_points
             from reward_redemption_batches where id = %s
             """,
             (batch_id,),
@@ -81,7 +81,8 @@ def test_create_batch_keeps_balance_and_stock_until_handover(
 
     assert batch["status"] == "pending"
     assert batch["totalPoints"] == 450
-    _, points, stocks, history = read_reward_state(postgres_test_url, batch["id"])
+    state, points, stocks, history = read_reward_state(postgres_test_url, batch["id"])
+    assert state[4] == 450
     assert points[SEED_IDS["student_a"]] == 1000
     assert stocks == {
         SEED_IDS["reward_voucher"]: 3,
@@ -413,6 +414,54 @@ def test_admin_cancellation_refunds_points_and_stock_exactly_once(
         ("reward_redemption", -450),
         ("reward_refund", 450),
     ]
+
+def test_admin_can_fulfill_pending_reward_batch_without_volunteer_scan(
+    postgres_test_url, seed_operating_catalog, api_client
+):
+    student = login_headers(api_client, "student.a@hyute.edu.vn")
+    admin = login_headers(api_client, "admin.test@hyute.edu.vn")
+    batch = create_batch(api_client, student)
+
+    fulfilled = api_client.post(
+        f"/api/admin/reward-redemption-batches/{batch['id']}/finalize",
+        headers=admin,
+        json={"status": "fulfilled", "note": "Admin duyệt tại quầy"},
+    )
+
+    assert fulfilled.status_code == 200
+    assert fulfilled.json()["data"]["status"] == "fulfilled"
+    state, points, stocks, history = read_reward_state(
+        postgres_test_url, batch["id"]
+    )
+    assert state[0] == "fulfilled"
+    assert state[1] == SEED_IDS["admin"]
+    assert state[2] is not None
+    assert state[3] is not None
+    assert points[SEED_IDS["student_a"]] == 900
+    assert stocks[SEED_IDS["reward_voucher"]] == 2
+    assert history == [("reward_redemption", -100)]
+
+def test_student_can_cancel_pending_reward_batch_as_expired_without_spending_points(
+    postgres_test_url, seed_operating_catalog, api_client
+):
+    student = login_headers(api_client, "student.a@hyute.edu.vn")
+    batch = create_batch(api_client, student)
+
+    cancelled = api_client.post(
+        f"/api/mobile/reward-redemptions/{batch['id']}/cancel",
+        headers=student,
+        json={"note": "Sinh viên hủy mã đang còn hạn"},
+    )
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["data"]["status"] == "expired"
+    state, points, stocks, history = read_reward_state(
+        postgres_test_url, batch["id"]
+    )
+    assert state[0] == "expired"
+    assert points[SEED_IDS["student_a"]] == 1000
+    assert stocks[SEED_IDS["reward_voucher"]] == 3
+    assert history == []
 
 
 def test_reward_status_is_consistent_in_student_and_admin_views(

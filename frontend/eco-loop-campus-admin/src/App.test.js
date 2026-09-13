@@ -3187,9 +3187,12 @@ test("ecopoints page renders invalid history and reward timestamps without crash
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /cộng điểm/i }));
   expect(await screen.findByText("Điểm có timestamp lỗi")).toBeInTheDocument();
+  expect(screen.getAllByText("Không rõ").length).toBeGreaterThanOrEqual(1);
+  fireEvent.click(screen.getByRole("tab", { name: /đổi thưởng/i }));
   expect((await screen.findAllByText("Voucher căn tin 100 điểm")).length).toBeGreaterThan(0);
-  expect(screen.getAllByText("Không rõ").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getAllByText("Không rõ").length).toBeGreaterThanOrEqual(1);
 });
 test("ecopoints page reads point history from Supabase", async () => {
   window.location.hash = "#/ecopoints";
@@ -3197,6 +3200,7 @@ test("ecopoints page reads point history from Supabase", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /cộng điểm/i }));
   expect(await screen.findByText("Duyệt Nhựa")).toBeInTheDocument();
   expect(screen.getAllByText("Nguyễn Minh Anh").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Thùng tái chế A1").length).toBeGreaterThan(0);
@@ -3208,6 +3212,7 @@ test("ecopoints page shows recycling submissions awaiting admin review and lets 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /gửi rác/i }));
   expect(await screen.findByRole("heading", { name: /giao dịch gửi rác/i })).toBeInTheDocument();
   expect(await screen.findByText("ECO-REVIEW-001")).toBeInTheDocument();
   expect(screen.getAllByText("Nguyễn Minh Anh").length).toBeGreaterThan(0);
@@ -3242,6 +3247,7 @@ test("ecopoints page shows filters and leaderboards", async () => {
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
   expect(screen.getByLabelText(/khoa/i)).toHaveValue("CNTT K18");
+  fireEvent.click(screen.getByRole("tab", { name: /xếp hạng/i }));
   expect(screen.getByRole("heading", { name: /bảng xếp hạng cá nhân/i })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /bảng xếp hạng lớp.?khoa/i })).toBeInTheDocument();
   expect((await screen.findAllByText("Nguyễn Minh Anh")).length).toBeGreaterThan(0);
@@ -3254,16 +3260,13 @@ test("ecopoints page uses searchable user pickers and exposes refresh", async ()
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /tải lại dữ liệu/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /cộng điểm/i }));
 
   const manualSearch = screen.getByRole("searchbox", { name: /tìm người nhận điểm/i });
   fireEvent.change(manualSearch, { target: { value: "Minh Anh" } });
   expect(await screen.findByRole("option", { name: /nguyễn minh anh/i })).toBeInTheDocument();
   expect(screen.queryByRole("combobox", { name: /^người nhận điểm$/i })).not.toBeInTheDocument();
-
-  const rewardSearch = screen.getByRole("searchbox", { name: /tìm người đổi thưởng/i });
-  fireEvent.change(rewardSearch, { target: { value: "SV001" } });
-  expect((await screen.findAllByRole("option", { name: /nguyễn minh anh/i })).length).toBeGreaterThan(0);
-  expect(screen.queryByRole("combobox", { name: /^người đổi thưởng$/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("searchbox", { name: /tìm người đổi thưởng/i })).not.toBeInTheDocument();
 });
 
 test("ecopoints page normalizes dirty group and bin group query filters in the UI", async () => {
@@ -3274,6 +3277,7 @@ test("ecopoints page normalizes dirty group and bin group query filters in the U
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
   await waitFor(() => expect(screen.getByLabelText(/khoa/i)).toHaveValue("CNTT K18"));
   expect(screen.getByLabelText(/nhóm rác/i)).toHaveValue("Tái chế");
+  fireEvent.click(screen.getByRole("tab", { name: /cộng điểm/i }));
   expect(await screen.findByText("Duyệt Nhựa")).toBeInTheDocument();
 });
 
@@ -3283,6 +3287,7 @@ test("admins can add manual Ecopoint adjustments", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /cộng điểm/i }));
   fireEvent.change(await screen.findByLabelText(/người nhận điểm/i), { target: { value: "SV001" } });
   fireEvent.change(screen.getByLabelText(/số điểm/i), { target: { value: "10" } });
   fireEvent.change(screen.getByLabelText(/lý do/i), { target: { value: "Nộp rác sự kiện xanh" } });
@@ -3301,6 +3306,7 @@ test("ecopoints page rejects invalid manual point adjustments", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /cộng điểm/i }));
   fireEvent.click(screen.getByRole("button", { name: /cộng điểm thủ công/i }));
 
   expect(await screen.findByText(/chọn người nhận và nhập lý do trước khi cộng điểm/i)).toBeInTheDocument();
@@ -3323,6 +3329,7 @@ test("ecopoints page blocks negative point rule values", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /quy tắc điểm/i }));
   const recycleRuleCard = (await screen.findByRole("heading", { name: /rác tái chế hợp lệ/i })).closest("section");
   fireEvent.change(within(recycleRuleCard).getByRole("spinbutton"), { target: { value: "-9" } });
   fireEvent.click(screen.getByRole("button", { name: /lưu quy tắc điểm/i }));
@@ -3340,6 +3347,7 @@ test("admins can subtract manual Ecopoint adjustments", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /cộng điểm/i }));
   fireEvent.change(await screen.findByLabelText(/người nhận điểm/i), { target: { value: "SV001" } });
   fireEvent.change(screen.getByLabelText(/số điểm/i), { target: { value: "-15" } });
   fireEvent.change(screen.getByLabelText(/lý do/i), { target: { value: "Điều chỉnh sai lượt cộng" } });
@@ -3351,23 +3359,21 @@ test("admins can subtract manual Ecopoint adjustments", async () => {
   expect(screen.queryByText("+-15")).not.toBeInTheDocument();
 });
 
-test("ecopoints page blocks reward requests when user has insufficient points", async () => {
+test("ecopoints page does not expose manual reward request controls", async () => {
   mockTables.reward_redemptions = [];
   window.location.hash = "#/ecopoints";
 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
-  fireEvent.change(await screen.findByLabelText(/người đổi thưởng/i), { target: { value: "SV001" } });
-  fireEvent.change(screen.getByLabelText(/mốc phần thưởng/i), { target: { value: "Voucher nhà sách 500 điểm" } });
-  fireEvent.click(screen.getByRole("button", { name: /tạo yêu cầu đổi thưởng/i }));
-
-  expect(await screen.findByRole("status")).toHaveClass("tone-danger");
-  expect(screen.getByRole("status")).toHaveClass("tone-danger");
+  fireEvent.click(screen.getByRole("tab", { name: /đổi thưởng/i }));
+  expect(screen.queryByLabelText(/người đổi thưởng/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/mốc phần thưởng/i)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /tạo yêu cầu đổi thưởng/i })).not.toBeInTheDocument();
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ reward_label: "Voucher nhà sách 500 điểm" }));
 });
 
-test("ecopoints page treats malformed user points as zero for reward requests", async () => {
+test("ecopoints page keeps malformed user points away from manual reward requests", async () => {
   mockTables.users = [
     { id: "AD001", name: "Quản trị Eco-loop Campus", email: "admin@school.edu.vn", role: "admin", group: "Ban vận hành", points: 0, status: "active" },
     { id: "SV-BAD-POINTS", name: "Sinh viên điểm lỗi", email: "bad-points@school.edu.vn", role: "student", group: "CNTT K20", points: "bad-points", status: "active" },
@@ -3378,12 +3384,8 @@ test("ecopoints page treats malformed user points as zero for reward requests", 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
-  fireEvent.change(await screen.findByLabelText(/người đổi thưởng/i), { target: { value: "SV-BAD-POINTS" } });
-  fireEvent.change(screen.getByLabelText(/mốc phần thưởng/i), { target: { value: "Voucher căn tin 100 điểm" } });
-  fireEvent.click(screen.getByRole("button", { name: /tạo yêu cầu đổi thưởng/i }));
-
-  expect(await screen.findByText(/người dùng chưa đủ ecopoint/i)).toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveClass("tone-danger");
+  fireEvent.click(screen.getByRole("tab", { name: /đổi thưởng/i }));
+  expect(screen.queryByLabelText(/người đổi thưởng/i)).not.toBeInTheDocument();
   expect(mockSupabaseUpsert).not.toHaveBeenCalledWith(expect.objectContaining({ user_id: "SV-BAD-POINTS" }));
 });
 
@@ -3395,6 +3397,7 @@ test("admins can cancel fulfilled reward batches", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /đổi thưởng/i }));
   expect((await screen.findAllByText("BATCH-REJECT")).length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: /hoàn tác đổi thưởng/i }));
 
@@ -3409,6 +3412,7 @@ test("ecopoints page keeps reward actions for dirty pending statuses", async () 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /đổi thưởng/i }));
   expect((await screen.findAllByText("Voucher căn tin 100 điểm")).length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: /^duyệt$/i }));
 
@@ -3431,22 +3435,21 @@ test.skip("reward review update failure stores live Supabase reward in local fal
     expect.objectContaining({ id: "RW-LIVE-FALLBACK", status: "approved", adminNote: "" }),
   ]));
 });
-test("admins can request and approve reward redemptions", async () => {
+test("admins can approve mobile reward redemption batches", async () => {
   mockTables.reward_redemptions = [];
+  mockTables.reward_redemption_batches = [{ id: "BATCH-APPROVE", student_id: "SV001", status: "pending", created_at: "2026-07-07T10:00:00.000Z" }];
+  mockTables.reward_redemption_items = [{ id: "ITEM-APPROVE", batch_id: "BATCH-APPROVE", reward_title: "Voucher căn tin 100 điểm", quantity: 1 }];
   window.location.hash = "#/ecopoints";
 
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
-  fireEvent.change(await screen.findByLabelText(/người đổi thưởng/i), { target: { value: "SV001" } });
-  fireEvent.change(screen.getByLabelText(/mốc phần thưởng/i), { target: { value: "Voucher căn tin 100 điểm" } });
-  fireEvent.click(screen.getByRole("button", { name: /tạo yêu cầu đổi thưởng/i }));
+  fireEvent.click(screen.getByRole("tab", { name: /đổi thưởng/i }));
+  expect((await screen.findAllByText("BATCH-APPROVE")).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: /^duyệt$/i }));
 
-  await waitFor(() => expect(mockSupabaseUpsert).toHaveBeenCalledWith(expect.objectContaining({
-    reward_label: "Voucher căn tin 100 điểm",
-    cost_points: 100,
-    status: "pending",
-  })));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/reward-redemption-batches/BATCH-APPROVE/finalize"), expect.objectContaining({ method: "POST" })));
+  expect(await screen.findByText("fulfilled")).toBeInTheDocument();
 });
 
 test("ecopoints page lets admins manage reward products", async () => {
@@ -3455,6 +3458,7 @@ test("ecopoints page lets admins manage reward products", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /sản phẩm/i }));
   expect(await screen.findByRole("heading", { name: /sản phẩm đổi thưởng/i })).toBeInTheDocument();
   expect(await screen.findByText("Cà phê căn tin")).toBeInTheDocument();
 

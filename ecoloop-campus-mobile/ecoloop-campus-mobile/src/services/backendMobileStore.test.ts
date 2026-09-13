@@ -205,6 +205,40 @@ test('backend mobile store creates scans and confirms QR submissions via backend
   assert.match(calls.join('\n'), /POST https:\/\/api\.example\.test\/api\/mobile\/recycling-submissions\/sub-1\/confirm/);
 });
 
+test('backend mobile store normalizes saved prediction image URLs for native image preview', async () => {
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage: memoryStorage(),
+    initialToken: 'token-1',
+    fetcher: async (url) => {
+      if (String(url).endsWith('/api/uploads/predictions')) {
+        return response({ data: { imageUrl: '/uploads/predictions/2026-09-13/bottle.jpg', imageName: 'bottle.jpg' } }, true, 201);
+      }
+      return response({
+        data: {
+          id: 'prediction-1',
+          class: 'plastic',
+          confidence: 0.92,
+          source: 'upload',
+          imageUrl: '/uploads/predictions/2026-09-13/bottle.jpg',
+          imageName: 'bottle.jpg',
+        },
+      }, true, 201);
+    },
+  });
+
+  const prediction = await store.saveAiPrediction('student-1', {
+    className: 'plastic',
+    confidence: 0.92,
+    source: 'upload',
+    imageUri: 'file:///tmp/bottle.jpg',
+    imageName: 'bottle.jpg',
+    mimeType: 'image/jpeg',
+  });
+
+  assert.equal(prediction.imageUrl, 'https://api.example.test/uploads/predictions/2026-09-13/bottle.jpg');
+});
+
 test('backend mobile store surfaces backend errors without Supabase fallback wording', async () => {
   const store = createBackendMobileStore({
     baseUrl: 'https://api.example.test',

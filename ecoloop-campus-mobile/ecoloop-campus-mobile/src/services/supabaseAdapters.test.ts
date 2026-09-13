@@ -121,6 +121,9 @@ test('maps submission and point history rows then applies realtime changes by id
     user_id: 'student-1',
     bin_id: 'BIN-01',
     waste_type_id: 'paper',
+    prediction_id: 'ai-1',
+    corrected_class: 'plastic',
+    corrected_waste_type_id: 'plastic',
     quantity: '2',
     unit: 'kg',
     qr_token: 'ECO-1',
@@ -135,6 +138,9 @@ test('maps submission and point history rows then applies realtime changes by id
 
   assert.equal(submission.createdAt.toISOString(), '2026-08-02T01:00:00.000Z');
   assert.equal(submission.actualQuantity, 1.8);
+  assert.equal(submission.predictionId, 'ai-1');
+  assert.equal(submission.correctedClass, 'plastic');
+  assert.equal(submission.correctedWasteTypeId, 'plastic');
 
   const point = mapPointHistoryRow({
     id: 9,

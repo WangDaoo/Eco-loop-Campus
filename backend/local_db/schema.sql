@@ -64,7 +64,9 @@ create table if not exists predictions (
   bin_id text references bins(id) on delete set null,
   image_name text,
   image_url text,
-  thumbnail_url text
+  thumbnail_url text,
+  corrected_class text,
+  corrected_waste_type_id text references waste_types(id) on delete set null
 );
 
 create table if not exists point_rules (
@@ -175,6 +177,16 @@ alter table users add column if not exists phone_number text;
 create unique index if not exists idx_users_student_code_ci
   on users (lower(student_code)) where student_code is not null;
 
+alter table predictions add column if not exists corrected_class text;
+alter table predictions add column if not exists corrected_waste_type_id text references waste_types(id) on delete set null;
+
+update users u
+set "group" = f.name,
+    updated_at = now()
+from faculties f
+where u.faculty_code = f.code
+  and coalesce(u."group", '') is distinct from f.name;
+
 alter table rewards add column if not exists stock integer check (stock is null or stock >= 0);
 
 alter table rewards add column if not exists category_id text references reward_categories(id) on delete set null;
@@ -237,6 +249,7 @@ create table if not exists reward_redemption_batches (
   qr_token text not null unique,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
+  total_cost_points integer not null default 0 check (total_cost_points >= 0),
   status text not null default 'pending' check (status in ('pending', 'scanned', 'fulfilled', 'expired', 'rejected', 'cancelled')),
   scanned_by text references users(id) on delete set null,
   scanned_at timestamptz,
@@ -244,6 +257,66 @@ create table if not exists reward_redemption_batches (
   updated_at timestamptz not null default now()
 );
 
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_batches' and column_name = 'user_id'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_batches' and column_name = 'student_id'
+  ) then
+    alter table reward_redemption_batches rename column user_id to student_id;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_batches' and column_name = 'expired_at'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_batches' and column_name = 'expires_at'
+  ) then
+    alter table reward_redemption_batches rename column expired_at to expires_at;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_batches' and column_name = 'redeemed_by'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_batches' and column_name = 'scanned_by'
+  ) then
+    alter table reward_redemption_batches rename column redeemed_by to scanned_by;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_batches' and column_name = 'redeemed_at'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_batches' and column_name = 'scanned_at'
+  ) then
+    alter table reward_redemption_batches rename column redeemed_at to scanned_at;
+  end if;
+end;
+$$;
+
+alter table reward_redemption_batches add column if not exists student_id text;
+alter table reward_redemption_batches add column if not exists qr_token text;
+alter table reward_redemption_batches add column if not exists created_at timestamptz not null default now();
+alter table reward_redemption_batches add column if not exists expires_at timestamptz not null default now();
+alter table reward_redemption_batches add column if not exists total_cost_points integer not null default 0;
+alter table reward_redemption_batches add column if not exists status text not null default 'pending';
+alter table reward_redemption_batches add column if not exists scanned_by text;
+alter table reward_redemption_batches add column if not exists scanned_at timestamptz;
+alter table reward_redemption_batches add column if not exists fulfilled_at timestamptz;
+alter table reward_redemption_batches add column if not exists updated_at timestamptz not null default now();
+
+alter table reward_redemption_batches
+  drop constraint if exists reward_redemption_batches_status_check;
+update reward_redemption_batches
+set status = 'pending'
+where status = 'created';
+update reward_redemption_batches
+set status = 'fulfilled'
+where status = 'redeemed';
 update reward_redemption_batches
 set status = 'fulfilled',
     fulfilled_at = coalesce(fulfilled_at, scanned_at, updated_at)
@@ -252,10 +325,15 @@ update reward_redemption_batches
 set status = 'cancelled'
 where status = 'rejected';
 alter table reward_redemption_batches
-  drop constraint if exists reward_redemption_batches_status_check;
+  alter column status set default 'pending';
 alter table reward_redemption_batches
   add constraint reward_redemption_batches_status_check
   check (status in ('pending', 'fulfilled', 'expired', 'cancelled'));
+alter table reward_redemption_batches
+  drop constraint if exists reward_redemption_batches_total_cost_points_check;
+alter table reward_redemption_batches
+  add constraint reward_redemption_batches_total_cost_points_check
+  check (total_cost_points >= 0);
 
 alter table missions add column if not exists event_type text not null default 'submission_confirmed';
 alter table missions add column if not exists filter_waste_type_id text references waste_types(id) on delete set null;
@@ -270,11 +348,53 @@ create table if not exists reward_redemption_items (
   points_total integer not null check (points_total >= 0)
 );
 
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_items' and column_name = 'reward_label'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_items' and column_name = 'reward_title'
+  ) then
+    alter table reward_redemption_items rename column reward_label to reward_title;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_items' and column_name = 'unit_cost_points'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_items' and column_name = 'points_each'
+  ) then
+    alter table reward_redemption_items rename column unit_cost_points to points_each;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_items' and column_name = 'line_cost_points'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'reward_redemption_items' and column_name = 'points_total'
+  ) then
+    alter table reward_redemption_items rename column line_cost_points to points_total;
+  end if;
+end;
+$$;
+
 alter table reward_redemption_items drop constraint if exists reward_redemption_items_reward_id_fkey;
 alter table reward_redemption_items alter column reward_id drop not null;
 alter table reward_redemption_items
   add constraint reward_redemption_items_reward_id_fkey
   foreign key (reward_id) references rewards(id) on delete set null;
+
+update reward_redemption_batches b
+set total_cost_points = coalesce(i.total_points, 0)
+from (
+  select batch_id, sum(points_total)::integer as total_points
+  from reward_redemption_items
+  group by batch_id
+) i
+where i.batch_id = b.id
+  and b.total_cost_points is distinct from coalesce(i.total_points, 0);
 
 drop index if exists idx_active_reward_batch_per_student;
 create unique index idx_active_reward_batch_per_student
@@ -287,6 +407,9 @@ create table if not exists recycling_submissions (
   user_id text references users(id) on delete set null,
   bin_id text references bins(id) on delete set null,
   waste_type_id text references waste_types(id) on delete set null,
+  prediction_id text references predictions(id) on delete set null,
+  corrected_class text,
+  corrected_waste_type_id text references waste_types(id) on delete set null,
   quantity numeric not null default 0 check (quantity > 0),
   unit text not null default 'item',
   qr_token text not null unique,
@@ -299,6 +422,10 @@ create table if not exists recycling_submissions (
   actual_quantity numeric,
   volunteer_note text
 );
+
+alter table recycling_submissions add column if not exists prediction_id text references predictions(id) on delete set null;
+alter table recycling_submissions add column if not exists corrected_class text;
+alter table recycling_submissions add column if not exists corrected_waste_type_id text references waste_types(id) on delete set null;
 
 alter table point_history drop constraint if exists point_history_submission_id_fkey;
 
@@ -344,7 +471,74 @@ create table if not exists ai_training_samples (
   export_class text not null default ''
 );
 
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'ai_training_samples' and column_name = 'proof_image_id'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'ai_training_samples' and column_name = 'proof_id'
+  ) then
+    alter table ai_training_samples rename column proof_image_id to proof_id;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'ai_training_samples' and column_name = 'stored_path'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'ai_training_samples' and column_name = 'image_path'
+  ) then
+    alter table ai_training_samples rename column stored_path to image_path;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'ai_training_samples' and column_name = 'created_at'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_name = 'ai_training_samples' and column_name = 'corrected_at'
+  ) then
+    alter table ai_training_samples rename column created_at to corrected_at;
+  end if;
+end;
+$$;
+
+alter table ai_training_samples add column if not exists corrected_at timestamptz not null default now();
+alter table ai_training_samples add column if not exists note text not null default '';
+alter table ai_training_samples add column if not exists annotation_status text not null default 'reviewed';
+alter table ai_training_samples add column if not exists exported_at timestamptz;
+alter table ai_training_samples add column if not exists export_class text not null default '';
+update ai_training_samples
+set annotation_status = 'exported',
+    exported_at = coalesce(exported_at, corrected_at),
+    export_class = coalesce(nullif(export_class, ''), corrected_class)
+where coalesce(image_path, '') <> '';
+
 create index if not exists idx_ai_training_samples_status on ai_training_samples(annotation_status);
+
+create or replace function ai_training_class_for_waste(
+  p_waste_type_id text,
+  p_waste_name text default ''
+)
+returns text
+language plpgsql
+immutable
+as $$
+declare
+  v_text text := lower(coalesce(p_waste_type_id, '') || ' ' || coalesce(p_waste_name, ''));
+begin
+  if v_text like '%battery%' or v_text like '%pin%' then return 'battery'; end if;
+  if v_text like '%biological%' or v_text like '%organic%' or v_text like '%huu_co%' or v_text like '%hữu cơ%' then return 'biological'; end if;
+  if v_text like '%cardboard%' or v_text like '%carton%' then return 'cardboard'; end if;
+  if v_text like '%clothes%' or v_text like '%vai%' or v_text like '%vải%' or v_text like '%quan_ao%' then return 'clothes'; end if;
+  if v_text like '%glass%' or v_text like '%thuy_tinh%' or v_text like '%thủy tinh%' then return 'glass'; end if;
+  if v_text like '%metal%' or v_text like '%kim_loai%' or v_text like '%kim loại%' then return 'metal'; end if;
+  if v_text like '%paper%' or v_text like '%giay%' or v_text like '%giấy%' then return 'paper'; end if;
+  if v_text like '%plastic%' or v_text like '%nhua%' or v_text like '%nhựa%' then return 'plastic'; end if;
+  if v_text like '%shoes%' or v_text like '%giay_dep%' or v_text like '%giày dép%' then return 'shoes'; end if;
+  return 'trash';
+end;
+$$;
 
 create or replace function create_reward_redemption_batch(
   p_student_id text,
@@ -405,6 +599,10 @@ begin
     v_total := v_total + v_quantity * v_reward.cost_points;
   end loop;
   if v_total <= 0 then raise exception 'REWARD_TOTAL_INVALID'; end if;
+  update reward_redemption_batches
+  set total_cost_points = v_total,
+      updated_at = now()
+  where id = v_batch_id;
   return jsonb_build_object('id', v_batch_id, 'studentId', p_student_id, 'qrToken', v_token, 'status', 'pending', 'totalPoints', v_total, 'expiresAt', v_expires_at);
 exception when others then
   raise;
@@ -478,9 +676,21 @@ begin
   if not exists (select 1 from users where id = p_actor_id and role = 'admin' and status = 'active') then
     raise exception 'INVALID_REDEMPTION_ACTOR';
   end if;
-  if p_status <> 'cancelled' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
+  if p_status not in ('fulfilled', 'cancelled', 'expired') then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
   select * into v_batch from reward_redemption_batches where id = p_batch_id for update;
   if not found then raise exception 'REWARD_BATCH_NOT_FOUND'; end if;
+
+  if p_status = 'fulfilled' then
+    if v_batch.status <> 'pending' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
+    return scan_reward_redemption_batch(v_batch.qr_token, p_actor_id);
+  end if;
+
+  if p_status = 'expired' then
+    if v_batch.status <> 'pending' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
+    update reward_redemption_batches set status = 'expired', updated_at = now() where id = p_batch_id;
+    return jsonb_build_object('id', p_batch_id, 'status', 'expired', 'studentId', v_batch.student_id);
+  end if;
+
   if v_batch.status <> 'fulfilled' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
   select coalesce(sum(points_total), 0)::integer into v_points from reward_redemption_items where batch_id = p_batch_id;
   update users set points = points + v_points, updated_at = now() where id = v_batch.student_id;
@@ -628,11 +838,16 @@ begin
 end;
 $$;
 
+drop function if exists create_recycling_submission(text, text, text, numeric, text, text, text);
+
 create or replace function create_recycling_submission(
   p_user_id text,
   p_bin_id text,
   p_waste_type_id text,
-  p_quantity numeric
+  p_quantity numeric,
+  p_proof_image_url text default '',
+  p_proof_image_hash text default '',
+  p_prediction_id text default ''
 )
 returns jsonb
 language plpgsql
@@ -641,6 +856,11 @@ declare
   v_waste waste_types%rowtype;
   v_submission recycling_submissions%rowtype;
   v_token text := 'ECL-SUB-' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISS') || '-' || lpad(floor(random() * 1000000)::text, 6, '0');
+  v_proof_url text := nullif(trim(coalesce(p_proof_image_url, '')), '');
+  v_proof_hash text := nullif(trim(coalesce(p_proof_image_hash, '')), '');
+  v_prediction_id text := nullif(trim(coalesce(p_prediction_id, '')), '');
+  v_prediction_class text := '';
+  v_corrected_class text := null;
 begin
   if not exists (select 1 from users where id = p_user_id and role = 'student' and status = 'active') then
     raise exception 'INVALID_STUDENT';
@@ -655,16 +875,55 @@ begin
   if coalesce(p_quantity, 0) <= 0 then
     raise exception 'INVALID_QUANTITY';
   end if;
+  if v_proof_url is null then
+    raise exception 'PROOF_IMAGE_REQUIRED';
+  end if;
 
-  insert into recycling_submissions (user_id, bin_id, waste_type_id, quantity, unit, qr_token, expired_at)
-  values (p_user_id, p_bin_id, p_waste_type_id, p_quantity, v_waste.unit, v_token, now() + interval '45 minutes')
+  if v_prediction_id is not null then
+    select class into v_prediction_class from predictions where id = v_prediction_id;
+    if not found then
+      v_prediction_id := null;
+    else
+      v_corrected_class := ai_training_class_for_waste(p_waste_type_id, v_waste.name);
+      if lower(coalesce(v_prediction_class, '')) = v_corrected_class then
+        v_corrected_class := null;
+      else
+        update predictions
+        set corrected_class = v_corrected_class,
+            corrected_waste_type_id = p_waste_type_id
+        where id = v_prediction_id;
+      end if;
+    end if;
+  end if;
+
+  insert into recycling_submissions (user_id, bin_id, waste_type_id, prediction_id, corrected_class, corrected_waste_type_id, quantity, unit, qr_token, expired_at)
+  values (p_user_id, p_bin_id, p_waste_type_id, v_prediction_id, v_corrected_class, case when v_corrected_class is not null then p_waste_type_id else null end, p_quantity, v_waste.unit, v_token, now() + interval '45 minutes')
   returning * into v_submission;
+
+  if v_proof_url is not null then
+    insert into proof_images (id, submission_id, image_url, image_hash, verification_code, status, note)
+    values (
+      gen_random_uuid()::text,
+      v_submission.id,
+      v_proof_url,
+      coalesce(v_proof_hash, ''),
+      coalesce(left(v_proof_hash, 12), left(md5(v_proof_url), 12)),
+      'pending',
+      case when nullif(trim(coalesce(p_prediction_id, '')), '') is not null
+        then 'Ảnh sinh viên gửi kèm khi tạo QR; prediction=' || trim(p_prediction_id)
+        else 'Ảnh sinh viên gửi kèm khi tạo QR'
+      end
+    );
+  end if;
 
   return jsonb_build_object(
     'id', v_submission.id,
     'qrToken', v_submission.qr_token,
     'expiredAt', v_submission.expired_at,
-    'status', v_submission.status
+    'status', v_submission.status,
+    'predictionId', v_submission.prediction_id,
+    'correctedClass', v_submission.corrected_class,
+    'correctedWasteTypeId', v_submission.corrected_waste_type_id
   );
 end;
 $$;
@@ -739,7 +998,11 @@ begin
   if not found then
     raise exception 'SUBMISSION_NOT_FOUND';
   end if;
-  if v_submission.status <> 'QR_SCANNED' then
+  if v_actor_role = 'admin' then
+    if v_submission.status not in ('CREATED', 'QR_SCANNED', 'PENDING_REVIEW') then
+      raise exception 'INVALID_SUBMISSION_STATUS';
+    end if;
+  elsif v_submission.status <> 'QR_SCANNED' then
     raise exception 'INVALID_SUBMISSION_STATUS';
   end if;
   if p_actual_quantity is null or p_actual_quantity <= 0 then

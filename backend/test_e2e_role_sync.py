@@ -66,6 +66,7 @@ def test_scenario_a_registered_student_submission_is_synced_exactly_once(
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
             "quantity": 2,
+            "proofImageUrl": "/uploads/proofs/test-e2e-a.jpg",
         },
     )
     assert created_response.status_code == 201, created_response.text
@@ -233,6 +234,7 @@ def test_scenario_c_ineligible_and_non_owner_actions_leave_database_unchanged(
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
             "quantity": 1,
+            "proofImageUrl": "/uploads/proofs/test-e2e-c.jpg",
         },
     ).json()["data"]
     scan = api_client.post(
@@ -291,7 +293,7 @@ def test_scenario_c_ineligible_and_non_owner_actions_leave_database_unchanged(
         history_count = connection.execute("select count(*) from point_history").fetchone()[0]
 
     assert submission_state == ("QR_SCANNED", SEED_IDS["volunteer_a"])
-    assert proof_count == 0
+    assert proof_count == 1
     assert batch_state == ("pending", None)
     assert points == 1000
     assert stocks == {

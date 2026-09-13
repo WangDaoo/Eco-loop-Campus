@@ -46,6 +46,10 @@ export function getSubmissionStatusTone(status: SubmissionStatus): SubmissionSta
   }
 }
 
+export function isSubmissionQrActive(status: SubmissionStatus) {
+  return status === 'CREATED' || status === 'QR_SCANNED' || status === 'PENDING_REVIEW';
+}
+
 const legacyWasteTypeAliases: Record<string, string> = {
   'plastic-bottle': 'plastic-pet',
   'pet-bottle': 'plastic-bottle',

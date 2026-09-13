@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { WasteType } from '../types';
-import { getSubmissionStatusLabel, getSubmissionStatusTone, getWasteTypeDisplayName, getWasteUnitDisplayLabel } from './submissionPresentation';
+import { getSubmissionStatusLabel, getSubmissionStatusTone, getWasteTypeDisplayName, getWasteUnitDisplayLabel, isSubmissionQrActive } from './submissionPresentation';
+
+test('hides submission QR after the submission is finalized', () => {
+  assert.equal(isSubmissionQrActive('CREATED'), true);
+  assert.equal(isSubmissionQrActive('QR_SCANNED'), true);
+  assert.equal(isSubmissionQrActive('PENDING_REVIEW'), true);
+  assert.equal(isSubmissionQrActive('POINT_CONFIRMED'), false);
+  assert.equal(isSubmissionQrActive('REJECTED'), false);
+});
 
 const wasteTypes: WasteType[] = [
   { id: 'plastic-pet', name: 'Nhựa PET', unit: 'kg', pointPerUnit: 10, recycleMethod: '', status: 'active' }

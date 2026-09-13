@@ -119,6 +119,9 @@ export type RecyclingSubmission = {
   status: SubmissionStatus;
   createdAt: Date;
   expiredAt: Date;
+  predictionId?: string;
+  correctedClass?: string;
+  correctedWasteTypeId?: string;
   proofImage?: ProofImage;
   verifiedBy?: string;
   verifiedAt?: Date;
@@ -130,6 +133,9 @@ export type CreateSubmissionInput = {
   binId: string;
   wasteTypeId: string;
   quantity: number;
+  proofImageUrl?: string;
+  proofImageHash?: string;
+  predictionId?: string;
 };
 
 export type CreateFeedbackInput = {

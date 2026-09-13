@@ -210,18 +210,36 @@ export function binGroupForAiClass(className: string) {
 
 export function suggestWasteTypeFromClass(className: string, wasteTypes: WasteType[]) {
   const normalized = className.trim().toLowerCase();
-  const exact = wasteTypes.find(item => item.id.toLowerCase() === normalized || searchable(item.name) === normalized);
+  const normalizedSearch = searchable(className);
+  const exact = wasteTypes.find(item =>
+    item.id.toLowerCase() === normalized ||
+    searchable(item.id) === normalizedSearch ||
+    searchable(item.name) === normalizedSearch
+  );
   if (exact) return exact;
 
+  const aliases: Record<string, string> = {
+    'bia carton': 'cardboard',
+    carton: 'cardboard',
+    'chai nhua': 'plastic',
+    pet: 'plastic',
+    'lon nhom': 'metal',
+    'kim loai': 'metal',
+    'rac huu co': 'biological',
+    'pin nguy hai': 'battery',
+    'pin va linh kien nho': 'battery',
+    'chai thuy tinh': 'glass'
+  };
   const candidates: Record<string, string[]> = {
     plastic: ['plastic', 'nhua', 'chai'],
-    paper: ['paper', 'cardboard', 'giay', 'carton'],
-    cardboard: ['paper', 'cardboard', 'giay', 'carton'],
+    paper: ['paper', 'cardboard', 'giay', 'carton', 'bia carton'],
+    cardboard: ['paper', 'cardboard', 'giay', 'carton', 'bia carton'],
     metal: ['metal', 'lon', 'kim loai'],
     biological: ['organic', 'huu co', 'sinh hoc'],
     battery: ['battery', 'pin', 'nguy hai', 'hazardous']
   };
-  const keywords = candidates[normalized] ?? [];
+  const canonicalClass = aliases[normalizedSearch] ?? normalized;
+  const keywords = candidates[canonicalClass] ?? [];
   return wasteTypes.find(item => {
     const haystack = searchable(`${item.id} ${item.name}`);
     return keywords.some(keyword => haystack.includes(keyword));

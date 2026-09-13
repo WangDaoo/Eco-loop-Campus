@@ -28,6 +28,7 @@ def test_admin_generic_resources_cannot_bypass_point_or_submission_transactions(
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
             "quantity": 1,
+            "proofImageUrl": "/uploads/proofs/test-admin-transaction.jpg",
         },
     )
     submission = create_response.json()["data"]

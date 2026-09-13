@@ -28,6 +28,7 @@ def create_and_scan_submission(api_client):
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
             "quantity": 1,
+            "proofImageUrl": "/uploads/predictions/test-proof.jpg",
         },
     )
     assert create_response.status_code == 201
@@ -56,6 +57,23 @@ def disable_missions(database_url):
         connection.commit()
 
 
+def test_create_submission_requires_initial_proof_image(seed_operating_catalog, api_client):
+    student = login_headers(api_client, "student.a@hyute.edu.vn")
+
+    response = api_client.post(
+        "/api/mobile/recycling-submissions",
+        headers=student,
+        json={
+            "binId": SEED_IDS["bin_a"],
+            "wasteTypeId": SEED_IDS["waste_plastic"],
+            "quantity": 1,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "PROOF_IMAGE_REQUIRED"
+
+
 def test_real_submission_flow_is_atomic_idempotent_and_visible_to_both_clients(
     postgres_test_url, seed_operating_catalog, api_client, monkeypatch, tmp_path
 ):
@@ -74,6 +92,7 @@ def test_real_submission_flow_is_atomic_idempotent_and_visible_to_both_clients(
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
             "quantity": 2,
+            "proofImageUrl": "/uploads/predictions/test-proof.jpg",
         },
     )
     assert created_response.status_code == 201
@@ -106,11 +125,11 @@ def test_real_submission_flow_is_atomic_idempotent_and_visible_to_both_clients(
     )
 
     assert confirmed.status_code == 200
-    assert confirmed.json()["data"] == {
-        "status": "POINT_CONFIRMED",
-        "points": 15,
-        "submissionId": created["id"],
-    }
+    assert confirmed.json()["data"]["status"] == "POINT_CONFIRMED"
+    assert confirmed.json()["data"]["points"] == 15
+    assert confirmed.json()["data"]["submissionId"] == created["id"]
+    assert confirmed.json()["data"]["submission"]["status"] == "POINT_CONFIRMED"
+    assert confirmed.json()["data"]["point"]["points"] == 15
     assert replay.status_code == 400
     mobile = api_client.get("/api/mobile/initial-data", headers=student).json()
     admin_rows = api_client.get(
@@ -136,6 +155,140 @@ def test_real_submission_flow_is_atomic_idempotent_and_visible_to_both_clients(
         row for row in mobile["users"] if row["id"] == SEED_IDS["student_a"]
     )["points"] == 1015
 
+def test_student_submission_can_carry_initial_proof_for_admin_confirmation_without_scan(
+    postgres_test_url, seed_operating_catalog, api_client
+):
+    disable_missions(postgres_test_url)
+    student = login_headers(api_client, "student.a@hyute.edu.vn")
+    admin = login_headers(api_client, "admin.test@hyute.edu.vn")
+
+    created_response = api_client.post(
+        "/api/mobile/recycling-submissions",
+        headers=student,
+        json={
+            "binId": SEED_IDS["bin_a"],
+            "wasteTypeId": SEED_IDS["waste_plastic"],
+            "quantity": 2,
+            "proofImageUrl": "/uploads/predictions/student-proof.jpg",
+            "proofImageHash": "student-proof-hash",
+        },
+    )
+
+    assert created_response.status_code == 201
+    created = created_response.json()["data"]
+    with psycopg.connect(postgres_test_url) as connection:
+        proof = connection.execute(
+            """
+            select image_url, image_hash, status
+            from proof_images where submission_id = %s
+            """,
+            (created["id"],),
+        ).fetchone()
+    assert proof == ("/uploads/predictions/student-proof.jpg", "student-proof-hash", "pending")
+
+    confirmed = api_client.post(
+        f"/api/mobile/recycling-submissions/{created['id']}/confirm",
+        headers=admin,
+        json={"actualQuantity": 2, "note": "Admin duyệt từ web"},
+    )
+
+    assert confirmed.status_code == 200
+    assert confirmed.json()["data"]["submission"]["status"] == "POINT_CONFIRMED"
+    mobile = api_client.get("/api/mobile/initial-data", headers=student).json()
+    synced = next(row for row in mobile["submissions"] if row["id"] == created["id"])
+    assert synced["status"] == "POINT_CONFIRMED"
+    assert next(row for row in mobile["users"] if row["id"] == SEED_IDS["student_a"])["points"] == 1020
+
+def test_confirm_archives_ai_mismatch_proof_for_training_dataset(
+    postgres_test_url, seed_operating_catalog, api_client, monkeypatch, tmp_path
+):
+    import app as backend_app
+
+    monkeypatch.setattr(backend_app, "UPLOADS_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(backend_app, "PROOF_UPLOADS_DIR", tmp_path / "proofs")
+    monkeypatch.setattr(backend_app, "TRAINING_DATASET_DIR", tmp_path / "training_data")
+    prediction_path = tmp_path / "uploads" / "predictions" / "wrong-paper.jpg"
+    prediction_path.parent.mkdir(parents=True, exist_ok=True)
+    prediction_path.write_bytes(b"prediction-paper-bytes")
+    disable_missions(postgres_test_url)
+    student = login_headers(api_client, "student.a@hyute.edu.vn")
+    volunteer = login_headers(api_client, "volunteer.a@hyute.edu.vn")
+    prediction_id = "TEST-PREDICTION-WRONG"
+
+    with psycopg.connect(postgres_test_url) as connection:
+        connection.execute(
+            """
+            insert into predictions (id, class, confidence, source, bin_group, status, user_id, bin_id, image_name, image_url)
+            values (%s, 'paper', 0.91, 'mobile', 'Tái chế', 'pending', %s, %s, 'wrong-paper.jpg', '/uploads/predictions/wrong-paper.jpg')
+            """,
+            (prediction_id, SEED_IDS["student_a"], SEED_IDS["bin_a"]),
+        )
+        connection.commit()
+
+    created_response = api_client.post(
+        "/api/mobile/recycling-submissions",
+        headers=student,
+        json={
+            "binId": SEED_IDS["bin_a"],
+            "wasteTypeId": SEED_IDS["waste_plastic"],
+            "quantity": 1,
+            "predictionId": prediction_id,
+            "proofImageUrl": "/uploads/predictions/wrong-paper.jpg",
+        },
+    )
+    assert created_response.status_code == 201
+    created = created_response.json()["data"]
+    scan_response = api_client.post(
+        "/api/mobile/recycling-submissions/scan",
+        headers=volunteer,
+        json={"qrToken": created["qrToken"], "stationId": SEED_IDS["bin_a"]},
+    )
+    assert scan_response.status_code == 200
+    assert scan_response.json()["data"]["result"] == "SUCCESS"
+    proof_response = api_client.post(
+        f"/api/mobile/recycling-submissions/{created['id']}/proof",
+        headers=volunteer,
+        data={"note": "proof ai correction"},
+        files={"file": ("corrected-plastic.jpg", b"plastic-proof-bytes", "image/jpeg")},
+    )
+    assert proof_response.status_code == 200
+
+    confirmed = api_client.post(
+        f"/api/mobile/recycling-submissions/{created['id']}/confirm",
+        headers=volunteer,
+        json={"actualQuantity": 1, "note": "AI đoán sai, sinh viên chọn nhựa"},
+    )
+
+    assert confirmed.status_code == 200
+    with psycopg.connect(postgres_test_url) as connection:
+        submission_row = connection.execute(
+            """
+            select prediction_id, corrected_class, corrected_waste_type_id
+            from recycling_submissions
+            where id = %s
+            """,
+            (created["id"],),
+        ).fetchone()
+        prediction_row = connection.execute(
+            "select corrected_class, corrected_waste_type_id from predictions where id = %s",
+            (prediction_id,),
+        ).fetchone()
+        sample_row = connection.execute(
+            """
+            select prediction_id, submission_id, original_class, corrected_class, corrected_waste_type_id, image_path, export_class
+            from ai_training_samples
+            where submission_id = %s
+            """,
+            (created["id"],),
+        ).fetchone()
+
+    assert submission_row == (prediction_id, "plastic", SEED_IDS["waste_plastic"])
+    assert prediction_row == ("plastic", SEED_IDS["waste_plastic"])
+    assert sample_row[:5] == (prediction_id, created["id"], "paper", "plastic", SEED_IDS["waste_plastic"])
+    assert sample_row[6] == "plastic"
+    assert (tmp_path / "training_data" / "plastic").is_dir()
+    assert sample_row[5].endswith(".jpg")
+
 
 @pytest.mark.parametrize("quantity", [0, -1, None, "not-a-number"])
 def test_create_rejects_invalid_quantity_without_partial_write(
@@ -150,6 +303,7 @@ def test_create_rejects_invalid_quantity_without_partial_write(
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
             "quantity": quantity,
+            "proofImageUrl": "/uploads/predictions/test-proof.jpg",
         },
     )
 
@@ -187,6 +341,7 @@ def test_create_rejects_inactive_catalog_rows_with_stable_error(
             "binId": SEED_IDS["bin_a"],
             "wasteTypeId": SEED_IDS["waste_plastic"],
             "quantity": 1,
+            "proofImageUrl": "/uploads/predictions/test-proof.jpg",
         },
     )
 
@@ -300,6 +455,7 @@ def test_scan_outcomes_are_persisted_without_invalid_state_transition(
                 "binId": SEED_IDS["bin_a"],
                 "wasteTypeId": SEED_IDS["waste_plastic"],
                 "quantity": 1,
+                "proofImageUrl": "/uploads/predictions/test-proof.jpg",
             },
         ).json()["data"]
         submission = created
@@ -373,7 +529,7 @@ def test_only_scanning_volunteer_can_upload_submission_proof(
             "select count(*) from proof_images where submission_id = %s",
             (submission["id"],),
         ).fetchone()[0]
-    assert proof_count == 1
+        assert proof_count == 2
 
 
 @pytest.mark.parametrize(

@@ -68,6 +68,7 @@ const SUBMISSION_STATUS_LABELS = {
 const submissionStatusCode = value => String(value || "").trim().toUpperCase();
 const submissionStatusLabel = value => SUBMISSION_STATUS_LABELS[submissionStatusCode(value)] || value || "Không rõ";
 const canRejectSubmission = row => !["POINT_CONFIRMED", "REJECTED", "EXPIRED", "LOCKED"].includes(submissionStatusCode(row.status));
+const canApproveSubmission = row => ["CREATED", "QR_SCANNED", "PENDING_REVIEW"].includes(submissionStatusCode(row.status)) && (row.proofImageUrl || Number(row.proofCount || 0) > 0);
 const formatSubmissionQuantity = row => {
   const quantity = row.actualQuantity ?? row.quantity;
   const unit = row.wasteTypeUnit ? ` ${row.wasteTypeUnit}` : "";
@@ -195,6 +196,21 @@ export default function EcoPointsPage() {
     }
     setRewardBatches(current => current.map(item => item.id === batch.id ? { ...item, ...response.data } : item));
     showToast(status === "fulfilled" ? "Đã hoàn tất đổi thưởng" : "Đã hoàn điểm đổi thưởng");
+  };
+
+  const approveRecyclingSubmission = async row => {
+    const response = await updateRecyclingSubmissionReview(row, {
+      status: "POINT_CONFIRMED",
+      actualQuantity: row.actualQuantity || row.quantity || 1,
+      volunteerNote: row.volunteerNote || "Admin duyệt trên web",
+    });
+    if (response.error || !response.data) {
+      showToast(response.error?.message || "Không thể duyệt giao dịch gửi rác", "danger");
+      return;
+    }
+    setSubmissions(current => current.map(item => item.id === row.id ? { ...item, ...response.data } : item));
+    await loadData(true);
+    showToast("Đã duyệt giao dịch gửi rác và cộng Ecopoint");
   };
 
   const userGroups = useMemo(() => Array.from(new Set(users.map(user => String(user.group || "").trim()).filter(Boolean))).sort(), [users]);
@@ -436,6 +452,7 @@ export default function EcoPointsPage() {
       label: "Thao tác",
       render: row => canRejectSubmission(row) ? (
         <div className="eg-table-actions">
+          {canApproveSubmission(row) && <button type="button" className="eg-small-btn success" aria-label={`Duyệt giao dịch ${row.qrToken}`} onClick={() => void approveRecyclingSubmission(row)}>Duyệt</button>}
           <button type="button" className="eg-small-btn danger" aria-label={`Từ chối giao dịch ${row.qrToken}`} onClick={() => rejectRecyclingSubmission(row)}>Từ chối</button>
         </div>
       ) : <span className="eg-muted-block">Đã xử lý</span>,
@@ -714,6 +731,8 @@ export default function EcoPointsPage() {
                 <div key={batch.id} className="eg-list-row">
                   <div><strong>{batch.id}</strong><p>{batch.items?.map(item => `${item.rewardTitle} x${item.quantity}`).join(', ')}</p></div>
                   <div><StatusBadge group={batch.status}>{batch.status}</StatusBadge><div className="eg-button-row">
+                    {batch.status === "pending" && <button type="button" className="eg-primary-btn" onClick={() => void finalizeBatch(batch, "fulfilled")}>Duyệt</button>}
+                    {batch.status === "pending" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "expired")}>Hủy mã</button>}
                     {batch.status === "fulfilled" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(batch, "cancelled")}>Hoàn tác đổi thưởng</button>}
                   </div></div>
                 </div>

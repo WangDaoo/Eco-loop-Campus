@@ -338,11 +338,36 @@ export function subscribeBins(onChange) {
   };
 }
 
+const FACULTY_LABELS = {
+  "mechanical-engineering": "Khoa Cơ khí",
+  "automotive-engineering": "Khoa Cơ khí động lực",
+  "electrical-electronics": "Khoa Điện – Điện tử",
+  "information-technology": "Khoa Công nghệ thông tin",
+  "garment-fashion": "Khoa Công nghệ May và Thời trang",
+  "chemical-environmental": "Khoa Công nghệ Hóa học và Môi trường",
+  economics: "Khoa Kinh tế",
+  "foreign-languages": "Khoa Ngoại ngữ",
+  "technical-education": "Khoa Sư phạm Kỹ thuật",
+  "basic-sciences": "Khoa Khoa học cơ bản",
+  "political-theory": "Khoa Lý luận chính trị",
+};
+
+function cleanFacultyGroup(group, facultyCode) {
+  const code = String(facultyCode || "").trim();
+  if (code && FACULTY_LABELS[code]) return FACULTY_LABELS[code];
+  return String(group || "").trim();
+}
+
 function fromUser(row = {}) {
-  const { created_at: createdAtSnake, avatar_key: avatarKeySnake, avatar_url: avatarUrlSnake, ...rest } = row;
+  const { created_at: createdAtSnake, avatar_key: avatarKeySnake, avatar_url: avatarUrlSnake, student_code: studentCodeSnake, faculty_code: facultyCodeSnake, phone_number: phoneNumberSnake, ...rest } = row;
   const points = Number(row.points ?? 0);
+  const facultyCode = row.facultyCode || facultyCodeSnake || "";
   return {
     ...rest,
+    studentCode: row.studentCode || studentCodeSnake || "",
+    facultyCode,
+    phoneNumber: row.phoneNumber || phoneNumberSnake || "",
+    group: cleanFacultyGroup(row.group, facultyCode),
     points: Number.isFinite(points) ? points : 0,
     createdAt: row.createdAt || createdAtSnake,
     avatarKey: row.avatarKey || avatarKeySnake || "",
@@ -566,7 +591,7 @@ function fromProofImage(row = {}) {
 }
 
 function fromRecyclingSubmission(row = {}) {
-  const { user_id: userIdSnake, bin_id: binIdSnake, waste_type_id: wasteTypeIdSnake, actual_quantity: actualQuantitySnake, qr_token: qrTokenSnake, expired_at: expiredAtSnake, created_at: createdAtSnake, verified_by: verifiedBySnake, verified_at: verifiedAtSnake, volunteer_note: volunteerNoteSnake, ...rest } = row || {};
+  const { user_id: userIdSnake, bin_id: binIdSnake, waste_type_id: wasteTypeIdSnake, prediction_id: predictionIdSnake, corrected_class: correctedClassSnake, corrected_waste_type_id: correctedWasteTypeIdSnake, actual_quantity: actualQuantitySnake, qr_token: qrTokenSnake, expired_at: expiredAtSnake, created_at: createdAtSnake, verified_by: verifiedBySnake, verified_at: verifiedAtSnake, volunteer_note: volunteerNoteSnake, ...rest } = row || {};
   const quantity = Number(row?.quantity ?? 0);
   const actualQuantity = normalizeNumber(row?.actualQuantity ?? actualQuantitySnake, null);
   return {
@@ -575,6 +600,9 @@ function fromRecyclingSubmission(row = {}) {
     userId: row?.userId || userIdSnake || "",
     binId: row?.binId || binIdSnake || "",
     wasteTypeId: row?.wasteTypeId || wasteTypeIdSnake || "",
+    predictionId: row?.predictionId || predictionIdSnake || "",
+    correctedClass: row?.correctedClass || correctedClassSnake || "",
+    correctedWasteTypeId: row?.correctedWasteTypeId || correctedWasteTypeIdSnake || "",
     quantity: Number.isFinite(quantity) ? quantity : 0,
     actualQuantity,
     status: row?.status || "CREATED",
@@ -1060,14 +1088,22 @@ export async function updateRecyclingSubmissionReview(item, updates) {
     ? `/api/mobile/recycling-submissions/${encodeURIComponent(item.id)}/reject`
     : nextStatus === "PENDING_REVIEW"
       ? `/api/mobile/recycling-submissions/${encodeURIComponent(item.id)}/review`
+      : nextStatus === "POINT_CONFIRMED"
+        ? `/api/mobile/recycling-submissions/${encodeURIComponent(item.id)}/confirm`
       : "";
   if (!endpoint) return result(current, BACKEND, new Error("Invalid recycling submission status"));
   try {
+    const body = nextStatus === "POINT_CONFIRMED"
+      ? {
+        actualQuantity: Number(updates.actualQuantity || current.actualQuantity || current.quantity || 1),
+        note: typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : current.volunteerNote || "Admin duyệt trên web",
+      }
+      : { note: typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : current.volunteerNote || "" };
     const response = await requestBackend(endpoint, {
       method: "POST",
-      body: { note: typeof updates.volunteerNote === "string" ? updates.volunteerNote.trim() : current.volunteerNote || "" },
+      body,
     });
-    return result(fromRecyclingSubmission(response.data || current), BACKEND);
+    return result(fromRecyclingSubmission(response.data?.submission || response.data || current), BACKEND);
   } catch (error) {
     return result(current, BACKEND, error);
   }
