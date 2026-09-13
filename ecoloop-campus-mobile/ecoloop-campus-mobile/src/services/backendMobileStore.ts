@@ -149,10 +149,23 @@ function readiness(data: Pick<MobileInitialData, 'stations' | 'wasteTypes'>): Op
   return { ok: missing.length === 0, missing };
 }
 
+const BACKEND_ERROR_MESSAGES: Record<string, string> = {
+  PROOF_IMAGE_REQUIRED: 'Hãy chụp ảnh hoặc tải ảnh rác lên trước khi tạo mã QR.',
+  INVALID_STATION: 'Trạm không hợp lệ hoặc đang tạm dừng.',
+  INVALID_WASTE_TYPE: 'Loại rác không hợp lệ hoặc chưa được bật.',
+  INVALID_QUANTITY: 'Số lượng chưa đúng.',
+};
+
+function friendlyBackendErrorMessage(value: unknown) {
+  const code = String(value ?? '').trim();
+  return BACKEND_ERROR_MESSAGES[code] ?? code;
+}
+
 async function readError(response: { status?: number; json(): Promise<unknown> }) {
   try {
     const payload = (await response.json()) as Row;
-    return String(payload.detail ?? payload.error ?? payload.message ?? `Backend chưa sẵn sàng (${response.status ?? 0})`);
+    const message = payload.detail ?? payload.error ?? payload.message ?? payload.code;
+    return friendlyBackendErrorMessage(message ?? `Backend chưa sẵn sàng (${response.status ?? 0})`);
   } catch {
     return `Backend chưa sẵn sàng (${response.status ?? 0})`;
   }
