@@ -2009,7 +2009,7 @@ def adjust_manual_points_account(admin_id, payload):
     return call_postgres_json_function("adjust_manual_points", [payload.get("userId") or payload.get("user_id"), admin_id, payload.get("points"), payload.get("reason"), payload.get("referenceType", "manual_point"), payload.get("referenceId", "")])
 
 def scan_recycling_submission_account(volunteer_id, payload):
-    return call_postgres_json_function(
+    result = call_postgres_json_function(
         "scan_recycling_qr",
         [
             qr_payload_value(payload, "qrToken", "qr_token"),
@@ -2017,6 +2017,16 @@ def scan_recycling_submission_account(volunteer_id, payload):
             qr_payload_value(payload, "stationId", "station_id"),
         ],
     )
+    submission_id = result.get("submissionId")
+    if submission_id and not result.get("submission"):
+        rows = list_rows_from_config(
+            ADMIN_RESOURCES["recycling-submissions"],
+            "id = %s",
+            (submission_id,),
+        )
+        if rows:
+            result["submission"] = rows[0]
+    return result
 
 def archive_ai_correction_for_submission(submission_id, actor_id):
     database_url = require_database_url()

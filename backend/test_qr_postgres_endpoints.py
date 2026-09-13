@@ -129,6 +129,32 @@ def test_volunteer_scans_recycling_qr(client, monkeypatch):
     assert response.json()["data"]["result"] == "SUCCESS"
 
 
+def test_scan_recycling_account_hydrates_submission_for_mobile(monkeypatch):
+    monkeypatch.setattr(
+        app,
+        "call_postgres_json_function",
+        lambda function_name, args: {"result": "SUCCESS", "submissionId": "sub-1"},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        app,
+        "list_rows_from_config",
+        lambda config, where_sql="", params=(): [
+            {"id": "sub-1", "qrToken": "ECL-SUB-1", "status": "QR_SCANNED"}
+        ],
+        raising=False,
+    )
+
+    result = app.scan_recycling_submission_account(
+        "volunteer-1",
+        {"qrToken": "ECL-SUB-1", "stationId": "bin-e1"},
+    )
+
+    assert result["result"] == "SUCCESS"
+    assert result["submission"]["id"] == "sub-1"
+    assert result["submission"]["status"] == "QR_SCANNED"
+
+
 def test_student_cannot_scan_recycling_qr(client, monkeypatch):
     patch_current_user(monkeypatch, "student")
 

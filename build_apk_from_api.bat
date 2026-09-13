@@ -11,6 +11,8 @@ set "PROJECT_DIR=%~dp0"
 set "MOBILE_DIR=%PROJECT_DIR%ecoloop-campus-mobile\ecoloop-campus-mobile"
 set "MOBILE_ENV=%MOBILE_DIR%\.env"
 set "MOBILE_ENV_EXAMPLE=%MOBILE_DIR%\.env.example"
+set "ICON_SOURCE=%MOBILE_DIR%\src\assets\app_icon.png"
+set "ICON_PREPARE_SCRIPT=%PROJECT_DIR%scripts\prepare_android_icon.ps1"
 set "DIST_DIR=%PROJECT_DIR%dist"
 set "RELEASE_APK=%DIST_DIR%\ecoloop-campus-mobile-release.apk"
 set "BUILD_APK_SOURCE=%MOBILE_DIR%\android\app\build\outputs\apk\release\app-release.apk"
@@ -64,6 +66,18 @@ if not exist "%MOBILE_DIR%\android\gradlew.bat" (
 if not exist "%MOBILE_DIR%\package.json" (
     echo [ERROR] Khong tim thay mobile package.json:
     echo %MOBILE_DIR%\package.json
+    goto finish
+)
+
+if not exist "%ICON_SOURCE%" (
+    echo [ERROR] Khong tim thay logo app:
+    echo %ICON_SOURCE%
+    goto finish
+)
+
+if not exist "%ICON_PREPARE_SCRIPT%" (
+    echo [ERROR] Khong tim thay script tao logo Android:
+    echo %ICON_PREPARE_SCRIPT%
     goto finish
 )
 
@@ -167,6 +181,13 @@ echo [OK] Mobile dependencies san sang.
 
 echo.
 echo [3/4] Tao duong dan build ASCII va build APK release...
+echo [INFO] Tao Android launcher icons tu logo du an...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ICON_PREPARE_SCRIPT%" -SourceImage "%ICON_SOURCE%" -ResourceDirectory "%MOBILE_DIR%\android\app\src\main\res"
+if errorlevel 1 (
+    echo [ERROR] Tao Android launcher icons that bai.
+    goto cleanup
+)
+
 for %%D in (Z Y X W V U T S R Q P O N M L K J I H G F) do (
     if not defined BUILD_DRIVE if not exist "%%D:\" set "BUILD_DRIVE=%%D:"
 )

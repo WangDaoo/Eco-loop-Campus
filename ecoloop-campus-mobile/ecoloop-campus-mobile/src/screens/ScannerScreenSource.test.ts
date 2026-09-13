@@ -52,6 +52,13 @@ test('ScannerScreen reports anti-fraud scan outcomes immediately', () => {
   assert.match(source, /QR đã được sử dụng/);
 });
 
+test('ScannerScreen clears stale confirmation state when QR lookup fails', () => {
+  assert.match(source, /const clearSubmissionReview = \(\) =>/);
+  assert.match(source, /clearSubmissionReview\(\);\s*const rewardToken/);
+  assert.match(source, /if \(!submission\) \{\s*clearSubmissionReview\(\)/);
+  assert.match(source, /if \(outcome\.result !== 'SUCCESS' \|\| submission\.status !== 'QR_SCANNED'\)/);
+});
+
 test('ScannerScreen keeps Vietnamese UI text readable', () => {
   assert.doesNotMatch(source, mojibakePattern);
   assert.match(source, /Xác nhận QR Giao dịch/);

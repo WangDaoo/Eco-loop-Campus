@@ -6,6 +6,7 @@
                  "orientation":  "portrait",
                  "userInterfaceStyle":  "light",
                  "jsEngine":  "hermes",
+                 "icon":  "./src/assets/app_icon.png",
                  "splash":  {
                                 "backgroundColor":  "#F9D8CF"
                             },

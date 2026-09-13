@@ -104,6 +104,8 @@ Assert-Contains $buildApkFromApiBat ':app:createBundleReleaseJsAndAssets --rerun
 Assert-Contains $buildApkFromApiBat 'assembleRelease --no-daemon' 'build_apk_from_api.bat must build the Android release APK.'
 Assert-Contains $buildApkFromApiBat 'ecoloop-campus-mobile-release.apk' 'build_apk_from_api.bat must copy the release APK to the shared dist path.'
 Assert-Contains $buildApkFromApiBat 'certutil.exe -hashfile' 'build_apk_from_api.bat must write a SHA256 checksum for the APK.'
+Assert-Contains $buildApkFromApiBat 'app_icon.png' 'build_apk_from_api.bat must use the project app icon asset.'
+Assert-Contains $buildApkFromApiBat 'prepare_android_icon.ps1' 'build_apk_from_api.bat must generate Android launcher icons from the project app icon.'
 
 Assert-Contains $laptopBat 'start_backend.bat' 'start_laptop_server.bat must launch the public backend script.'
 Assert-Contains $laptopBat 'api_public_url.txt' 'start_laptop_server.bat must wait for API public URL before web startup.'

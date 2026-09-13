@@ -113,6 +113,13 @@ export default function ScannerScreen() {
     setProofImageUri('');
   };
 
+  const clearSubmissionReview = () => {
+    setSelectedSubmissionId(null);
+    setActualQuantity('');
+    setVolunteerNote('');
+    setProofImageUri('');
+  };
+
   const openPendingSubmission = async (submission: RecyclingSubmission) => {
     if (submission.status === 'QR_SCANNED') {
       openSubmissionForReview(submission);
@@ -122,6 +129,7 @@ export default function ScannerScreen() {
   };
 
   const loadQr = async (qrToken: string) => {
+    clearSubmissionReview();
     const rewardToken = extractRewardRedemptionQrToken(qrToken);
     if (rewardToken) {
       try {
@@ -151,10 +159,10 @@ export default function ScannerScreen() {
     }
     const submission = outcome.submission;
     if (!submission) {
+      clearSubmissionReview();
       Alert.alert('Không tìm thấy QR', outcome.note || 'QR không khớp giao dịch trong hệ thống.');
       return;
     }
-    openSubmissionForReview(submission);
     if (outcome.result === 'EXPIRED' || submission.status === 'EXPIRED') {
       Alert.alert('QR đã hết hạn', 'Giao dịch này quá hạn, không thể xác nhận Ecopoint.');
     } else if (outcome.result === 'WRONG_STATION') {
@@ -163,6 +171,10 @@ export default function ScannerScreen() {
       Alert.alert('QR đã được sử dụng', 'Giao dịch này đã được xử lý trước đó.');
     } else if (outcome.result === 'INVALID_TOKEN') {
       Alert.alert('QR không hợp lệ', outcome.note);
+    } else if (outcome.result !== 'SUCCESS' || submission.status !== 'QR_SCANNED') {
+      Alert.alert('QR không thể xác nhận', 'QR không còn ở trạng thái chờ xác nhận.');
+    } else {
+      openSubmissionForReview(submission);
     }
   };
 
