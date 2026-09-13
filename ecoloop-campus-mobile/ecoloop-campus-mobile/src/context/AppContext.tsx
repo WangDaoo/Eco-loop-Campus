@@ -145,7 +145,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const data = await remoteStore.loadInitialData(profile);
         const state = resolveRemoteHydrationState(data, remoteStore.getOperatingReadiness(data));
         setUsers(state.users);
-        const refreshedProfile = state.users.find(item => item.id === profile.id);
+        const refreshedProfile = data.currentUser ?? state.users.find(item => item.id === profile.id);
         if (refreshedProfile) setCurrentUser(current => current.id === refreshedProfile.id ? { ...current, ...refreshedProfile } : current);
         setStations(state.stations);
         setWasteTypes(state.wasteTypes);

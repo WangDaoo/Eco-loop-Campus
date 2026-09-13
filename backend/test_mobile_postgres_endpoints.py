@@ -65,6 +65,8 @@ def test_mobile_initial_data_returns_backend_lists(client, monkeypatch):
     assert response.status_code == 200
     assert response.json()["stations"][0]["id"] == "bin-e1"
     assert response.json()["avatarOptions"][0]["key"] == "avatar-1"
+    assert response.json()["currentUser"]["id"] == "student-1"
+    assert response.json()["currentUser"]["points"] == 0
 
 
 def test_mobile_updates_current_user_avatar(client, monkeypatch):
