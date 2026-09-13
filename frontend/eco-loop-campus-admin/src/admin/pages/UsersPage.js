@@ -114,8 +114,12 @@ export default function UsersPage() {
 
   const changeUserStatus = async (user, nextStatus, message = "Đã cập nhật trạng thái người dùng") => {
     const response = await updateUserStatus(user, nextStatus);
-    setUsers(current => current.map(item => item.id === user.id ? response.data : item));
     setError(response.error);
+    if (response.error || !response.data) {
+      showToast(`Không cập nhật được người dùng: ${response.error?.message || "Backend không trả dữ liệu"}`, "danger");
+      return;
+    }
+    setUsers(current => current.map(item => item.id === user.id ? response.data : item));
     showToast(message);
   };
 
@@ -164,8 +168,18 @@ export default function UsersPage() {
       status: statusCode(editingUser.status),
     };
     const response = await saveUser(nextUser);
-    setUsers(current => current.map(user => user.id === response.data.id ? response.data : user));
     setError(response.error);
+    if (response.error || !response.data) {
+      showToast(`Không cập nhật được người dùng: ${response.error?.message || "Backend không trả dữ liệu"}`, "danger");
+      return;
+    }
+    const savedUser = {
+      ...editingUser,
+      ...response.data,
+      points: pointValue(editingUser.points),
+      status: statusCode(editingUser.status),
+    };
+    setUsers(current => current.map(user => user.id === savedUser.id ? savedUser : user));
     closeModal();
     showToast("Đã cập nhật người dùng");
   };

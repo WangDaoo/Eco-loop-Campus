@@ -423,6 +423,10 @@ test("backend store save and update functions use API payloads with bearer auth"
     expect.objectContaining({ url: "http://127.0.0.1:8000/api/admin/reward-redemptions" }),
     expect.objectContaining({ url: "http://127.0.0.1:8000/api/admin/settings" }),
   ]));
+  const userPayload = JSON.parse(calls.find(item => item.url.endsWith("/api/admin/users")).init.body);
+  expect(userPayload).toEqual(expect.objectContaining({ id: "SV002", role: "student" }));
+  expect(userPayload.status).toBeUndefined();
+  expect(userPayload.points).toBeUndefined();
   expect(calls.find(item => item.url.endsWith("/api/admin/bins")).init.headers.Authorization).toBe("Bearer test-admin-token");
   expect(JSON.parse(calls.find(item => item.url.endsWith("/api/admin/bins")).init.body)).toEqual(expect.objectContaining({ id: "BIN-B2", bin_group: "Hữu cơ", qr_code: "ECL-ST-BIN-B2", map_x: 41, map_y: 62 }));
 });
@@ -1430,9 +1434,10 @@ test("users page edits user details without changing id points or status", async
     email: "minhanh.eco@school.edu.vn",
     role: "volunteer",
     group: "CLB Môi trường",
-    points: 245,
-    status: "active",
   })));
+  const savedProfile = mockSupabaseUpsert.mock.calls.at(-1)[0];
+  expect(savedProfile.points).toBeUndefined();
+  expect(savedProfile.status).toBeUndefined();
   const updatedRow = (await screen.findByText("Nguyễn Minh Anh Eco")).closest("tr");
   expect(within(updatedRow).getByText("Tình nguyện viên")).toBeInTheDocument();
   expect(within(updatedRow).getByText("CLB Môi trường")).toBeInTheDocument();

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAppContext } from '../context/AppContext';
 import { Screen } from '../components/Screen';
 import { UserAvatar, resolveAvatarOption } from '../components/UserAvatar';
@@ -9,6 +9,8 @@ import { resolveFacultyDisplayName } from '../services/facultyPresentation';
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
+
+const supportEmail = 'ecoloopcampus@hyute.edu.vn';
 
 export default function ProfileScreen({ navigation }: any) {
   const { currentUser: user, signOut, users, faculties, avatarOptions, updateAvatar, updatePassword, isLoading } = useAppContext();
@@ -30,6 +32,13 @@ export default function ProfileScreen({ navigation }: any) {
     Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất?', [
       { text: 'Hủy', style: 'cancel' },
       { text: 'Đăng xuất', style: 'destructive', onPress: () => void signOut() }
+    ]);
+  };
+
+  const handleSupport = () => {
+    Alert.alert('Hỗ trợ Eco-loop Campus', supportEmail, [
+      { text: 'Đóng', style: 'cancel' },
+      { text: 'Gửi email', onPress: () => void Linking.openURL('mailto:ecoloopcampus@hyute.edu.vn') }
     ]);
   };
 
@@ -128,7 +137,10 @@ export default function ProfileScreen({ navigation }: any) {
             <Text style={styles.actionIcon}>›</Text>
           </Pressable>
 
-          <Pressable style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}>
+          <Pressable
+            style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
+            onPress={handleSupport}
+          >
             <Text style={styles.actionButtonText}>Hỗ trợ</Text>
             <Text style={styles.actionIcon}>›</Text>
           </Pressable>

@@ -408,6 +408,13 @@ function toUser(user) {
   };
 }
 
+function toUserProfileUpdate(user) {
+  const payload = toUser(user);
+  delete payload.points;
+  delete payload.status;
+  return payload;
+}
+
 function fromPrediction(row = {}) {
   return normalizePrediction({
     ...row,
@@ -903,7 +910,7 @@ export async function saveUser(user) {
   const status = normalizedUserStatusAction(user.status || "active");
   if (!name || !EMAIL_PATTERN.test(email) || !role || !status) return result(null, BACKEND, new Error("Invalid user profile"));
   const payload = fromUser({ ...user, name, email, role, status, group: typeof user.group === "string" ? user.group.trim() : user.group, createdAt: user.createdAt || new Date().toISOString() });
-  return saveResource("users", toUser(payload), fromUser);
+  return saveResource("users", toUserProfileUpdate(payload), fromUser);
 }
 
 export async function updateUserStatus(user, status) {

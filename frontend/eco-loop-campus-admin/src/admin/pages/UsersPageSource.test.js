@@ -12,3 +12,9 @@ test("users page shows the same faculty-only student profile stored by mobile", 
   expect(source).not.toMatch(/Lớp \/ Khoa/);
   expect(source).not.toMatch(/Mã lớp|Chuyên ngành|Ngành học/);
 });
+
+test("users page handles failed role edits without dereferencing an empty response", () => {
+  expect(source).toMatch(/if \(response\.error \|\| !response\.data\)/);
+  expect(source).toMatch(/Không cập nhật được người dùng/);
+  expect(source).not.toMatch(/user\.id === response\.data\.id \? response\.data : user/);
+});

@@ -22,3 +22,8 @@ test('ProfileScreen uses the cleaned faculty label in summary metadata', () => {
   assert.match(source, /styles\.summaryMeta\}>\{facultyLabel/);
   assert.doesNotMatch(source, /styles\.summaryMeta\}>\{user\.group \|\|/);
 });
+
+test('ProfileScreen shows the official support email from the support action', () => {
+  assert.match(source, /ecoloopcampus@hyute\.edu\.vn/);
+  assert.match(source, /mailto:ecoloopcampus@hyute\.edu\.vn/);
+});
