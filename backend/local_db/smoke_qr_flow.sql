@@ -14,7 +14,14 @@ insert into waste_types (id, name, unit, point_per_unit, status)
 values ('E2E_PAPER', 'Giấy', 'kg', 5, 'active');
 
 create temporary table _e2e_submission as
-select create_recycling_submission('E2E_STUDENT', 'E2E_BIN', 'E2E_PAPER', 2) as payload;
+select create_recycling_submission(
+  'E2E_STUDENT',
+  'E2E_BIN',
+  'E2E_PAPER',
+  2,
+  'local://e2e-initial-proof.jpg',
+  'e2e-initial-proof'
+) as payload;
 
 do $$
 declare
