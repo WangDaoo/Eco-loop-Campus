@@ -1443,6 +1443,25 @@ def admin_student_contribution_export(format: str = "csv", dateFrom: str | None 
 
 BIN_COLLECTION_COLUMNS = ["id", "bin_id", "collected_by", "collected_at", "note"]
 
+def ensure_bin_collections_table(cursor):
+    cursor.execute(
+        """
+        create table if not exists bin_collections (
+          id text primary key default gen_random_uuid()::text,
+          bin_id text not null references bins(id) on delete cascade,
+          collected_by text references users(id) on delete set null,
+          collected_at timestamptz not null default now(),
+          note text not null default ''
+        )
+        """
+    )
+    cursor.execute(
+        """
+        create index if not exists idx_bin_collections_bin_id_collected_at
+        on bin_collections(bin_id, collected_at desc)
+        """
+    )
+
 def json_number(value):
     if value is None:
         return 0
@@ -1456,6 +1475,7 @@ def get_admin_bin_contents(bin_id):
             cursor.execute("select id from bins where id = %s", (bin_id,))
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail="Không tìm thấy thùng rác")
+            ensure_bin_collections_table(cursor)
 
             cursor.execute(
                 "select max(collected_at) from bin_collections where bin_id = %s",
@@ -1520,6 +1540,7 @@ def collect_admin_bin(actor_id, bin_id, payload):
             cursor.execute("select id from bins where id = %s for update", (bin_id,))
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail="Không tìm thấy thùng rác")
+            ensure_bin_collections_table(cursor)
             cursor.execute(
                 """
                 insert into bin_collections (bin_id, collected_by, note)

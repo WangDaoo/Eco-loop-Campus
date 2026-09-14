@@ -203,6 +203,50 @@ def test_admin_bin_contents_lists_current_waste_and_collection_history(client, m
     assert response.json()["data"]["items"][0]["quantity"] == 2
     assert len(response.json()["data"]["collections"]) == 1
 
+def test_admin_bin_contents_bootstraps_missing_collection_table(monkeypatch):
+    executed = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params=()):
+            executed.append(str(query))
+
+        def fetchone(self):
+            query = executed[-1].lower()
+            if "select id from bins" in query:
+                return ["bin-1"]
+            if "max(collected_at)" in query:
+                return [None]
+            return [None]
+
+        def fetchall(self):
+            return []
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(app, "require_database_url", lambda: "postgresql://test", raising=False)
+    monkeypatch.setattr(app.psycopg, "connect", lambda _url: FakeConnection(), raising=False)
+
+    result = app.get_admin_bin_contents("bin-1")
+
+    assert result["binId"] == "bin-1"
+    create_index = next(index for index, query in enumerate(executed) if "create table if not exists bin_collections" in query.lower())
+    max_query_index = next(index for index, query in enumerate(executed) if "max(collected_at)" in query.lower())
+    assert create_index < max_query_index
+
 def test_admin_collect_bin_creates_collection_without_deleting_submission_history(client, monkeypatch):
     patch_current_user(monkeypatch, "admin")
     captured = {}
