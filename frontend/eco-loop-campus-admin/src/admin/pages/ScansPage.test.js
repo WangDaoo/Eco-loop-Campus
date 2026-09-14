@@ -21,6 +21,7 @@ const scanWithImage = {
   imageName: "plastic.jpg",
   imageUrl: "https://storage.example/full/plastic.jpg",
   thumbnailUrl: "https://storage.example/thumb/plastic.jpg",
+  reviewerName: "Nguyễn Duyệt Điểm",
 };
 
 beforeEach(() => {
@@ -46,4 +47,14 @@ test("ScansPage lets admins preview the scan image before approval", async () =>
   expect(screen.getByRole("img", { name: "Ảnh đầy đủ scan-img" })).toHaveAttribute("src", scanWithImage.imageUrl);
   expect(screen.getByRole("button", { name: "Duyệt scan-img từ ảnh xem trước" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Từ chối scan-img từ ảnh xem trước" })).toBeInTheDocument();
+});
+
+test("ScansPage shows the point reviewer when backend enriches it", async () => {
+  render(
+    <MemoryRouter>
+      <ScansPage />
+    </MemoryRouter>
+  );
+
+  expect(await screen.findByText("Nguyễn Duyệt Điểm")).toBeInTheDocument();
 });

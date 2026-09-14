@@ -142,6 +142,9 @@ function mockBackendFetch(rawUrl, init = {}) {
     const next = (mockTables.reward_redemption_batches || []).find(item => item.id === id);
     if (!next) return jsonResponse({ detail: "Không tìm thấy batch" }, 404);
     next.status = body.status;
+    next.confirmed_by = "AD001";
+    next.confirmed_source = "Admin web";
+    next.admin_note = body.note || "";
     return jsonResponse({ data: next });
   }
   if (path.startsWith("/api/mobile/recycling-submissions/") && path.endsWith("/reject") && method === "POST") {
@@ -166,6 +169,10 @@ function mockBackendFetch(rawUrl, init = {}) {
     const tableName = resourceTables[resource];
     if (!tableName) return jsonResponse({ detail: "Không tìm thấy nhóm dữ liệu" }, 404);
     if (mockSupabaseFailure || mockSupabaseUpdateFailure) return jsonResponse({ detail: "permission-denied" }, 403);
+    if (method === "GET" && tableName === "reward_redemption_batches") {
+      const items = mockTables.reward_redemption_items || [];
+      return jsonResponse({ data: (mockTables[tableName] || []).map(batch => ({ ...batch, items: items.filter(item => item.batch_id === batch.id) })) });
+    }
     if (method === "GET") return jsonResponse({ data: mockTables[tableName] || [] });
     if (method === "POST") return jsonResponse({ data: recordBackendWrite(tableName, readRequestBody(init)) });
   }
@@ -411,7 +418,7 @@ test("backend store save and update functions use API payloads with bearer auth"
   await store.updateUserStatus({ id: "SV001", name: "Nguyễn Minh Anh", points: 245 }, "locked");
   await store.updateBinStatus({ id: "BIN-A1-RECYCLE", name: "Thùng tái chế A1" }, "maintenance");
   await store.updateFeedbackItem({ id: "FB001", userName: "Nguyễn Minh Anh", category: "Thùng đầy", message: "Thùng đầy.", status: "unread", priority: "high", timestamp: "2026-07-07T09:00:00.000Z" }, { status: "resolved", adminNote: "Đã xử lý" });
-  await store.updateRewardRedemption({ id: "RW001", userId: "SV001", rewardLabel: "Voucher căn tin", costPoints: 100, status: "pending", requestedAt: "2026-07-07T09:00:00.000Z" }, { status: "approved", adminNote: "Đã nhận" });
+  await store.updateRewardRedemption({ id: "RW001", userId: "SV001", rewardLabel: "Voucher căn tin", costPoints: 100, status: "pending", requestedAt: "2026-07-07T09:00:00.000Z" }, { status: "fulfilled", adminNote: "Đã nhận" });
 
   const calls = global.fetch.mock.calls.map(([url, init]) => ({ url: String(url), init }));
   expect(calls).toEqual(expect.arrayContaining([
@@ -850,7 +857,7 @@ test.skip("Supabase store save and update failures persist every local fallback 
   const userStatusResult = await store.updateUserStatus({ id: "SV002", name: "Trần Hoàng Nam", email: "nam@school.edu.vn", role: "student", group: "CNTT K19", points: 11, status: "active" }, "locked");
   const binStatusResult = await store.updateBinStatus({ id: "BIN-FALLBACK", name: "Thùng fallback", binGroup: "Tái chế", location: "Nhà F", building: "F", floor: "1", qrCode: "QR-F", status: "active", capacity: 44, mapX: 41, mapY: 62 }, "full");
   const feedbackUpdateResult = await store.updateFeedbackItem({ id: "FB-FALLBACK", userName: "Giám thị F", category: "Thùng đầy", message: "Thùng fallback đầy.", status: "unread", priority: "high", binId: "BIN-FALLBACK", adminNote: "", timestamp: "2026-07-07T10:00:00.000Z" }, { status: "resolved", adminNote: "Đã xử lý fallback" });
-  const rewardUpdateResult = await store.updateRewardRedemption({ id: "RW-FALLBACK", userId: "SV002", rewardLabel: "Voucher fallback", costPoints: 50, status: "pending", requestedAt: "2026-07-07T10:00:00.000Z" }, { status: "approved", adminNote: "Đã nhận fallback" });
+  const rewardUpdateResult = await store.updateRewardRedemption({ id: "RW-FALLBACK", userId: "SV002", rewardLabel: "Voucher fallback", costPoints: 50, status: "pending", requestedAt: "2026-07-07T10:00:00.000Z" }, { status: "fulfilled", adminNote: "Đã nhận fallback" });
 
   [
     userResult,
@@ -884,7 +891,7 @@ test.skip("Supabase store save and update failures persist every local fallback 
     expect.objectContaining({ id: "fallback-rule", classKeys: ["plastic"], points: 4 }),
   ]);
   expect(JSON.parse(localStorage.getItem("ecoGuardianRewardRedemptions") || "[]")).toEqual(expect.arrayContaining([
-    expect.objectContaining({ id: "RW-FALLBACK", status: "approved", adminNote: "Đã nhận fallback" }),
+    expect.objectContaining({ id: "RW-FALLBACK", status: "fulfilled", adminNote: "Đã nhận fallback" }),
   ]));
   expect(localStorage.getItem("ecoGuardianModelThreshold")).toBe("0.73");
   expect(JSON.parse(localStorage.getItem("ecoGuardianPointHistory") || "[]")).toEqual(expect.arrayContaining([
@@ -3407,7 +3414,7 @@ test("admins can cancel fulfilled reward batches", async () => {
   fireEvent.click(screen.getByRole("button", { name: /hoàn tác đổi thưởng/i }));
 
   await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/reward-redemption-batches/BATCH-REJECT/finalize"), expect.objectContaining({ method: "POST" })));
-  expect(await screen.findByText("cancelled")).toBeInTheDocument();
+  expect(await screen.findByText("Đã hủy")).toBeInTheDocument();
 });
 
 test("ecopoints page keeps reward actions for dirty pending statuses", async () => {
@@ -3419,9 +3426,9 @@ test("ecopoints page keeps reward actions for dirty pending statuses", async () 
   expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("tab", { name: /đổi thưởng/i }));
   expect((await screen.findAllByText("Voucher căn tin 100 điểm")).length).toBeGreaterThan(0);
-  fireEvent.click(screen.getByRole("button", { name: /^duyệt$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^hoàn tất$/i }));
 
-  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("reward_redemptions", expect.objectContaining({ status: "approved" })));
+  await waitFor(() => expect(mockSupabaseUpdate).toHaveBeenCalledWith("reward_redemptions", expect.objectContaining({ status: "fulfilled" })));
 });
 
 test.skip("reward review update failure stores live Supabase reward in local fallback", async () => {
@@ -3437,7 +3444,7 @@ test.skip("reward review update failure stores live Supabase reward in local fal
 
   expect(await screen.findByText(/chế độ dự phòng localStorage/i)).toBeInTheDocument();
   expect(JSON.parse(localStorage.getItem("ecoGuardianRewardRedemptions") || "[]")).toEqual(expect.arrayContaining([
-    expect.objectContaining({ id: "RW-LIVE-FALLBACK", status: "approved", adminNote: "" }),
+    expect.objectContaining({ id: "RW-LIVE-FALLBACK", status: "fulfilled", adminNote: "" }),
   ]));
 });
 test("admins can approve mobile reward redemption batches", async () => {
@@ -3454,7 +3461,65 @@ test("admins can approve mobile reward redemption batches", async () => {
   fireEvent.click(screen.getByRole("button", { name: /^duyệt$/i }));
 
   await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining("/api/admin/reward-redemption-batches/BATCH-APPROVE/finalize"), expect.objectContaining({ method: "POST" })));
-  expect(await screen.findByText("fulfilled")).toBeInTheDocument();
+  expect(await screen.findByText("Hoàn tất")).toBeInTheDocument();
+});
+
+test("ecopoints page shows fulfilled reward history details", async () => {
+  mockTables.users = [
+    ...mockTables.users,
+    { id: "VOL001", name: "Tình nguyện viên xanh", email: "vol@school.edu.vn", role: "volunteer", group: "CLB xanh", points: 0, status: "active" },
+  ];
+  mockTables.reward_redemptions = [];
+  mockTables.reward_redemption_batches = [{
+    id: "BATCH-DONE",
+    student_id: "SV001",
+    status: "fulfilled",
+    total_cost_points: 160,
+    scanned_by: "VOL001",
+    confirmed_by: "VOL001",
+    confirmed_source: "Quét QR",
+    admin_note: "Trao tại quầy xanh",
+    fulfilled_at: "2026-07-07T10:10:00.000Z",
+    created_at: "2026-07-07T10:00:00.000Z",
+  }];
+  mockTables.reward_redemption_items = [
+    { id: "ITEM-1", batch_id: "BATCH-DONE", reward_title: "Bình nước", quantity: 1, points_each: 120, points_total: 120 },
+    { id: "ITEM-2", batch_id: "BATCH-DONE", reward_title: "Sticker xanh", quantity: 2, points_each: 20, points_total: 40 },
+  ];
+  window.location.hash = "#/ecopoints";
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /ecopoint/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: /đổi thưởng/i }));
+
+  expect(await screen.findByRole("heading", { name: /lịch sử đổi thưởng hoàn tất/i })).toBeInTheDocument();
+  expect(await screen.findByText("BATCH-DONE")).toBeInTheDocument();
+  expect(screen.getByText("Nguyễn Minh Anh")).toBeInTheDocument();
+  expect(screen.getByText("160")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /xem chi tiết batch-done/i }));
+
+  expect(await screen.findByRole("heading", { name: /chi tiết đổi thưởng/i })).toBeInTheDocument();
+  expect(screen.getByText("Bình nước")).toBeInTheDocument();
+  expect(screen.getByText("Sticker xanh")).toBeInTheDocument();
+  expect(screen.getAllByText("Tình nguyện viên xanh").length).toBeGreaterThan(0);
+  expect(screen.getByText("Quét QR")).toBeInTheDocument();
+  expect(screen.getByText("Trao tại quầy xanh")).toBeInTheDocument();
+});
+
+test("student contribution export keeps selected date range and reward column", async () => {
+  window.location.hash = "#/reports?dateFrom=2026-09-01&dateTo=2026-09-30";
+
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: /báo cáo/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /tải danh sách csv/i }));
+
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/api/admin/reports/student-contributions/export?dateFrom=2026-09-01&dateTo=2026-09-30&format=csv"),
+    expect.any(Object)
+  ));
+  expect(await screen.findByText("Phần thưởng")).toBeInTheDocument();
 });
 
 test("ecopoints page lets admins manage reward products", async () => {

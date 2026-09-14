@@ -13,8 +13,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PREDICTION_STATUSES = ["pending", "approved", "rejected"];
 const PREDICTION_STATUS_ACTIONS = ["approved", "rejected"];
 const PREDICTION_SOURCES = ["upload", "camera", "mobile"];
-const REWARD_STATUSES = ["requested", "pending", "approved", "rejected", "delivered", "scanned", "fulfilled", "expired", "cancelled"];
-const REWARD_STATUS_ACTIONS = ["approved", "rejected"];
+const REWARD_STATUSES = ["requested", "pending", "rejected", "fulfilled", "expired", "cancelled"];
+const REWARD_STATUS_ACTIONS = ["fulfilled", "rejected", "expired", "cancelled"];
 const REWARD_CATALOG_STATUSES = ["active", "inactive"];
 const USER_ROLES = ["student", "teacher", "volunteer", "admin"];
 const USER_STATUS_ACTIONS = ["active", "locked", "pending", "rejected"];
@@ -379,6 +379,7 @@ function fromUser(row = {}) {
   const { created_at: createdAtSnake, avatar_key: avatarKeySnake, avatar_url: avatarUrlSnake, student_code: studentCodeSnake, faculty_code: facultyCodeSnake, phone_number: phoneNumberSnake, ...rest } = row;
   const points = Number(row.points ?? 0);
   const facultyCode = row.facultyCode || facultyCodeSnake || "";
+  const badges = Array.isArray(row.badges) ? row.badges.map(item => String(item || "").trim()).filter(Boolean) : [];
   return {
     ...rest,
     studentCode: row.studentCode || studentCodeSnake || "",
@@ -389,6 +390,8 @@ function fromUser(row = {}) {
     createdAt: row.createdAt || createdAtSnake,
     avatarKey: row.avatarKey || avatarKeySnake || "",
     avatarUrl: absoluteAssetUrl(row.avatarUrl || avatarUrlSnake || ""),
+    badges,
+    hasGreenStudentBadge: badges.includes("green_student"),
   };
 }
 
@@ -405,6 +408,7 @@ function toUser(user) {
     created_at: user.createdAt || new Date().toISOString(),
     avatar_key: user.avatarKey || null,
     avatar_url: user.avatarUrl || null,
+    badges: Array.isArray(user.badges) ? user.badges : [],
   };
 }
 
@@ -505,7 +509,7 @@ function toPointHistory(record) {
 }
 
 function fromRewardRedemption(row = {}) {
-  const { user_id: userIdSnake, reward_id: rewardIdSnake, reward_label: rewardLabelSnake, cost_points: costPointsSnake, requested_at: requestedAtSnake, reviewed_at: reviewedAtSnake, admin_note: adminNoteSnake, ...rest } = row;
+  const { user_id: userIdSnake, reward_id: rewardIdSnake, reward_label: rewardLabelSnake, cost_points: costPointsSnake, requested_at: requestedAtSnake, reviewed_at: reviewedAtSnake, reviewed_by: reviewedBySnake, admin_note: adminNoteSnake, ...rest } = row;
   const costPoints = Number(row.costPoints ?? costPointsSnake ?? 0);
   return {
     ...rest,
@@ -513,10 +517,57 @@ function fromRewardRedemption(row = {}) {
     rewardId: row.rewardId || rewardIdSnake,
     rewardLabel: row.rewardLabel || rewardLabelSnake,
     costPoints: Number.isFinite(costPoints) ? costPoints : 0,
-    status: normalizedRewardStatus(row.status),
+    status: normalizedRewardStatus(row.status === "approved" ? "fulfilled" : row.status),
     requestedAt: row.requestedAt || requestedAtSnake,
     reviewedAt: row.reviewedAt || reviewedAtSnake,
+    reviewedBy: row.reviewedBy || reviewedBySnake || "",
     adminNote: row.adminNote || adminNoteSnake || "",
+  };
+}
+
+function fromRewardRedemptionBatch(row = {}) {
+  const {
+    student_id: studentIdSnake,
+    qr_token: qrTokenSnake,
+    created_at: createdAtSnake,
+    expires_at: expiresAtSnake,
+    total_cost_points: totalCostPointsSnake,
+    scanned_by: scannedBySnake,
+    confirmed_by: confirmedBySnake,
+    confirmed_source: confirmedSourceSnake,
+    admin_note: adminNoteSnake,
+    scanned_at: scannedAtSnake,
+    fulfilled_at: fulfilledAtSnake,
+    updated_at: updatedAtSnake,
+    ...rest
+  } = row || {};
+  const items = Array.isArray(row.items) ? row.items.map(item => ({
+    id: item.id,
+    batchId: item.batchId || item.batch_id,
+    rewardId: item.rewardId || item.reward_id,
+    rewardTitle: item.rewardTitle || item.reward_title || item.rewardLabel || item.reward_label,
+    quantity: Number(item.quantity || 0),
+    pointsEach: Number(item.pointsEach ?? item.points_each ?? 0),
+    pointsTotal: Number(item.pointsTotal ?? item.points_total ?? 0),
+  })) : [];
+  const totalCostPoints = Number(row.totalCostPoints ?? totalCostPointsSnake ?? items.reduce((sum, item) => sum + Number(item.pointsTotal || 0), 0));
+  return {
+    ...rest,
+    id: row.id || "",
+    studentId: row.studentId || studentIdSnake || "",
+    qrToken: row.qrToken || qrTokenSnake || "",
+    createdAt: row.createdAt || createdAtSnake,
+    expiresAt: row.expiresAt || expiresAtSnake,
+    totalCostPoints: Number.isFinite(totalCostPoints) ? totalCostPoints : 0,
+    status: normalizedRewardStatus(row.status),
+    scannedBy: row.scannedBy || scannedBySnake || "",
+    confirmedBy: row.confirmedBy || confirmedBySnake || row.scannedBy || scannedBySnake || "",
+    confirmedSource: row.confirmedSource || confirmedSourceSnake || "",
+    adminNote: row.adminNote || adminNoteSnake || "",
+    scannedAt: row.scannedAt || scannedAtSnake,
+    fulfilledAt: row.fulfilledAt || fulfilledAtSnake,
+    updatedAt: row.updatedAt || updatedAtSnake,
+    items,
   };
 }
 
@@ -531,12 +582,13 @@ function toRewardRedemption(item) {
     status: normalized.status || "pending",
     requested_at: normalized.requestedAt || new Date().toISOString(),
     reviewed_at: normalized.reviewedAt || null,
+    reviewed_by: normalized.reviewedBy || null,
     admin_note: normalized.adminNote || "",
   };
 }
 
 function fromRewardCatalog(row = {}) {
-  const { cost_points: costPointsSnake, category_id: categoryIdSnake, category_name: categoryNameSnake, created_at: createdAtSnake, ...rest } = row;
+  const { cost_points: costPointsSnake, category_id: categoryIdSnake, category_name: categoryNameSnake, reward_type: rewardTypeSnake, badge_key: badgeKeySnake, created_at: createdAtSnake, ...rest } = row;
   const costPoints = Number(row.costPoints ?? costPointsSnake ?? 0);
   return {
     ...rest,
@@ -546,6 +598,8 @@ function fromRewardCatalog(row = {}) {
     categoryId: row.categoryId || categoryIdSnake || "",
     categoryName: row.categoryName || categoryNameSnake || "",
     costPoints: Number.isFinite(costPoints) ? costPoints : 0,
+    rewardType: row.rewardType || rewardTypeSnake || "physical",
+    badgeKey: row.badgeKey || badgeKeySnake || "",
     status: normalizedRewardCatalogStatus(row.status),
     color: row.color || "#2F8F5B",
     createdAt: row.createdAt || createdAtSnake,
@@ -658,6 +712,8 @@ function toRewardCatalog(item) {
     category_id: normalized.categoryId || null,
     category_name: normalized.categoryName || "",
     cost_points: Number(normalized.costPoints || 0),
+    reward_type: normalized.rewardType || "physical",
+    badge_key: normalized.badgeKey || null,
     status: normalized.status || "active",
     color: normalized.color || "#2F8F5B",
   };
@@ -700,6 +756,7 @@ function enrichPointHistory(history, users, bins) {
 function enrichRecyclingSubmissions(submissions, users, bins, wasteTypes, proofImages) {
   return submissions.map(item => {
     const user = users.find(row => row.id === item.userId);
+    const reviewer = users.find(row => row.id === item.verifiedBy);
     const bin = bins.find(row => row.id === item.binId);
     const wasteType = wasteTypes.find(row => row.id === item.wasteTypeId);
     const proofs = proofImages.filter(row => row.submissionId === item.id);
@@ -707,6 +764,8 @@ function enrichRecyclingSubmissions(submissions, users, bins, wasteTypes, proofI
       ...item,
       userName: user?.name || item.userId || "Không rõ người dùng",
       userGroup: user?.group || "",
+      reviewerName: reviewer?.name || item.verifiedBy || "",
+      reviewerGroup: reviewer?.group || "",
       binName: bin?.name || item.binId || "Chưa gắn trạm",
       binLocation: bin?.location || "",
       wasteTypeName: wasteType?.name || item.wasteTypeId || "Chưa rõ loại rác",
@@ -1091,13 +1150,14 @@ export async function listRewardRedemptions() {
   const error = rewards.error || users.error || null;
   const data = rewards.data.map(item => {
     const user = users.data.find(row => row.id === item.userId);
-    return { ...item, userName: user?.name || item.userId || "Chưa rõ người dùng", userGroup: user?.group || "" };
+    const reviewer = users.data.find(row => row.id === item.reviewedBy);
+    return { ...item, userName: user?.name || item.userId || "Chưa rõ người dùng", userGroup: user?.group || "", reviewerName: reviewer?.name || item.reviewedBy || "", reviewerGroup: reviewer?.group || "" };
   }).sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
   return result(data, BACKEND, error);
 }
 
 export async function listRewardRedemptionBatches() {
-  const rows = await listResource("reward-redemption-batches", item => item);
+  const rows = await listResource("reward-redemption-batches", fromRewardRedemptionBatch);
   return result(rows.data, BACKEND, rows.error);
 }
 
@@ -1184,7 +1244,9 @@ export async function saveRewardProduct(item) {
   const costPoints = Number(item.costPoints);
   const status = normalizedRewardCatalogStatus(item.status || "active", "");
   if (!title || !Number.isFinite(costPoints) || costPoints < 0 || !status) return result(null, BACKEND, new Error("Invalid reward product"));
-  const payload = fromRewardCatalog({ ...item, id: item.id || buildRewardProductId(title), title, description, costPoints, status, color: item.color || "#2F8F5B" });
+  const rewardType = ["physical", "badge", "title"].includes(item.rewardType) ? item.rewardType : "physical";
+  const badgeKey = rewardType === "physical" ? "" : (item.badgeKey || (title.toLocaleLowerCase("vi-VN").includes("sinh viên xanh") ? "green_student" : ""));
+  const payload = fromRewardCatalog({ ...item, id: item.id || buildRewardProductId(title), title, description, costPoints, rewardType, badgeKey, status, color: item.color || "#2F8F5B" });
   return saveResource("rewards", toRewardCatalog(payload), fromRewardCatalog);
 }
 
@@ -1266,6 +1328,7 @@ export const __testing = {
   toFeedback,
   fromRewardRedemption,
   toRewardRedemption,
+  fromRewardRedemptionBatch,
   fromRewardCatalog,
   toRewardCatalog,
   fromRewardCategory,
@@ -1277,6 +1340,7 @@ export const __testing = {
   fromWasteType,
   fromProofImage,
   fromRecyclingSubmission,
+  enrichRecyclingSubmissions,
   toRecyclingSubmissionUpdate,
   fromSettings,
   toSettings,

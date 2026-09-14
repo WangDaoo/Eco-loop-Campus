@@ -77,6 +77,13 @@ test('preserves account approval statuses for mobile authentication', () => {
   assert.equal(mapUserRow({ id: 'student-unknown', role: 'student', status: 'archived' }).status, 'active');
 });
 
+test('maps green student badges for profile and leaderboard display', () => {
+  const profile = mapUserRow({ id: 'student-green', role: 'student', badges: ['green_student'] });
+
+  assert.deepEqual(profile.badges, ['green_student']);
+  assert.equal(profile.hasGreenStudentBadge, true);
+});
+
 test('maps realtime bin rows into one backend coordinate system for mobile map', () => {
   const station = mapBinRow({
     id: 'BIN-RT',

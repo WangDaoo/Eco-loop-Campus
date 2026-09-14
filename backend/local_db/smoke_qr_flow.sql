@@ -40,8 +40,8 @@ begin
     raise exception 'Expected SUCCESS, got %', v_scan;
   end if;
 
-  insert into proof_images (submission_id, image_url, status)
-  values (v_submission_id, 'local://e2e-proof.jpg', 'accepted');
+  insert into proof_images (submission_id, uploaded_by, image_url, status)
+  values (v_submission_id, 'E2E_VOLUNTEER', 'local://e2e-proof.jpg', 'accepted');
 
   v_confirm := confirm_recycling_submission(v_submission_id, 'E2E_VOLUNTEER', 2, 'E2E smoke');
   if v_confirm ->> 'status' <> 'POINT_CONFIRMED' then

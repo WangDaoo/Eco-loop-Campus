@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import DataTable from "../components/DataTable";
+import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import { BIN_GROUPS } from "../data/wasteConfig";
@@ -43,7 +44,7 @@ const normalizeLabelFilter = (value, options, fallback = "") => {
 
 const initialManualForm = { userId: "", points: 10, action: "Nộp rác sự kiện xanh" };
 const initialRewardCategoryForm = { id: "", name: "", description: "", status: "active", color: "#2F8F5B" };
-const initialRewardProductForm = { id: "", title: "", categoryId: "", categoryName: "", costPoints: 100, description: "", status: "active", color: "#2F8F5B" };
+const initialRewardProductForm = { id: "", title: "", categoryId: "", categoryName: "", costPoints: 100, description: "", rewardType: "physical", badgeKey: "", status: "active", color: "#2F8F5B" };
 
 const ECOPOINT_TABS = [
   { id: "overview", label: "Tổng quan" },
@@ -69,6 +70,9 @@ const submissionStatusCode = value => String(value || "").trim().toUpperCase();
 const submissionStatusLabel = value => SUBMISSION_STATUS_LABELS[submissionStatusCode(value)] || value || "Không rõ";
 const canRejectSubmission = row => !["POINT_CONFIRMED", "REJECTED", "EXPIRED", "LOCKED"].includes(submissionStatusCode(row.status));
 const canApproveSubmission = row => ["CREATED", "QR_SCANNED", "PENDING_REVIEW"].includes(submissionStatusCode(row.status)) && (row.proofImageUrl || Number(row.proofCount || 0) > 0);
+const rewardReviewerNameFor = row => row.reviewerName || row.reviewedByName || row.fulfilledByName || row.scannedByName || row.reviewedBy || row.fulfilledBy || row.scannedBy || "";
+const hasGreenStudentBadge = user => Boolean(user?.hasGreenStudentBadge || (Array.isArray(user?.badges) && user.badges.includes("green_student")));
+const GreenStudentBadge = () => <span className="eg-green-student-badge" title="Sinh viên xanh" aria-label="Sinh viên xanh">SV xanh</span>;
 const formatSubmissionQuantity = row => {
   const quantity = row.actualQuantity ?? row.quantity;
   const unit = row.wasteTypeUnit ? ` ${row.wasteTypeUnit}` : "";
@@ -153,6 +157,7 @@ export default function EcoPointsPage() {
   const [toast, setToast] = useState("");
   const [toastTone, setToastTone] = useState("success");
   const [activeTab, setActiveTab] = useState("overview");
+  const [selectedRewardDetail, setSelectedRewardDetail] = useState(null);
 
   const showToast = (message, tone = "success") => {
     setToastTone(tone);
@@ -247,11 +252,16 @@ export default function EcoPointsPage() {
     const legacyRows = rewardRequests.map(item => ({
       ...item,
       exchangeType: "legacy",
+      status: String(item.status || "").trim().toLowerCase() === "approved" ? "fulfilled" : item.status,
       qrToken: item.qrToken || "",
       requestedAt: item.requestedAt || item.createdAt,
+      reviewedAt: item.reviewedAt || item.fulfilledAt,
+      confirmedSource: item.confirmedSource || "Admin web",
     }));
     const batchRows = rewardBatches.map(batch => {
       const user = users.find(row => row.id === (batch.studentId || batch.userId));
+      const reviewerId = batch.confirmedBy || batch.scannedBy || batch.fulfilledBy || batch.approvedBy || batch.reviewedBy || "";
+      const reviewer = users.find(row => row.id === reviewerId);
       const items = Array.isArray(batch.items) ? batch.items : [];
       const rewardLabel = items.length
         ? items.map(item => `${item.rewardTitle || item.rewardLabel || item.rewardId} x${item.quantity || 1}`).join(", ")
@@ -263,6 +273,12 @@ export default function EcoPointsPage() {
         userId: batch.studentId || batch.userId,
         userName: user?.name || batch.userName || batch.studentId || batch.userId || "Chưa rõ người dùng",
         userGroup: user?.group || batch.userGroup || "",
+        userHasGreenStudentBadge: hasGreenStudentBadge(user),
+        reviewerName: reviewer?.name || batch.reviewerName || reviewerId,
+        reviewerGroup: reviewer?.group || batch.reviewerGroup || "",
+        confirmedBy: reviewerId,
+        confirmedSource: batch.confirmedSource || (batch.scannedBy ? "Quét QR" : "Admin web"),
+        adminNote: batch.adminNote || "",
         rewardLabel,
         costPoints: Number.isFinite(costPoints) ? costPoints : 0,
         requestedAt: batch.requestedAt || batch.createdAt,
@@ -392,7 +408,7 @@ export default function EcoPointsPage() {
     const response = await updateRewardRedemption(reward, { status, reviewedAt: new Date().toISOString() });
     setRewardRequests(current => current.map(item => item.id === reward.id ? { ...item, ...response.data } : item));
     setError(response.error);
-    showToast(status === "approved" ? "Đã duyệt đổi thưởng" : "Đã từ chối đổi thưởng");
+    showToast(status === "fulfilled" ? "Đã hoàn tất đổi thưởng" : "Đã từ chối đổi thưởng");
   };
 
   const rejectRecyclingSubmission = async row => {
@@ -415,7 +431,7 @@ export default function EcoPointsPage() {
 
   const userColumns = [
     { key: "rank", label: "Hạng", render: row => <span className="eg-rank-number">{row.rank}</span> },
-    { key: "name", label: "Người dùng", render: row => <strong>{row.name}</strong> },
+    { key: "name", label: "Người dùng", render: row => <div className="eg-user-name-cell"><strong>{row.name}</strong>{hasGreenStudentBadge(row) && <GreenStudentBadge />}</div> },
     { key: "group", label: "Lớp/khoa" },
     { key: "totalPoints", label: "Điểm", render: row => <strong>{row.totalPoints}</strong> },
     { key: "scanCount", label: "Lượt cộng" },
@@ -429,11 +445,12 @@ export default function EcoPointsPage() {
   ];
 
   const rewardColumns = [
-    { key: "userName", label: "Người đổi", render: row => <strong>{row.userName}</strong> },
+    { key: "userName", label: "Người đổi", render: row => <div className="eg-user-name-cell"><strong>{row.userName}</strong>{row.userHasGreenStudentBadge && <GreenStudentBadge />}</div> },
     { key: "rewardLabel", label: "Phần thưởng" },
     { key: "qrToken", label: "Mã QR", render: row => row.qrToken || row.id || "-" },
     { key: "costPoints", label: "Điểm", render: row => <strong>{row.costPoints}</strong> },
     { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status} /> },
+    { key: "reviewerName", label: "Người duyệt", render: row => rewardReviewerNameFor(row) ? <div><strong>{rewardReviewerNameFor(row)}</strong>{row.reviewerGroup && <span className="eg-muted-block">{row.reviewerGroup}</span>}</div> : <span className="eg-muted-block">Chưa duyệt</span> },
     { key: "requestedAt", label: "Thời gian", render: row => row.requestedAt ? formatDate(row.requestedAt) : "Chưa rõ" },
     {
       key: "actions",
@@ -449,10 +466,30 @@ export default function EcoPointsPage() {
         </div>
       ) : row.status === "pending" ? (
         <div className="eg-table-actions">
-          <button type="button" className="eg-small-btn success" onClick={() => reviewReward(row, "approved")}>Duyệt</button>
+          <button type="button" className="eg-small-btn success" onClick={() => reviewReward(row, "fulfilled")}>Hoàn tất</button>
           <button type="button" className="eg-small-btn danger" onClick={() => reviewReward(row, "rejected")}>Từ chối</button>
         </div>
       ) : <span className="eg-muted-block">Đã xử lý</span>,
+    },
+  ];
+
+  const completedRewardColumns = [
+    { key: "id", label: "Mã phiếu", render: row => <strong>{row.id}</strong> },
+    { key: "userName", label: "Sinh viên", render: row => <div className="eg-user-name-cell"><strong>{row.userName}</strong>{row.userHasGreenStudentBadge && <GreenStudentBadge />}</div> },
+    { key: "rewardLabel", label: "Phần thưởng", render: row => <span className="eg-text-cell">{row.rewardLabel}</span> },
+    { key: "costPoints", label: "Tổng điểm đã trừ", render: row => <strong>{row.costPoints}</strong> },
+    { key: "reviewerName", label: "Người duyệt", render: row => rewardReviewerNameFor(row) ? <div><strong>{rewardReviewerNameFor(row)}</strong>{row.reviewerGroup && <span className="eg-muted-block">{row.reviewerGroup}</span>}</div> : <span className="eg-muted-block">Không rõ</span> },
+    { key: "reviewedAt", label: "Thời gian duyệt", render: row => row.reviewedAt ? formatDate(row.reviewedAt) : "Chưa rõ" },
+    { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status} /> },
+    {
+      key: "actions",
+      label: "Thao tác",
+      render: row => (
+        <div className="eg-table-actions">
+          <button type="button" className="eg-small-btn" aria-label={`Xem chi tiết ${row.id}`} onClick={() => setSelectedRewardDetail(row)}>Xem chi tiết</button>
+          {row.exchangeType === "batch" && row.status === "fulfilled" && <button type="button" className="eg-small-btn danger" onClick={() => void finalizeBatch(row, "cancelled")}>Hoàn tác đổi thưởng</button>}
+        </div>
+      ),
     },
   ];
 
@@ -461,6 +498,7 @@ export default function EcoPointsPage() {
     { key: "categoryName", label: "Danh mục", render: row => row.categoryName || "Chưa phân loại" },
     { key: "description", label: "Mô tả", render: row => <span className="eg-text-cell">{row.description || "Chưa có mô tả"}</span> },
     { key: "costPoints", label: "Điểm cần đổi", render: row => <strong>{row.costPoints}</strong> },
+    { key: "rewardType", label: "Loại", render: row => row.rewardType === "physical" ? "Hiện vật" : "Huy hiệu/danh hiệu" },
     { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status} /> },
     {
       key: "actions",
@@ -492,6 +530,7 @@ export default function EcoPointsPage() {
     { key: "wasteTypeName", label: "Loại rác", render: row => <div><strong>{row.wasteTypeName}</strong><span className="eg-muted-block">{formatSubmissionQuantity(row)}</span></div> },
     { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status}>{submissionStatusLabel(row.status)}</StatusBadge> },
     { key: "proof", label: "Minh chứng", render: row => row.proofImageUrl ? <a href={row.proofImageUrl} target="_blank" rel="noreferrer">Xem ảnh</a> : `${row.proofCount || 0} ảnh` },
+    { key: "reviewerName", label: "Người duyệt", render: row => row.reviewerName ? <div><strong>{row.reviewerName}</strong>{row.reviewerGroup && <span className="eg-muted-block">{row.reviewerGroup}</span>}</div> : <span className="eg-muted-block">Chưa duyệt</span> },
     { key: "volunteerNote", label: "Ghi chú", render: row => <span className="eg-text-cell">{row.volunteerNote || "-"}</span> },
     {
       key: "actions",
@@ -600,7 +639,7 @@ export default function EcoPointsPage() {
                       <div key={row.id || row.name} className="eg-ecopoint-rank-item">
                         <span className="eg-rank-number">{row.rank}</span>
                         <div>
-                          <strong>{row.name}</strong>
+                          <strong>{row.name} {hasGreenStudentBadge(row) && <GreenStudentBadge />}</strong>
                           <span>{row.group || "Không rõ lớp/khoa"}</span>
                         </div>
                         <strong>{row.totalPoints}</strong>
@@ -737,6 +776,20 @@ export default function EcoPointsPage() {
                 </select>
               </label>
               <label>
+                Loại phần thưởng
+                <select aria-label="Loại phần thưởng" value={rewardProductForm.rewardType || "physical"} onChange={event => setRewardProductForm(current => ({ ...current, rewardType: event.target.value, badgeKey: event.target.value === "physical" ? "" : (current.badgeKey || "green_student") }))}>
+                  <option value="physical">Hiện vật</option>
+                  <option value="badge">Huy hiệu</option>
+                  <option value="title">Danh hiệu</option>
+                </select>
+              </label>
+              {(rewardProductForm.rewardType === "badge" || rewardProductForm.rewardType === "title") && (
+                <label>
+                  Mã huy hiệu
+                  <input aria-label="Mã huy hiệu" value={rewardProductForm.badgeKey || "green_student"} onChange={event => setRewardProductForm(current => ({ ...current, badgeKey: event.target.value }))} />
+                </label>
+              )}
+              <label>
                 Màu hiển thị
                 <input aria-label="Màu hiển thị" type="color" value={rewardProductForm.color} onChange={event => setRewardProductForm(current => ({ ...current, color: event.target.value }))} />
               </label>
@@ -772,15 +825,8 @@ export default function EcoPointsPage() {
               <DataTable columns={rewardColumns} rows={rewardExchangeRows} emptyText="Chưa có yêu cầu đổi thưởng." />
             </section>
             <section className="eg-card">
-              <div className="eg-card-head"><h2>Lịch sử đổi thưởng đã xử lý</h2></div>
-              {processedRewardRows.length === 0 ? <p>Chưa có đổi thưởng đã xử lý.</p> : processedRewardRows.map(row => (
-                <div key={row.id} className="eg-list-row">
-                  <div><strong>{row.id}</strong><p>{row.items?.map(item => `${item.rewardTitle} x${item.quantity}`).join(', ') || row.rewardLabel}</p></div>
-                  <div><StatusBadge group={row.status}>{row.status}</StatusBadge><div className="eg-button-row">
-                    {row.exchangeType === "batch" && row.status === "fulfilled" && <button type="button" className="eg-secondary-btn" onClick={() => void finalizeBatch(row, "cancelled")}>Hoàn tác đổi thưởng</button>}
-                  </div></div>
-                </div>
-              ))}
+              <div className="eg-card-head"><h2>Lịch sử đổi thưởng hoàn tất</h2></div>
+              <DataTable columns={completedRewardColumns} rows={processedRewardRows} emptyText="Chưa có đổi thưởng hoàn tất." />
             </section>
           </>
         )}
@@ -798,6 +844,37 @@ export default function EcoPointsPage() {
           </div>
         )}
       </div>
+      <Modal open={Boolean(selectedRewardDetail)} title="Chi tiết đổi thưởng" onClose={() => setSelectedRewardDetail(null)}>
+        {selectedRewardDetail && (
+          <div className="eg-reward-detail">
+            <div className="eg-detail-grid">
+              <div><span>Mã phiếu</span><strong>{selectedRewardDetail.id}</strong></div>
+              <div><span>Sinh viên</span><strong>{selectedRewardDetail.userName}</strong></div>
+              <div><span>Tổng điểm</span><strong>{selectedRewardDetail.costPoints}</strong></div>
+              <div><span>Nguồn xác nhận</span><strong>{selectedRewardDetail.confirmedSource || "Admin web"}</strong></div>
+              <div><span>Người xác nhận</span><strong>{rewardReviewerNameFor(selectedRewardDetail) || "Không rõ"}</strong></div>
+              <div><span>Thời gian</span><strong>{selectedRewardDetail.reviewedAt ? formatDate(selectedRewardDetail.reviewedAt) : "Chưa rõ"}</strong></div>
+            </div>
+            <DataTable
+              columns={[
+                { key: "rewardTitle", label: "Sản phẩm", render: row => row.rewardTitle || row.rewardLabel || row.rewardId || "Phần thưởng" },
+                { key: "quantity", label: "Số lượng" },
+                { key: "pointsEach", label: "Điểm từng món" },
+                { key: "pointsTotal", label: "Tổng điểm" },
+              ]}
+              rows={(selectedRewardDetail.items || []).map((item, index) => ({
+                id: item.id || `${selectedRewardDetail.id}-${index}`,
+                rewardTitle: item.rewardTitle || item.rewardLabel || item.rewardId,
+                quantity: item.quantity || 1,
+                pointsEach: item.pointsEach || 0,
+                pointsTotal: item.pointsTotal || 0,
+              }))}
+              emptyText="Không có chi tiết sản phẩm."
+            />
+            {selectedRewardDetail.adminNote && <p className="eg-detail-note"><strong>Ghi chú:</strong> {selectedRewardDetail.adminNote}</p>}
+          </div>
+        )}
+      </Modal>
       <Toast message={toast} tone={toastTone} onClose={() => setToast("")} />
     </div>
   );

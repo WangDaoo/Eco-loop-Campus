@@ -60,6 +60,8 @@ export function buildUserLeaderboard(users, history, options = {}) {
         userId: user.id,
         name: user.name,
         group: user.group,
+        badges: Array.isArray(user.badges) ? user.badges : [],
+        hasGreenStudentBadge: Boolean(user.hasGreenStudentBadge || (Array.isArray(user.badges) && user.badges.includes("green_student"))),
         totalPoints: useProfilePoints ? safeNumber(user.points) : rows.reduce((sum, item) => sum + safeNumber(item.points), 0),
         scanCount: rows.length,
       };

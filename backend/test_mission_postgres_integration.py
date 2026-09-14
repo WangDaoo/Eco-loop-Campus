@@ -112,8 +112,8 @@ def test_confirmed_submission_advances_mission_once_and_rewards_once(
     assert scan.json()["data"]["result"] == "SUCCESS"
     with psycopg.connect(postgres_test_url) as connection:
         connection.execute(
-            "insert into proof_images (submission_id, image_url) values (%s, '/proof.jpg')",
-            (created["id"],),
+            "insert into proof_images (submission_id, uploaded_by, image_url) values (%s, %s, '/proof.jpg')",
+            (created["id"], SEED_IDS["volunteer_a"]),
         )
         connection.commit()
 

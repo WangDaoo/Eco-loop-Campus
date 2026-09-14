@@ -19,3 +19,8 @@ test('LoginScreen uses refreshed Eco-loop framing without mojibake', () => {
   assert.match(source, /Sinh viên/);
   assert.match(source, /Tình nguyện viên/);
 });
+
+test('LoginScreen keeps wrong role errors generic like wrong password', () => {
+  assert.match(source, /Sai tài khoản hoặc mật khẩu/);
+  assert.doesNotMatch(source, /không thuộc vai trò đang chọn/);
+});

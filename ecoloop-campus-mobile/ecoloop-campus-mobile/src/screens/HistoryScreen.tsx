@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, Text, View, Image } from 'react-native';
+import React, { useState } from 'react';
+import { Modal, Pressable, StyleSheet, Text, View, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
@@ -7,7 +7,7 @@ import { useAppContext } from '../context/AppContext';
 import { aiClassDisplayName } from '../services/predictionService';
 import { getPredictionStatusText, getPredictionStatusTone, getPredictionSubtitle } from '../services/predictionPresentation';
 import { getSubmissionStatusLabel, getSubmissionStatusTone, getWasteTypeDisplayName } from '../services/submissionPresentation';
-import { RewardRedemption } from '../types';
+import type { ProofImage, RewardRedemption } from '../types';
 import { colors } from '../theme/colors';
 
 function pointStatusText(status: 'pending' | 'confirmed' | 'rejected') {
@@ -32,12 +32,6 @@ function redemptionStatusText(status: RewardRedemption['status']) {
       return 'Đã hoàn tác';
     case 'expired':
       return 'Mã đã hết hạn';
-    case 'scanned':
-      return 'Đã quét mã';
-    case 'approved':
-      return 'Đã duyệt';
-    case 'delivered':
-      return 'Đã nhận';
     case 'rejected':
       return 'Bị từ chối';
     case 'requested':
@@ -48,6 +42,7 @@ function redemptionStatusText(status: RewardRedemption['status']) {
 
 export default function HistoryScreen() {
   const { aiPredictions, currentUser, pointTransactions, rewardRedemptions, submissions, stations, wasteTypes } = useAppContext();
+  const [proofPreviewRecord, setProofPreviewRecord] = useState<ProofImage | null>(null);
   const userSubmissions =
     currentUser.role === 'student'
       ? submissions.filter(item => item.userId === currentUser.id)
@@ -82,7 +77,15 @@ export default function HistoryScreen() {
             <Text style={styles.time}>QR: {item.qrToken}</Text>
             {item.actualQuantity ? <Text style={styles.time}>Thực tế: {item.actualQuantity} {item.unit}</Text> : null}
             {item.volunteerNote ? <Text style={styles.time}>Ghi chú: {item.volunteerNote}</Text> : null}
-            {item.proofImage ? <Text style={styles.time}>Ảnh chứng minh: {item.proofImage.imageUrl}</Text> : null}
+            {item.proofImage ? (
+              <Pressable style={styles.proofPreviewCard} onPress={() => setProofPreviewRecord(item.proofImage ?? null)}>
+                <Image source={{ uri: item.proofImage.imageUrl }} style={styles.proofThumbnail} />
+                <View style={styles.proofCopy}>
+                  <Text style={styles.proofTitle}>Ảnh minh chứng</Text>
+                  <Text style={styles.proofText}>Chạm để xem ảnh xác minh</Text>
+                </View>
+              </Pressable>
+            ) : null}
           </Card>
         );
       })}
@@ -142,6 +145,15 @@ export default function HistoryScreen() {
           <Text style={styles.rewardEmptyText}>Khi bạn đổi quà, yêu cầu sẽ xuất hiện tại đây để theo dõi trạng thái.</Text>
         </Card>
       )}
+      <Modal visible={Boolean(proofPreviewRecord)} transparent animationType="fade" onRequestClose={() => setProofPreviewRecord(null)}>
+        <Pressable style={styles.previewOverlay} onPress={() => setProofPreviewRecord(null)}>
+          <View style={styles.previewPanel}>
+            <Text style={styles.previewTitle}>Ảnh minh chứng</Text>
+            {proofPreviewRecord ? <Image source={{ uri: proofPreviewRecord.imageUrl }} style={styles.previewImage} /> : null}
+            <Text style={styles.previewClose}>Chạm để đóng</Text>
+          </View>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
@@ -163,6 +175,36 @@ const styles = StyleSheet.create({
   earn: { color: colors.green },
   spend: { color: colors.coralDark },
   time: { color: colors.muted, marginTop: 4 },
+  proofPreviewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.cream,
+    borderRadius: 16,
+    marginTop: 10,
+    padding: 8,
+  },
+  proofThumbnail: { width: 64, height: 64, borderRadius: 12, backgroundColor: colors.ecoPill },
+  proofCopy: { flex: 1 },
+  proofTitle: { color: colors.ink, fontWeight: '900' },
+  proofText: { color: colors.muted, fontWeight: '700', marginTop: 2 },
+  previewOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 29, 38, 0.72)',
+    padding: 20,
+  },
+  previewPanel: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    padding: 14,
+  },
+  previewTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', marginBottom: 10 },
+  previewImage: { width: '100%', height: 360, borderRadius: 18, backgroundColor: colors.ecoPill, resizeMode: 'contain' },
+  previewClose: { color: colors.muted, fontWeight: '800', marginTop: 10, textAlign: 'center' },
   emptyContainer: { alignItems: 'center', marginVertical: 20 },
   mascot: { width: 120, height: 120, resizeMode: 'contain', marginBottom: 12 },
   empty: { color: colors.muted, fontWeight: '700', textAlign: 'center' },

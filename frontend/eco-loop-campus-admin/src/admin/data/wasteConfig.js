@@ -115,6 +115,9 @@ export const DEFAULT_POINT_RULES = [
 export const STATUS_LABELS = {
   pending: "Cần duyệt",
   approved: "Đã duyệt",
+  fulfilled: "Hoàn tất",
+  expired: "Hết hạn",
+  cancelled: "Đã hủy",
   rejected: "Từ chối",
   active: "Hoạt động",
   full: "Đầy",

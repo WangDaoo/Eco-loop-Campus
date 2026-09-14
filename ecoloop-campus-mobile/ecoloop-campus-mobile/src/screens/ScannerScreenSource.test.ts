@@ -76,3 +76,9 @@ test('ScannerScreen reports proof upload errors instead of failing silently befo
   assert.match(source, /Không lưu được ảnh minh chứng/);
   assert.match(source, /if \(!\(await ensureProofImageSafely\(\)\)\) return;/);
 });
+
+test('ScannerScreen requires volunteer proof even when student proof already exists', () => {
+  assert.doesNotMatch(source, /if \(selectedSubmission\.proofImage\) return true/);
+  assert.match(source, /if \(!proofImageUri\)/);
+  assert.match(source, /Tình nguyện viên phải chụp hoặc tải ảnh trước khi xác nhận/);
+});

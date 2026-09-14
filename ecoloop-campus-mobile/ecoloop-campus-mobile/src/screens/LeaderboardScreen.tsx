@@ -10,6 +10,7 @@ import { RootStackParamList } from '../types';
 import { colors } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Leaderboard'>;
+const hasGreenStudentBadge = (user: any) => Boolean(user?.hasGreenStudentBadge || user?.badges?.includes?.('green_student'));
 
 export default function LeaderboardScreen({ navigation }: Props) {
   const { users, currentUser, avatarOptions } = useAppContext();
@@ -35,7 +36,10 @@ export default function LeaderboardScreen({ navigation }: Props) {
               <UserAvatar avatarKey={sourceUser?.avatarKey} avatarUrl={sourceUser?.avatarUrl} avatarOptions={avatarOptions} size={50} />
             </View>
             <View style={styles.rowBody}>
-              <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{row.name}</Text>
+              <View style={styles.nameRow}>
+                <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">{row.name}</Text>
+                {hasGreenStudentBadge(sourceUser) ? <Text style={styles.greenBadge}>SV xanh</Text> : null}
+              </View>
               <Text style={styles.meta} numberOfLines={1} ellipsizeMode="tail">{row.displayMeta}</Text>
             </View>
             <Text style={styles.point} numberOfLines={1} ellipsizeMode="tail">{row.points.toLocaleString('vi-VN')}</Text>
@@ -60,7 +64,9 @@ const styles = StyleSheet.create({
   second: { backgroundColor: '#C0C0C0' },
   third: { backgroundColor: '#CD7F32' },
   rankText: { color: colors.ink, fontWeight: '900', fontSize: 16 },
-  name: { color: colors.ink, fontWeight: '900', fontSize: 15 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  name: { color: colors.ink, fontWeight: '900', fontSize: 15, flexShrink: 1 },
+  greenBadge: { backgroundColor: '#dcfce7', color: '#166534', borderColor: '#86efac', borderWidth: 1, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2, fontSize: 10, fontWeight: '900', overflow: 'hidden', flexShrink: 0 },
   meta: { color: colors.muted, fontWeight: '700', fontSize: 12 },
   point: { color: colors.green, fontWeight: '900', fontSize: 15, minWidth: 66, textAlign: 'right', flexShrink: 0 }
 });

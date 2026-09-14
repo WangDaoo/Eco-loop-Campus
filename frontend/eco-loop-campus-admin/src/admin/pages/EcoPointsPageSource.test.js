@@ -53,3 +53,14 @@ test("EcoPointsPage groups management areas into focused tabs", () => {
   expect(source).toMatch(/activeTab === "redemptions"/);
   expect(source).toMatch(/activeTab === "rankings"/);
 });
+
+test("EcoPointsPage shows who approved recycling submission points", () => {
+  expect(source).toMatch(/label: "Người duyệt"/);
+  expect(source).toMatch(/reviewerName/);
+});
+
+test("EcoPointsPage shows who approved reward redemptions", () => {
+  expect(source).toMatch(/const rewardReviewerNameFor = /);
+  expect(source).toMatch(/rewardColumns[\s\S]*label: "Người duyệt"/);
+  expect(source).toMatch(/rewardColumns[\s\S]*reviewerName/);
+});

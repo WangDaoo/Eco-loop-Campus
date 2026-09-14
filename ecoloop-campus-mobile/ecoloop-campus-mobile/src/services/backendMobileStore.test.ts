@@ -294,6 +294,22 @@ test('backend mobile store surfaces backend errors without Supabase fallback wor
   );
 });
 
+test('backend mobile store hides role mismatch behind generic login failure', async () => {
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage: memoryStorage(),
+    fetcher: async () => response({
+      token: 'token-1',
+      user: { id: 'volunteer-1', name: 'TN V', email: 'volunteer@school.edu.vn', role: 'volunteer', status: 'active', points: 0 },
+    }),
+  });
+
+  await assert.rejects(
+    () => store.signIn('student', 'volunteer@school.edu.vn', '123456'),
+    /Sai tài khoản hoặc mật khẩu/
+  );
+});
+
 test('backend mobile store maps proof image backend error to a helpful QR message', async () => {
   const store = createBackendMobileStore({
     baseUrl: 'https://api.example.test',

@@ -307,6 +307,17 @@ test('Supabase mobile store blocks pending volunteer sign-in until admin approva
   );
 });
 
+test('Supabase mobile store hides role mismatch behind generic login failure', async () => {
+  const fake = makeFakeSupabase(baseTables, { id: 'student-1', email: 'student@school.edu.vn' });
+  const store = createSupabaseMobileStore(fake as any);
+
+  await assert.rejects(
+    () => store.signIn('volunteer', 'student@school.edu.vn', 'secret'),
+    /Sai tài khoản hoặc mật khẩu/
+  );
+  assert.equal(fake.calls.some((call: Row) => call.action === 'signOut'), true);
+});
+
 test('Supabase mobile store signs in, loads data, creates QR submission, and confirms points', async () => {
   const fake = makeFakeSupabase(baseTables);
   const store = createSupabaseMobileStore(fake as any);

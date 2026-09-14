@@ -13,6 +13,7 @@ const formatDate = value => {
   return new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(date);
 };
 const formatPercent = value => `${Math.round(Number(value || 0) * 100)}%`;
+const reviewerNameFor = row => row.reviewerName || row.verifiedByName || row.reviewedByName || row.verifiedBy || row.reviewedBy || "";
 
 const normalizeFilter = (value, allowedValues) => {
   const normalized = String(value || "all").trim().toLowerCase();
@@ -111,6 +112,7 @@ export default function ScansPage() {
     { key: "confidence", label: "Tin cậy", render: row => <span className={row.confidence < threshold ? "eg-warning-text" : ""}>{formatPercent(row.confidence)}</span> },
     { key: "source", label: "Nguồn", render: row => row.source === "camera" ? "Camera" : "Tải ảnh" },
     { key: "status", label: "Trạng thái", render: row => <StatusBadge status={row.status} /> },
+    { key: "reviewerName", label: "Người duyệt", render: row => reviewerNameFor(row) || <span className="eg-muted-block">Chưa duyệt</span> },
     { key: "timestamp", label: "Thời gian", render: row => formatDate(row.timestamp) },
     {
       key: "actions",

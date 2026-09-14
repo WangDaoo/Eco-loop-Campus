@@ -259,7 +259,7 @@ def test_admin_student_contribution_report_aggregates_students_and_days(monkeypa
                 ],
                 [("ph-1", "student-1", 12, "2026-09-10")],
                 [("fb-1", "2026-09-10")],
-                [("rw-1", "2026-09-11")],
+                [("rw-1", "student-1", "Bình nước x1", "2026-09-11")],
             ]
             return datasets[self.query_index]
     class FakeConnection:
@@ -285,10 +285,11 @@ def test_admin_student_contribution_report_aggregates_students_and_days(monkeypa
         "fullName": "Nguyễn Văn An",
         "studentCode": "10123001",
         "faculty": "Khoa Công nghệ thông tin",
-        "group": "12523W.4",
-        "contributionCount": 2,
-        "totalPoints": 12,
-    }
+            "group": "12523W.4",
+            "contributionCount": 2,
+            "totalPoints": 12,
+            "rewardSummary": "Bình nước x1",
+        }
     assert report["dailyRows"][0] == {
         "date": "2026-09-10",
         "contributions": 1,

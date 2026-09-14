@@ -146,6 +146,7 @@ export default function ReportsPage() {
     { key: "group", label: "Lớp" },
     { key: "contributionCount", label: "Số lần đóng góp" },
     { key: "totalPoints", label: "Tổng điểm" },
+    { key: "rewardSummary", label: "Phần thưởng", render: row => row.rewardSummary || "-" },
   ];
   const dailyColumns = [
     { key: "date", label: "Ngày" },

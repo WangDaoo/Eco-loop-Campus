@@ -31,3 +31,10 @@ test('HistoryScreen keeps Vietnamese UI text readable', () => {
   assert.match(source, /Lịch sử của bạn/);
   assert.match(source, /Giao dịch tái chế/);
 });
+
+test('HistoryScreen shows proof images visually instead of raw URLs', () => {
+  assert.match(source, /proofPreviewRecord/);
+  assert.match(source, /Ảnh minh chứng/);
+  assert.match(source, /Image source=\{\{ uri: item\.proofImage\.imageUrl \}\}/);
+  assert.doesNotMatch(source, /Ảnh chứng minh: \{item\.proofImage\.imageUrl\}/);
+});

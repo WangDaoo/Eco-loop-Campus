@@ -11,6 +11,7 @@ function messageOf(error: unknown) {
 }
 
 const supportEmail = 'ecoloopcampus@hyute.edu.vn';
+const hasGreenStudentBadge = (user: any) => Boolean(user?.hasGreenStudentBadge || user?.badges?.includes?.('green_student'));
 
 export default function ProfileScreen({ navigation }: any) {
   const { currentUser: user, signOut, users, faculties, avatarOptions, updateAvatar, updatePassword, isLoading } = useAppContext();
@@ -91,7 +92,10 @@ export default function ProfileScreen({ navigation }: any) {
         </Pressable>
 
         <View style={styles.profileSummary}>
-          <Text style={styles.summaryTitle}>{user.name || selectedAvatar.label}</Text>
+          <View style={styles.summaryTitleRow}>
+            <Text style={styles.summaryTitle}>{user.name || selectedAvatar.label}</Text>
+            {hasGreenStudentBadge(user) ? <Text style={styles.greenBadge}>Sinh viên xanh</Text> : null}
+          </View>
           <Text style={styles.summaryMeta}>{facultyLabel}</Text>
           <Text style={styles.summaryPoints}>{Number(user.points || 0).toLocaleString('vi-VN')} Ecopoint</Text>
         </View>
@@ -254,10 +258,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
+  summaryTitleRow: { alignItems: 'center', gap: 8 },
   summaryTitle: {
     color: '#2c6e6e',
     fontSize: 18,
     fontWeight: '900',
+  },
+  greenBadge: {
+    backgroundColor: '#dcfce7',
+    color: '#166534',
+    borderColor: '#86efac',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    fontSize: 12,
+    fontWeight: '900',
+    overflow: 'hidden'
   },
   summaryMeta: {
     marginTop: 4,

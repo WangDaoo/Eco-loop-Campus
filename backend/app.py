@@ -12,7 +12,7 @@ import uuid
 import re
 import unicodedata
 import zipfile
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from xml.sax.saxutils import escape as xml_escape
 from urllib.parse import unquote, urlparse
@@ -474,6 +474,23 @@ def profile_is_complete(role, student_code, faculty_code, phone_number):
         return True
     return all((student_code, faculty_code, phone_number))
 
+def normalize_badges(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            value = [value]
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    badges = []
+    for item in value:
+        badge = str(item or "").strip()
+        if badge and badge not in badges:
+            badges.append(badge)
+    return badges
+
 def to_user_profile(row):
     (
         user_id,
@@ -491,7 +508,9 @@ def to_user_profile(row):
         faculty_code,
         faculty_name,
         phone_number,
+        badges_value,
     ) = row
+    badges = normalize_badges(badges_value)
     profile_completed = profile_is_complete(role, student_code, faculty_code, phone_number)
     return {
         "id": user_id,
@@ -509,6 +528,8 @@ def to_user_profile(row):
         "facultyCode": faculty_code,
         "facultyName": faculty_name,
         "phoneNumber": phone_number,
+        "badges": badges,
+        "hasGreenStudentBadge": "green_student" in badges,
         "profileCompleted": profile_completed,
         "requiresProfileCompletion": not profile_completed,
     }
@@ -516,7 +537,7 @@ def to_user_profile(row):
 USER_SELECT = """
 select u.id, u.name, u.email, u.role, u."group", u.points, u.status,
        u.avatar_key, u.avatar_url, u.created_at, u.updated_at,
-       u.student_code, u.faculty_code, f.name, u.phone_number
+       u.student_code, u.faculty_code, f.name, u.phone_number, u.badges
 from users u
 left join faculties f on f.code = u.faculty_code
 """
@@ -813,6 +834,7 @@ CAMEL_ALIASES = {
     "student_id": "studentId",
     "batch_id": "batchId",
     "submission_id": "submissionId",
+    "uploaded_by": "uploadedBy",
     "mission_id": "missionId",
     "points_each": "pointsEach",
     "points_total": "pointsTotal",
@@ -838,12 +860,15 @@ CAMEL_ALIASES = {
     "updated_at": "updatedAt",
     "requested_at": "requestedAt",
     "reviewed_at": "reviewedAt",
+    "reviewed_by": "reviewedBy",
     "resolved_at": "resolvedAt",
     "scanned_by": "scannedBy",
     "station_id": "stationId",
     "scanned_at": "scannedAt",
     "expires_at": "expiresAt",
     "fulfilled_at": "fulfilledAt",
+    "confirmed_by": "confirmedBy",
+    "confirmed_source": "confirmedSource",
     "image_hash": "imageHash",
     "captured_at": "capturedAt",
     "verification_code": "verificationCode",
@@ -854,8 +879,8 @@ CAMEL_ALIASES = {
 ADMIN_RESOURCES = {
     "users": {
         "table": "users",
-        "columns": ["id", "name", "email", "role", "group", "points", "status", "student_code", "faculty_code", "phone_number", "avatar_key", "avatar_url", "created_at", "updated_at"],
-        "writable": ["name", "email", "role", "group", "points", "status", "student_code", "faculty_code", "phone_number", "avatar_key", "avatar_url"],
+        "columns": ["id", "name", "email", "role", "group", "points", "status", "student_code", "faculty_code", "phone_number", "avatar_key", "avatar_url", "badges", "created_at", "updated_at"],
+        "writable": ["name", "email", "role", "group", "points", "status", "student_code", "faculty_code", "phone_number", "avatar_key", "avatar_url", "badges"],
         "order": "created_at desc",
     },
     "bins": {
@@ -872,8 +897,8 @@ ADMIN_RESOURCES = {
     },
     "rewards": {
         "table": "rewards",
-        "columns": ["id", "title", "description", "category_id", "category_name", "cost_points", "stock", "status", "color", "created_at", "updated_at"],
-        "writable": ["id", "title", "description", "category_id", "category_name", "cost_points", "stock", "status", "color"],
+        "columns": ["id", "title", "description", "category_id", "category_name", "cost_points", "stock", "reward_type", "badge_key", "status", "color", "created_at", "updated_at"],
+        "writable": ["id", "title", "description", "category_id", "category_name", "cost_points", "stock", "reward_type", "badge_key", "status", "color"],
         "order": "cost_points asc",
     },
     "reward-categories": {
@@ -914,13 +939,13 @@ ADMIN_RESOURCES = {
     },
     "reward-redemptions": {
         "table": "reward_redemptions",
-        "columns": ["id", "user_id", "reward_id", "reward_label", "cost_points", "status", "requested_at", "reviewed_at", "admin_note"],
-        "writable": ["id", "user_id", "reward_id", "reward_label", "cost_points", "status", "reviewed_at", "admin_note"],
+        "columns": ["id", "user_id", "reward_id", "reward_label", "cost_points", "status", "requested_at", "reviewed_at", "reviewed_by", "admin_note"],
+        "writable": ["id", "user_id", "reward_id", "reward_label", "cost_points", "status", "reviewed_at", "reviewed_by", "admin_note"],
         "order": "requested_at desc",
     },
     "reward-redemption-batches": {
         "table": "reward_redemption_batches",
-        "columns": ["id", "student_id", "qr_token", "created_at", "expires_at", "total_cost_points", "status", "scanned_by", "scanned_at", "fulfilled_at", "updated_at"],
+        "columns": ["id", "student_id", "qr_token", "created_at", "expires_at", "total_cost_points", "status", "scanned_by", "confirmed_by", "confirmed_source", "admin_note", "scanned_at", "fulfilled_at", "updated_at"],
         "writable": [],
         "order": "created_at desc",
     },
@@ -938,8 +963,8 @@ ADMIN_RESOURCES = {
     },
     "proof-images": {
         "table": "proof_images",
-        "columns": ["id", "submission_id", "image_url", "image_hash", "captured_at", "verification_code", "status", "note"],
-        "writable": ["id", "submission_id", "image_url", "image_hash", "verification_code", "status", "note"],
+        "columns": ["id", "submission_id", "uploaded_by", "image_url", "image_hash", "captured_at", "verification_code", "status", "note"],
+        "writable": ["id", "submission_id", "uploaded_by", "image_url", "image_hash", "verification_code", "status", "note"],
         "order": "captured_at desc",
     },
     "point-history": {
@@ -1175,6 +1200,7 @@ REPORT_STUDENT_HEADERS = [
     ("group", "Lớp"),
     ("contributionCount", "Số lần đóng góp"),
     ("totalPoints", "Tổng điểm"),
+    ("rewardSummary", "Phần thưởng"),
 ]
 
 def parse_report_date(value):
@@ -1274,9 +1300,14 @@ def build_student_contribution_report(date_from=None, date_to=None):
             feedback_rows = cursor.fetchall()
             cursor.execute(
                 f"""
-                select id, created_at::date::text
-                from reward_redemption_batches
-                where {date_filter.format(field='created_at')}
+                select b.id, b.student_id,
+                       coalesce(string_agg(i.reward_title || ' x' || i.quantity::text, ', ' order by i.reward_title), '') as reward_summary,
+                       coalesce(b.fulfilled_at, b.updated_at, b.created_at)::date::text
+                from reward_redemption_batches b
+                left join reward_redemption_items i on i.batch_id = b.id
+                where b.status = 'fulfilled'
+                  and {date_filter.format(field='coalesce(b.fulfilled_at, b.updated_at, b.created_at)')}
+                group by b.id, b.student_id, coalesce(b.fulfilled_at, b.updated_at, b.created_at)
                 """,
                 (start, start, end, end),
             )
@@ -1296,7 +1327,10 @@ def build_student_contribution_report(date_from=None, date_to=None):
         increment_day(day_map, day, "points", value)
     for _id, day in feedback_rows:
         increment_day(day_map, day, "feedback")
-    for _id, day in reward_rows:
+    reward_summaries = {}
+    for _id, user_id, reward_summary, day in reward_rows:
+        if user_id and reward_summary:
+            reward_summaries.setdefault(user_id, []).append(reward_summary)
         increment_day(day_map, day, "rewardRedemptions")
 
     student_rows = []
@@ -1309,6 +1343,7 @@ def build_student_contribution_report(date_from=None, date_to=None):
             "group": class_group or "",
             "contributionCount": contribution_counts.get(user_id, 0),
             "totalPoints": point_totals.get(user_id, 0),
+            "rewardSummary": ", ".join(reward_summaries.get(user_id, [])),
         })
     daily_rows = finalize_daily_rows(day_map)
     active_students = sum(1 for row in student_rows if row["contributionCount"] > 0)
@@ -1529,8 +1564,10 @@ def admin_adjust_points(payload: dict, authorization: str | None = Header(defaul
 
 @app.post("/api/admin/{resource}")
 def admin_save_resource(resource: str, payload: dict, authorization: str | None = Header(default=None)):
-    require_admin_user(authorization)
+    user = require_admin_user(authorization)
     validate_admin_resource_write(resource, payload)
+    if resource == "reward-redemptions" and str(payload_value(payload, "status") or "").strip().lower() in {"rejected", "fulfilled", "expired", "cancelled"}:
+        payload = {**payload, "reviewed_by": user["id"], "reviewed_at": payload_value(payload, "reviewed_at") or datetime.now(timezone.utc)}
     return {"data": save_admin_resource(resource, payload)}
 
 @app.delete("/api/admin/{resource}/{item_id}")
@@ -1553,13 +1590,13 @@ def mission_with_progress(mission, progress):
     }
 
 def list_mobile_leaderboard_users():
-    columns = ["id", "name", "group", "points", "avatar_key", "avatar_url"]
+    columns = ["id", "name", "group", "points", "avatar_key", "avatar_url", "badges"]
     database_url = require_database_url()
     with psycopg.connect(database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                select id, name, "group", points, avatar_key, avatar_url
+                select id, name, "group", points, avatar_key, avatar_url, badges
                 from users
                 where role = 'student' and status = 'active'
                 order by points desc, name asc
@@ -2194,10 +2231,11 @@ def review_recycling_submission_account(volunteer_id, submission_id, payload):
     )
 
 def to_proof_image(row):
-    proof_id, submission_id, image_url, image_hash, captured_at, verification_code, status, note = row
+    proof_id, submission_id, uploaded_by, image_url, image_hash, captured_at, verification_code, status, note = row
     return {
         "id": proof_id,
         "submissionId": submission_id,
+        "uploadedBy": uploaded_by,
         "imageUrl": image_url,
         "imageHash": image_hash,
         "capturedAt": captured_at.isoformat() if captured_at else None,
@@ -2244,11 +2282,11 @@ def save_submission_proof_image(submission_id, file_name, content_type, content,
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                insert into proof_images (id, submission_id, image_url, image_hash, verification_code, status, note)
-                values (%s, %s, %s, %s, %s, 'pending', %s)
-                returning id, submission_id, image_url, image_hash, captured_at, verification_code, status, note
+                insert into proof_images (id, submission_id, uploaded_by, image_url, image_hash, verification_code, status, note)
+                values (%s, %s, %s, %s, %s, %s, 'pending', %s)
+                returning id, submission_id, uploaded_by, image_url, image_hash, captured_at, verification_code, status, note
                 """,
-                (str(uuid.uuid4()), submission_id, image_url, image_hash, image_hash[:12], str(note or "")),
+                (str(uuid.uuid4()), submission_id, actor.get("id") if actor else None, image_url, image_hash, image_hash[:12], str(note or "")),
             )
             row = cursor.fetchone()
         connection.commit()

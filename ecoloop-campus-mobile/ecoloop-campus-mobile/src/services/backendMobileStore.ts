@@ -110,6 +110,7 @@ export type BackendMobileStore = {
 
 const DEFAULT_API_URL = 'http://10.0.2.2:8000';
 const TOKEN_KEY = 'ecoloop_backend_token';
+const LOGIN_FAILURE_MESSAGE = 'Sai tài khoản hoặc mật khẩu';
 
 function normalizedBaseUrl(baseUrl: string) {
   return baseUrl.replace(/\/+$/, '');
@@ -273,7 +274,10 @@ export function createBackendMobileStore({
       const user = normalizeUser(payload.user ?? {}, endpointBaseUrl);
       if (user.status === 'pending') throw new Error('Tài khoản tình nguyện viên đang chờ admin phê duyệt.');
       if (user.status !== 'active') throw new Error('Tài khoản không được phép đăng nhập');
-      if (user.role !== role) throw new Error('Tài khoản này không thuộc vai trò đang chọn');
+      if (user.role !== role) {
+        await setToken('');
+        throw new Error(LOGIN_FAILURE_MESSAGE);
+      }
       return user;
     },
 

@@ -12,13 +12,10 @@ function redemptionStatusLabel(status: RewardRedemption['status']) {
   const labels: Record<RewardRedemption['status'], string> = {
     requested: 'Chờ duyệt',
     pending: 'Chờ quét mã',
-    scanned: 'Đã quét mã',
     fulfilled: 'Đã hoàn tất',
     expired: 'Mã đã hết hạn',
     cancelled: 'Đã hủy',
-    approved: 'Đã duyệt',
-    rejected: 'Từ chối',
-    delivered: 'Đã nhận'
+    rejected: 'Từ chối'
   };
   return labels[status];
 }

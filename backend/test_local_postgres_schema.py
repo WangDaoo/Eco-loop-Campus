@@ -48,6 +48,8 @@ def test_local_postgres_schema_defines_operating_tables_and_rpc():
     for table in required_tables:
         assert f"create table if not exists {table}" in sql
 
+    assert "uploaded_by text references users(id) on delete set null" in sql
+    assert "reviewed_by text references users(id) on delete set null" in sql
     assert "category_id text references reward_categories(id)" in sql
     assert "alter table rewards add column if not exists category_id" in sql
 

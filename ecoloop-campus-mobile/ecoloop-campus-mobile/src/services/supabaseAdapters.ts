@@ -146,6 +146,7 @@ function nonce(random: () => number) {
 }
 
 export function mapUserRow(row: Row): UserProfile {
+  const badges = Array.isArray(row.badges) ? row.badges.map(item => text(item).trim()).filter(Boolean) : [];
   const profile: UserProfile = {
     id: text(row.id),
     name: text(row.name, 'Nguoi dung Eco-loop'),
@@ -155,6 +156,9 @@ export function mapUserRow(row: Row): UserProfile {
     points: number(row.points),
     status: userStatus(row.status)
   };
+  const greenBadge = Boolean(row.hasGreenStudentBadge ?? row.has_green_student_badge ?? badges.includes('green_student'));
+  if (badges.length > 0) profile.badges = badges;
+  if (greenBadge) profile.hasGreenStudentBadge = true;
   const avatarKey = text(row.avatarKey ?? row.avatar_key).trim();
   const avatarUrl = text(row.avatarUrl ?? row.avatar_url).trim();
   const studentCode = text(row.studentCode ?? row.student_code).trim();
@@ -355,6 +359,7 @@ export function mapProofImageRow(row: Row): ProofImage {
   return {
     id: text(row.id),
     submissionId: text(row.submissionId ?? row.submission_id),
+    uploadedBy: text(row.uploadedBy ?? row.uploaded_by) || undefined,
     imageUrl: text(row.imageUrl ?? row.image_url),
     imageHash: text(row.imageHash ?? row.image_hash) || undefined,
     status: proofStatus(row.status),
@@ -504,7 +509,7 @@ export function mapRewardRedemptionRow(row: Row): RewardRedemption {
     rewardId: text(row.rewardId ?? row.reward_id ?? row.reward_label),
     rewardLabel: text(row.rewardLabel ?? row.reward_label),
     costPoints: number(row.costPoints ?? row.cost_points),
-    status: ['approved', 'rejected', 'delivered', 'pending', 'scanned', 'fulfilled', 'expired', 'cancelled'].includes(status) ? status as RewardRedemption['status'] : 'requested',
+    status: ['rejected', 'pending', 'fulfilled', 'expired', 'cancelled'].includes(status) ? status as RewardRedemption['status'] : status === 'approved' || status === 'delivered' || status === 'scanned' ? 'fulfilled' : 'requested',
     requestedAt: date(row.requestedAt ?? row.requested_at),
     reviewedAt: row.reviewedAt || row.reviewed_at ? date(row.reviewedAt ?? row.reviewed_at) : undefined,
     adminNote: text(row.adminNote ?? row.admin_note) || undefined,

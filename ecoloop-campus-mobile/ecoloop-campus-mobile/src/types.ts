@@ -43,6 +43,8 @@ export type UserProfile = {
   facultyCode?: string;
   facultyName?: string;
   phoneNumber?: string;
+  badges?: string[];
+  hasGreenStudentBadge?: boolean;
   profileCompleted?: boolean;
   requiresProfileCompletion?: boolean;
 };
@@ -237,7 +239,7 @@ export type RewardRedemption = {
   rewardId: string;
   rewardLabel: string;
   costPoints: number;
-  status: 'requested' | 'approved' | 'rejected' | 'delivered' | 'pending' | 'scanned' | 'fulfilled' | 'expired' | 'cancelled';
+  status: 'requested' | 'rejected' | 'pending' | 'fulfilled' | 'expired' | 'cancelled';
   requestedAt: Date;
   reviewedAt?: Date;
   adminNote?: string;
@@ -260,6 +262,7 @@ export type Feedback = {
 export type ProofImage = {
   id: string;
   submissionId: string;
+  uploadedBy?: string;
   imageUrl: string;
   imageHash?: string;
   status: 'pending' | 'accepted' | 'rejected';

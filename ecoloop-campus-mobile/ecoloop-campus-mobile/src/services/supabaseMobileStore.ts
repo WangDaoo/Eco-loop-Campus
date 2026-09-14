@@ -44,6 +44,7 @@ import {
 
 type Row = Record<string, any>;
 type SupabaseError = { message?: string } | null | undefined;
+const LOGIN_FAILURE_MESSAGE = 'Sai tài khoản hoặc mật khẩu';
 
 type SupabaseLike = {
   auth: {
@@ -393,7 +394,10 @@ export function createSupabaseMobileStore(client: SupabaseLike): SupabaseMobileS
       if (profile.status === 'pending') throw new Error('Tài khoản tình nguyện viên đang chờ admin phê duyệt.');
       if (profile.status === 'rejected') throw new Error('Yêu cầu cấp quyền tình nguyện viên đã bị từ chối. Vui lòng liên hệ ban vận hành nếu cần kiểm tra lại.');
       if (profile.status === 'locked') throw new Error('Tài khoản đang bị khóa');
-      if (profile.role !== role) throw new Error(`Tài khoản này không thuộc vai trò đang chọn`);
+      if (profile.role !== role) {
+        await client.auth.signOut();
+        throw new Error(LOGIN_FAILURE_MESSAGE);
+      }
       return profile;
     },
 

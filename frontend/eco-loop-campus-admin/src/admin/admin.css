@@ -2119,6 +2119,7 @@ a.eg-priority-item:focus-visible {
 }
 
 .eg-badge.is-approved,
+.eg-badge.is-fulfilled,
 .eg-badge.is-active,
 .eg-badge.is-read,
 .eg-badge.is-resolved {
@@ -2127,9 +2128,55 @@ a.eg-priority-item:focus-visible {
 }
 
 .eg-badge.is-rejected,
+.eg-badge.is-cancelled,
 .eg-badge.is-locked {
   background: var(--eg-danger-soft);
   color: var(--eg-danger);
+}
+
+.eg-badge.is-expired {
+  background: #eef2f7;
+  color: #475569;
+}
+
+.eg-user-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.eg-green-student-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.eg-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.eg-detail-grid div {
+  display: grid;
+  gap: 4px;
+}
+
+.eg-detail-grid span,
+.eg-detail-note {
+  color: var(--eg-muted);
+  font-size: 13px;
 }
 
 .eg-badge.is-group {

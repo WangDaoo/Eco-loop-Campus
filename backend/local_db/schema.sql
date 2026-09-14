@@ -11,6 +11,7 @@ create table if not exists users (
   status text not null default 'active' check (status in ('active', 'locked', 'pending', 'rejected')),
   avatar_key text,
   avatar_url text,
+  badges jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -139,6 +140,8 @@ create table if not exists rewards (
   category_id text references reward_categories(id) on delete set null,
   category_name text not null default '',
   cost_points integer not null default 0 check (cost_points >= 0),
+  reward_type text not null default 'physical' check (reward_type in ('physical', 'badge', 'title')),
+  badge_key text,
   status text not null default 'active' check (status in ('active', 'inactive')),
   color text not null default '#2F8F5B',
   created_at timestamptz not null default now(),
@@ -174,6 +177,7 @@ on conflict (code) do update set
 alter table users add column if not exists student_code text;
 alter table users add column if not exists faculty_code text references faculties(code) on delete restrict;
 alter table users add column if not exists phone_number text;
+alter table users add column if not exists badges jsonb not null default '[]'::jsonb;
 create unique index if not exists idx_users_student_code_ci
   on users (lower(student_code)) where student_code is not null;
 
@@ -191,6 +195,12 @@ alter table rewards add column if not exists stock integer check (stock is null 
 
 alter table rewards add column if not exists category_id text references reward_categories(id) on delete set null;
 alter table rewards add column if not exists category_name text not null default '';
+alter table rewards add column if not exists reward_type text not null default 'physical';
+alter table rewards add column if not exists badge_key text;
+alter table rewards drop constraint if exists rewards_reward_type_check;
+alter table rewards
+  add constraint rewards_reward_type_check
+  check (reward_type in ('physical', 'badge', 'title'));
 
 create table if not exists missions (
   id text primary key,
@@ -237,11 +247,21 @@ create table if not exists reward_redemptions (
   reward_id text references rewards(id) on delete set null,
   reward_label text not null,
   cost_points integer not null default 0 check (cost_points >= 0),
-  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'fulfilled', 'expired', 'scanned', 'cancelled')),
+  status text not null default 'pending' check (status in ('pending', 'fulfilled', 'expired', 'cancelled', 'rejected')),
   requested_at timestamptz not null default now(),
   reviewed_at timestamptz,
+  reviewed_by text references users(id) on delete set null,
   admin_note text not null default ''
 );
+
+alter table reward_redemptions add column if not exists reviewed_by text references users(id) on delete set null;
+alter table reward_redemptions
+  drop constraint if exists reward_redemptions_status_check;
+update reward_redemptions set status = 'fulfilled' where status = 'approved';
+update reward_redemptions set status = 'fulfilled' where status in ('delivered', 'scanned');
+alter table reward_redemptions
+  add constraint reward_redemptions_status_check
+  check (status in ('pending', 'fulfilled', 'expired', 'cancelled', 'rejected'));
 
 create table if not exists reward_redemption_batches (
   id text primary key,
@@ -250,8 +270,11 @@ create table if not exists reward_redemption_batches (
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
   total_cost_points integer not null default 0 check (total_cost_points >= 0),
-  status text not null default 'pending' check (status in ('pending', 'scanned', 'fulfilled', 'expired', 'rejected', 'cancelled')),
+  status text not null default 'pending' check (status in ('pending', 'fulfilled', 'expired', 'cancelled', 'rejected')),
   scanned_by text references users(id) on delete set null,
+  confirmed_by text references users(id) on delete set null,
+  confirmed_source text not null default '',
+  admin_note text not null default '',
   scanned_at timestamptz,
   fulfilled_at timestamptz,
   updated_at timestamptz not null default now()
@@ -305,6 +328,9 @@ alter table reward_redemption_batches add column if not exists expires_at timest
 alter table reward_redemption_batches add column if not exists total_cost_points integer not null default 0;
 alter table reward_redemption_batches add column if not exists status text not null default 'pending';
 alter table reward_redemption_batches add column if not exists scanned_by text;
+alter table reward_redemption_batches add column if not exists confirmed_by text;
+alter table reward_redemption_batches add column if not exists confirmed_source text not null default '';
+alter table reward_redemption_batches add column if not exists admin_note text not null default '';
 alter table reward_redemption_batches add column if not exists scanned_at timestamptz;
 alter table reward_redemption_batches add column if not exists fulfilled_at timestamptz;
 alter table reward_redemption_batches add column if not exists updated_at timestamptz not null default now();
@@ -328,7 +354,7 @@ alter table reward_redemption_batches
   alter column status set default 'pending';
 alter table reward_redemption_batches
   add constraint reward_redemption_batches_status_check
-  check (status in ('pending', 'fulfilled', 'expired', 'cancelled'));
+  check (status in ('pending', 'fulfilled', 'expired', 'cancelled', 'rejected'));
 alter table reward_redemption_batches
   drop constraint if exists reward_redemption_batches_total_cost_points_check;
 alter table reward_redemption_batches
@@ -446,6 +472,7 @@ create table if not exists qr_scan_logs (
 create table if not exists proof_images (
   id text primary key default gen_random_uuid()::text,
   submission_id text references recycling_submissions(id) on delete cascade,
+  uploaded_by text references users(id) on delete set null,
   image_url text not null,
   image_hash text,
   captured_at timestamptz not null default now(),
@@ -453,6 +480,8 @@ create table if not exists proof_images (
   status text not null default 'pending' check (status in ('pending', 'accepted', 'rejected')),
   note text not null default ''
 );
+
+alter table proof_images add column if not exists uploaded_by text references users(id) on delete set null;
 
 create table if not exists bin_collections (
   id text primary key default gen_random_uuid()::text,
@@ -619,7 +648,9 @@ $$;
 
 create or replace function scan_reward_redemption_batch(
   p_qr_token text,
-  p_actor_id text
+  p_actor_id text,
+  p_source text default 'Quét QR',
+  p_note text default ''
 )
 returns jsonb
 language plpgsql
@@ -659,12 +690,46 @@ begin
   update rewards r set stock = case when r.stock is null then null else r.stock - i.quantity end, updated_at = now()
   from reward_redemption_items i where i.batch_id = v_batch.id and r.id = i.reward_id;
   update reward_redemption_batches
-  set status = 'fulfilled', scanned_by = p_actor_id, scanned_at = now(),
-      fulfilled_at = now(), updated_at = now()
+  set status = 'fulfilled', scanned_by = p_actor_id, confirmed_by = p_actor_id,
+      confirmed_source = coalesce(nullif(p_source, ''), 'Quét QR'),
+      admin_note = coalesce(p_note, ''),
+      scanned_at = now(), fulfilled_at = now(), updated_at = now()
   where id = v_batch.id;
+  update users u
+  set badges = (
+    select coalesce(jsonb_agg(distinct badge), '[]'::jsonb)
+    from (
+      select jsonb_array_elements_text(coalesce(u.badges, '[]'::jsonb)) as badge
+      union
+      select coalesce(
+        nullif(r.badge_key, ''),
+        case
+          when lower(r.title) like '%sinh viên xanh%' or lower(r.title) like '%sinh vien xanh%' then 'green_student'
+          else null
+        end
+      ) as badge
+      from reward_redemption_items i
+      join rewards r on r.id = i.reward_id
+      where i.batch_id = v_batch.id
+        and (r.reward_type in ('badge', 'title')
+          or lower(r.title) like '%sinh viên xanh%'
+          or lower(r.title) like '%sinh vien xanh%')
+    ) badge_rows
+    where badge is not null and badge <> ''
+  )
+  where u.id = v_batch.student_id
+    and exists (
+      select 1
+      from reward_redemption_items i
+      join rewards r on r.id = i.reward_id
+      where i.batch_id = v_batch.id
+        and (r.reward_type in ('badge', 'title')
+          or lower(r.title) like '%sinh viên xanh%'
+          or lower(r.title) like '%sinh vien xanh%')
+    );
   insert into point_history (user_id, class, bin_group, action, points, source, description, status, reference_type, reference_id)
   values (v_batch.student_id, 'reward', 'Đổi thưởng', 'Đổi phần thưởng', -v_points, 'reward_redemption', 'Trừ điểm khi xác nhận đổi thưởng', 'confirmed', 'reward_redemption_batch', v_batch.id);
-  return jsonb_build_object('id', v_batch.id, 'status', 'fulfilled', 'pointsSpent', v_points, 'studentId', v_batch.student_id);
+  return jsonb_build_object('id', v_batch.id, 'status', 'fulfilled', 'pointsSpent', v_points, 'studentId', v_batch.student_id, 'confirmedBy', p_actor_id, 'confirmedSource', coalesce(nullif(p_source, ''), 'Quét QR'));
 end;
 $$;
 
@@ -684,19 +749,19 @@ begin
   if not exists (select 1 from users where id = p_actor_id and role = 'admin' and status = 'active') then
     raise exception 'INVALID_REDEMPTION_ACTOR';
   end if;
-  if p_status not in ('fulfilled', 'cancelled', 'expired') then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
+  if p_status not in ('fulfilled', 'cancelled', 'expired', 'rejected') then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
   select * into v_batch from reward_redemption_batches where id = p_batch_id for update;
   if not found then raise exception 'REWARD_BATCH_NOT_FOUND'; end if;
 
   if p_status = 'fulfilled' then
     if v_batch.status <> 'pending' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
-    return scan_reward_redemption_batch(v_batch.qr_token, p_actor_id);
+    return scan_reward_redemption_batch(v_batch.qr_token, p_actor_id, 'Admin web', p_note);
   end if;
 
-  if p_status = 'expired' then
+  if p_status in ('expired', 'rejected') then
     if v_batch.status <> 'pending' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
-    update reward_redemption_batches set status = 'expired', updated_at = now() where id = p_batch_id;
-    return jsonb_build_object('id', p_batch_id, 'status', 'expired', 'studentId', v_batch.student_id);
+    update reward_redemption_batches set status = p_status, confirmed_by = p_actor_id, confirmed_source = 'Admin web', admin_note = coalesce(p_note, ''), updated_at = now() where id = p_batch_id;
+    return jsonb_build_object('id', p_batch_id, 'status', p_status, 'studentId', v_batch.student_id, 'confirmedBy', p_actor_id, 'confirmedSource', 'Admin web');
   end if;
 
   if v_batch.status <> 'fulfilled' then raise exception 'INVALID_REDEMPTION_STATUS'; end if;
@@ -709,7 +774,7 @@ begin
   where i.batch_id = p_batch_id and r.id = i.reward_id;
   insert into point_history (user_id, class, bin_group, action, points, source, description, admin_note, status, reference_type, reference_id)
   values (v_batch.student_id, 'reward', 'Đổi thưởng', 'Hoàn điểm đổi thưởng', v_points, 'reward_refund', 'Hoàn điểm và tồn kho do hủy đổi thưởng', p_note, 'confirmed', 'reward_redemption_batch', p_batch_id);
-  update reward_redemption_batches set status = 'cancelled', updated_at = now() where id = p_batch_id;
+  update reward_redemption_batches set status = 'cancelled', confirmed_by = p_actor_id, confirmed_source = 'Admin web', admin_note = coalesce(p_note, ''), updated_at = now() where id = p_batch_id;
   return jsonb_build_object('id', p_batch_id, 'status', p_status, 'studentId', v_batch.student_id);
 end;
 $$;
@@ -910,10 +975,11 @@ begin
   returning * into v_submission;
 
   if v_proof_url is not null then
-    insert into proof_images (id, submission_id, image_url, image_hash, verification_code, status, note)
+    insert into proof_images (id, submission_id, uploaded_by, image_url, image_hash, verification_code, status, note)
     values (
       gen_random_uuid()::text,
       v_submission.id,
+      p_user_id,
       v_proof_url,
       coalesce(v_proof_hash, ''),
       coalesce(left(v_proof_hash, 12), left(md5(v_proof_url), 12)),
@@ -1020,7 +1086,18 @@ begin
   if v_actor_role <> 'admin' and v_submission.verified_by is distinct from p_volunteer_id then
     raise exception 'SUBMISSION_ACTOR_MISMATCH';
   end if;
-  if not exists (select 1 from proof_images where submission_id = p_submission_id and status <> 'rejected') then
+  if v_actor_role = 'admin' and not exists (
+    select 1 from proof_images
+    where submission_id = p_submission_id and status <> 'rejected'
+  ) then
+    raise exception 'PROOF_IMAGE_REQUIRED';
+  end if;
+  if v_actor_role <> 'admin' and not exists (
+    select 1 from proof_images
+    where submission_id = p_submission_id
+      and uploaded_by = p_volunteer_id
+      and status <> 'rejected'
+  ) then
     raise exception 'PROOF_IMAGE_REQUIRED';
   end if;
 

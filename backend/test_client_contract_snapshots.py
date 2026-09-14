@@ -18,6 +18,7 @@ def test_user_serializer_matches_shared_client_contract():
         "student-contract-1", "Nguyễn Ánh Dương", "anh.duong@hyute.edu.vn", "student",
         "Khoa Công nghệ thông tin", 125, "active", None, None, timestamp, timestamp,
         "SV20260001", "information-technology", "Khoa Công nghệ thông tin", "0912345678",
+        [],
     )
     assert app.to_user_profile(row) == FIXTURES["user"]
 
@@ -37,7 +38,7 @@ def test_reward_batch_serializer_preserves_items_and_nullable_timestamps():
     expected = FIXTURES["rewardBatch"]
     batch = {key: expected[key] for key in (
         "id", "studentId", "qrToken", "createdAt", "expiresAt", "status", "scannedBy",
-        "scannedAt", "fulfilledAt", "updatedAt", "items",
+        "confirmedBy", "confirmedSource", "adminNote", "scannedAt", "fulfilledAt", "updatedAt", "items",
     )}
     assert app.mobile_reward_batch_row(batch) == expected
 

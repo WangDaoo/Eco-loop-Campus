@@ -9,6 +9,7 @@ import { useAppContext } from '../context/AppContext';
 import { colors, radius } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+const LOGIN_FAILURE_MESSAGE = 'Sai tài khoản hoặc mật khẩu';
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -25,7 +26,8 @@ export default function LoginScreen({ navigation }: Props) {
     try {
       await signIn(role, email, password);
     } catch (error) {
-      Alert.alert('Không đăng nhập được', messageOf(error));
+      const message = messageOf(error);
+      Alert.alert('Không đăng nhập được', message.includes('vai trò') ? LOGIN_FAILURE_MESSAGE : message);
     }
   };
 

@@ -375,6 +375,7 @@ test("maps Supabase reward redemptions snake_case into clean admin rewards", () 
   const reward = __testing.fromRewardRedemption({
     id: "RW001",
     user_id: "SV001",
+    reviewed_by: "ADMIN-1",
     reward_label: "Voucher căn tin",
     cost_points: "100",
     status: "pending",
@@ -385,6 +386,7 @@ test("maps Supabase reward redemptions snake_case into clean admin rewards", () 
 
   expect(reward).toEqual(expect.objectContaining({
     userId: "SV001",
+    reviewedBy: "ADMIN-1",
     rewardLabel: "Voucher căn tin",
     costPoints: 100,
     requestedAt: "2026-07-07T09:00:00.000Z",
@@ -392,11 +394,28 @@ test("maps Supabase reward redemptions snake_case into clean admin rewards", () 
     adminNote: "OK",
   }));
   expect(reward.user_id).toBeUndefined();
+  expect(reward.reviewed_by).toBeUndefined();
   expect(reward.reward_label).toBeUndefined();
   expect(reward.cost_points).toBeUndefined();
   expect(reward.requested_at).toBeUndefined();
   expect(reward.reviewed_at).toBeUndefined();
   expect(reward.admin_note).toBeUndefined();
+});
+
+test("maps green student badge data from users", () => {
+  const user = __testing.fromUser({
+    id: "SV-GREEN",
+    name: "Sinh viên xanh",
+    email: "green@school.edu.vn",
+    role: "student",
+    group: "CNTT K18",
+    points: 900,
+    status: "active",
+    badges: ["green_student"],
+  });
+
+  expect(user.badges).toContain("green_student");
+  expect(user.hasGreenStudentBadge).toBe(true);
 });
 
 test("maps malformed reward redemption cost points to zero", () => {
@@ -416,6 +435,7 @@ test("maps admin reward redemptions camelCase into Supabase snake_case fields", 
   const payload = __testing.toRewardRedemption({
     id: "RW001",
     userId: "SV001",
+    reviewedBy: "ADMIN-1",
     rewardLabel: "Voucher căn tin",
     costPoints: 100,
     status: "pending",
@@ -426,6 +446,7 @@ test("maps admin reward redemptions camelCase into Supabase snake_case fields", 
 
   expect(payload).toEqual(expect.objectContaining({
     user_id: "SV001",
+    reviewed_by: "ADMIN-1",
     reward_label: "Voucher căn tin",
     cost_points: 100,
     requested_at: "2026-07-07T09:00:00.000Z",
@@ -433,6 +454,7 @@ test("maps admin reward redemptions camelCase into Supabase snake_case fields", 
     admin_note: "OK",
   }));
   expect(payload.userId).toBeUndefined();
+  expect(payload.reviewedBy).toBeUndefined();
   expect(payload.rewardLabel).toBeUndefined();
   expect(payload.costPoints).toBeUndefined();
   expect(payload.requestedAt).toBeUndefined();
@@ -593,4 +615,23 @@ test("maps avatar presets between Supabase and admin forms", () => {
 
   expect(preset).toEqual(expect.objectContaining({ key: "sprout", imageUrl: "https://cdn.example/avatar/sprout.png", sortOrder: 2 }));
   expect(__testing.toAvatarPreset(preset)).toEqual(expect.objectContaining({ key: "sprout", image_url: "https://cdn.example/avatar/sprout.png", sort_order: 2 }));
+});
+
+test("enriches recycling submissions with reviewer names", () => {
+  const rows = __testing.enrichRecyclingSubmissions(
+    [{ id: "SUB-1", userId: "SV001", binId: "BIN-1", wasteTypeId: "plastic", verifiedBy: "VOL-1" }],
+    [
+      { id: "SV001", name: "Sinh viên A", group: "CNTT" },
+      { id: "VOL-1", name: "Người duyệt A", group: "CLB xanh" },
+    ],
+    [{ id: "BIN-1", name: "Thùng A", location: "Sảnh A" }],
+    [{ id: "plastic", name: "Chai nhựa", unit: "item", pointPerUnit: 5 }],
+    []
+  );
+
+  expect(rows[0]).toEqual(expect.objectContaining({
+    userName: "Sinh viên A",
+    reviewerName: "Người duyệt A",
+    reviewerGroup: "CLB xanh",
+  }));
 });

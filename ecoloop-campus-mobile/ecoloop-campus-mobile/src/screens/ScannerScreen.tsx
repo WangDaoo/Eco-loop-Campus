@@ -180,9 +180,8 @@ export default function ScannerScreen() {
 
   const ensureProofImage = async () => {
     if (!selectedSubmission) return false;
-    if (selectedSubmission.proofImage) return true;
     if (!proofImageUri) {
-      Alert.alert('Chưa có ảnh minh chứng', 'Chụp ảnh rác thực tế tại trạm trước khi xác nhận hoặc yêu cầu review.');
+      Alert.alert('Chưa có ảnh minh chứng', 'Tình nguyện viên phải chụp hoặc tải ảnh trước khi xác nhận.');
       return false;
     }
     const updated = await attachProofImage(selectedSubmission.id, {

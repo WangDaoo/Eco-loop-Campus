@@ -155,6 +155,65 @@ def test_real_submission_flow_is_atomic_idempotent_and_visible_to_both_clients(
         row for row in mobile["users"] if row["id"] == SEED_IDS["student_a"]
     )["points"] == 1015
 
+
+def test_volunteer_must_upload_own_proof_before_confirming_student_submission(
+    postgres_test_url, seed_operating_catalog, api_client, monkeypatch, tmp_path
+):
+    import app as backend_app
+
+    monkeypatch.setattr(backend_app, "PROOF_UPLOADS_DIR", tmp_path / "proofs")
+    disable_missions(postgres_test_url)
+    student = login_headers(api_client, "student.a@hyute.edu.vn")
+    volunteer = login_headers(api_client, "volunteer.a@hyute.edu.vn")
+
+    created_response = api_client.post(
+        "/api/mobile/recycling-submissions",
+        headers=student,
+        json={
+            "binId": SEED_IDS["bin_a"],
+            "wasteTypeId": SEED_IDS["waste_plastic"],
+            "quantity": 1,
+            "proofImageUrl": "/uploads/predictions/student-proof-only.jpg",
+        },
+    )
+    assert created_response.status_code == 201
+    created = created_response.json()["data"]
+
+    scanned = api_client.post(
+        "/api/mobile/recycling-submissions/scan",
+        headers=volunteer,
+        json={"qrToken": created["qrToken"], "stationId": SEED_IDS["bin_a"]},
+    )
+    assert scanned.status_code == 200
+
+    blocked = api_client.post(
+        f"/api/mobile/recycling-submissions/{created['id']}/confirm",
+        headers=volunteer,
+        json={"actualQuantity": 1, "note": "Chưa có ảnh tại trạm"},
+    )
+    assert blocked.status_code == 400
+    assert blocked.json()["detail"] == "PROOF_IMAGE_REQUIRED"
+    assert submission_state(postgres_test_url, created["id"]) == (
+        "QR_SCANNED",
+        SEED_IDS["volunteer_a"],
+    )
+
+    proof = api_client.post(
+        f"/api/mobile/recycling-submissions/{created['id']}/proof",
+        headers=volunteer,
+        files={"file": ("volunteer-proof.jpg", b"volunteer-proof", "image/jpeg")},
+    )
+    assert proof.status_code == 200
+
+    confirmed = api_client.post(
+        f"/api/mobile/recycling-submissions/{created['id']}/confirm",
+        headers=volunteer,
+        json={"actualQuantity": 1, "note": "Đã chụp minh chứng tại trạm"},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["data"]["status"] == "POINT_CONFIRMED"
+
+
 def test_student_submission_can_carry_initial_proof_for_admin_confirmation_without_scan(
     postgres_test_url, seed_operating_catalog, api_client
 ):
@@ -410,8 +469,8 @@ def test_confirm_rejects_invalid_actual_quantity_without_awarding_points(
     submission, volunteer = create_and_scan_submission(api_client)
     with psycopg.connect(postgres_test_url) as connection:
         connection.execute(
-            "insert into proof_images (submission_id, image_url) values (%s, '/proof.jpg')",
-            (submission["id"],),
+            "insert into proof_images (submission_id, uploaded_by, image_url) values (%s, %s, '/proof.jpg')",
+            (submission["id"], SEED_IDS["volunteer_a"]),
         )
         connection.commit()
 
@@ -444,8 +503,8 @@ def test_two_concurrent_confirms_award_submission_points_only_once(
     submission, _volunteer = create_and_scan_submission(api_client)
     with psycopg.connect(postgres_test_url) as connection:
         connection.execute(
-            "insert into proof_images (submission_id, image_url) values (%s, '/proof.jpg')",
-            (submission["id"],),
+            "insert into proof_images (submission_id, uploaded_by, image_url) values (%s, %s, '/proof.jpg')",
+            (submission["id"], SEED_IDS["volunteer_a"]),
         )
         connection.commit()
 
@@ -606,10 +665,10 @@ def test_other_volunteer_cannot_transition_scanned_submission(
         with psycopg.connect(postgres_test_url) as connection:
             connection.execute(
                 """
-                insert into proof_images (submission_id, image_url, status)
-                values (%s, '/test-proof.jpg', 'pending')
+                insert into proof_images (submission_id, uploaded_by, image_url, status)
+                values (%s, %s, '/test-proof.jpg', 'pending')
                 """,
-                (submission["id"],),
+                (submission["id"], SEED_IDS["volunteer_a"]),
             )
             connection.commit()
 
