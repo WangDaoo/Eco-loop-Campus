@@ -47,7 +47,7 @@ export function getSubmissionStatusTone(status: SubmissionStatus): SubmissionSta
 }
 
 export function isSubmissionQrActive(status: SubmissionStatus) {
-  return status === 'CREATED' || status === 'QR_SCANNED' || status === 'PENDING_REVIEW';
+  return status === 'CREATED' || status === 'QR_SCANNED';
 }
 
 const legacyWasteTypeAliases: Record<string, string> = {

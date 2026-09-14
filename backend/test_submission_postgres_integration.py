@@ -199,6 +199,59 @@ def test_student_submission_can_carry_initial_proof_for_admin_confirmation_witho
     assert synced["status"] == "POINT_CONFIRMED"
     assert next(row for row in mobile["users"] if row["id"] == SEED_IDS["student_a"])["points"] == 1020
 
+def test_mobile_initial_data_reconciles_confirmed_points_when_submission_status_is_stale(
+    postgres_test_url, seed_operating_catalog, api_client
+):
+    student = login_headers(api_client, "student.a@hyute.edu.vn")
+    admin = login_headers(api_client, "admin.test@hyute.edu.vn")
+
+    created_response = api_client.post(
+        "/api/mobile/recycling-submissions",
+        headers=student,
+        json={
+            "binId": SEED_IDS["bin_a"],
+            "wasteTypeId": SEED_IDS["waste_plastic"],
+            "quantity": 2,
+            "proofImageUrl": "/uploads/predictions/stale-status-proof.jpg",
+            "proofImageHash": "stale-status-proof-hash",
+        },
+    )
+    assert created_response.status_code == 201
+    created = created_response.json()["data"]
+
+    with psycopg.connect(postgres_test_url) as connection:
+        connection.execute(
+            """
+            update recycling_submissions
+            set status = 'PENDING_REVIEW', actual_quantity = 2
+            where id = %s
+            """,
+            (created["id"],),
+        )
+        connection.execute(
+            """
+            insert into point_history
+              (submission_id, user_id, bin_id, class, bin_group, action, points, source, status)
+            values
+              (%s, %s, %s, %s, 'Tái chế', 'Admin duyệt trên web', 20, 'qr_submission', 'confirmed')
+            """,
+            (created["id"], SEED_IDS["student_a"], SEED_IDS["bin_a"], SEED_IDS["waste_plastic"]),
+        )
+        connection.execute(
+            "update users set points = points + 20 where id = %s",
+            (SEED_IDS["student_a"],),
+        )
+        connection.commit()
+
+    mobile = api_client.get("/api/mobile/initial-data", headers=student).json()
+    admin_rows = api_client.get("/api/admin/recycling-submissions", headers=admin).json()["data"]
+    mobile_submission = next(row for row in mobile["submissions"] if row["id"] == created["id"])
+    admin_submission = next(row for row in admin_rows if row["id"] == created["id"])
+
+    assert mobile_submission["status"] == "POINT_CONFIRMED"
+    assert admin_submission["status"] == "POINT_CONFIRMED"
+    assert next(row for row in mobile["users"] if row["id"] == SEED_IDS["student_a"])["points"] == 1020
+
 def test_confirm_archives_ai_mismatch_proof_for_training_dataset(
     postgres_test_url, seed_operating_catalog, api_client, monkeypatch, tmp_path
 ):

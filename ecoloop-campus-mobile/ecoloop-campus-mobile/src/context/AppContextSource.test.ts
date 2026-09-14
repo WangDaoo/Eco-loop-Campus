@@ -14,6 +14,10 @@ test('AppProvider polls backend PostgreSQL instead of wiring Supabase realtime',
   assert.match(source, /setInterval\(\(\) => \{/);
   assert.doesNotMatch(source, /subscribeRealtime/);
 });
+test('AppProvider keeps one stable polling loop while backend points change', () => {
+  assert.match(source, /\}, \[currentUser\.id, currentUser\.role, currentUser\.requiresProfileCompletion, hydrateRemoteData, isAuthenticated\]\);/);
+  assert.doesNotMatch(source, /\}, \[currentUser, hydrateRemoteData, isAuthenticated\]\);/);
+});
 test('AppProvider hydrates user list from backend remote data for leaderboard', () => {
   assert.match(source, /setUsers\(state\.users\)/);
   assert.doesNotMatch(source, /setUsers\(mockUsers\)/);

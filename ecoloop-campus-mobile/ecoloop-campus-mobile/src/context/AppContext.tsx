@@ -216,7 +216,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       void hydrateRemoteData(currentUser);
     }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [currentUser, hydrateRemoteData, isAuthenticated]);
+  }, [currentUser.id, currentUser.role, currentUser.requiresProfileCompletion, hydrateRemoteData, isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated || !currentUser.id || currentUser.requiresProfileCompletion) return undefined;
@@ -226,7 +226,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.remove();
     };
-  }, [currentUser, hydrateRemoteData, isAuthenticated]);
+  }, [currentUser.id, currentUser.role, currentUser.requiresProfileCompletion, hydrateRemoteData, isAuthenticated]);
 
   const points = useMemo(
     () => resolveWalletPoints({ profilePoints: currentUser.points, pointTransactions, syncSource }),

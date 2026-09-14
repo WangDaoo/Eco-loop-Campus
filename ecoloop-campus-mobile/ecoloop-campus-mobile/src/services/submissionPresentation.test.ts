@@ -6,7 +6,7 @@ import { getSubmissionStatusLabel, getSubmissionStatusTone, getWasteTypeDisplayN
 test('hides submission QR after the submission is finalized', () => {
   assert.equal(isSubmissionQrActive('CREATED'), true);
   assert.equal(isSubmissionQrActive('QR_SCANNED'), true);
-  assert.equal(isSubmissionQrActive('PENDING_REVIEW'), true);
+  assert.equal(isSubmissionQrActive('PENDING_REVIEW'), false);
   assert.equal(isSubmissionQrActive('POINT_CONFIRMED'), false);
   assert.equal(isSubmissionQrActive('REJECTED'), false);
 });

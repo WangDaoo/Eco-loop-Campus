@@ -998,6 +998,30 @@ def list_rows_from_config(config, where_sql="", params=()):
             cursor.execute(query, params)
             return [admin_row_to_json(config["columns"], row) for row in cursor.fetchall()]
 
+def reconcile_confirmed_recycling_submissions():
+    database_url = require_database_url()
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                update recycling_submissions as submission
+                set status = 'POINT_CONFIRMED',
+                    actual_quantity = coalesce(submission.actual_quantity, submission.quantity),
+                    verified_at = coalesce(submission.verified_at, history.confirmed_at)
+                from (
+                    select submission_id, max(coalesce(created_at, timestamp)) as confirmed_at
+                    from point_history
+                    where submission_id is not null
+                      and source = 'qr_submission'
+                      and status = 'confirmed'
+                    group by submission_id
+                ) as history
+                where submission.id = history.submission_id
+                  and submission.status in ('CREATED', 'QR_SCANNED', 'PENDING_REVIEW', 'POINT_PENDING')
+                """,
+            )
+        connection.commit()
+
 REWARD_BATCH_ITEM_COLUMNS = [
     "id",
     "batch_id",
@@ -1063,6 +1087,8 @@ def list_mobile_reward_batches(user_id=None):
 
 def list_admin_resource(resource):
     config = admin_resource_config(resource)
+    if resource == "recycling-submissions":
+        reconcile_confirmed_recycling_submissions()
     rows = list_rows_from_config(config)
     if resource == "reward-redemption-batches":
         attach_reward_batch_items(rows)
@@ -1543,6 +1569,7 @@ def list_mobile_leaderboard_users():
 
 
 def load_mobile_initial_data(user):
+    reconcile_confirmed_recycling_submissions()
     progress_rows = list_rows_from_config(USER_MISSIONS_CONFIG, "user_id = %s", (user["id"],))
     progress_by_mission = {row["missionId"]: row for row in progress_rows}
     missions = [
