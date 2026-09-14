@@ -183,5 +183,11 @@ export function normalizePrediction(record) {
     imageName: record.imageName || record.fileName || "Ảnh kiểm thử",
     imageUrl: normalizeImageUrl(record.imageUrl || record.image_url),
     thumbnailUrl: normalizeImageUrl(record.thumbnailUrl || record.thumbnail_url),
+    reviewedBy: record.reviewedBy || record.reviewed_by || "",
+    reviewedAt: record.reviewedAt || record.reviewed_at || "",
+    verifiedBy: record.verifiedBy || record.verified_by || "",
+    verifiedAt: record.verifiedAt || record.verified_at || "",
+    reviewerName: record.reviewerName || record.reviewer_name || "",
+    reviewerGroup: record.reviewerGroup || record.reviewer_group || "",
   };
 }

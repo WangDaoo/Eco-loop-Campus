@@ -122,6 +122,37 @@ def test_admin_resource_exposes_reward_category_fields():
     assert "category_name" in config["columns"]
     assert "category_id" in config["writable"]
 
+def test_admin_resource_exposes_prediction_reviewer_fields():
+    config = app.admin_resource_config("predictions")
+
+    assert "reviewed_by" in config["columns"]
+    assert "reviewed_at" in config["columns"]
+    assert "reviewed_by" in config["writable"]
+    assert "reviewed_at" in config["writable"]
+
+def test_admin_prediction_status_update_stamps_current_admin(client, monkeypatch):
+    patch_current_user(monkeypatch, "admin")
+    captured = {}
+
+    def fake_save_admin_resource(resource, payload):
+        captured["resource"] = resource
+        captured["payload"] = payload
+        return {"id": payload["id"], "status": payload["status"], "reviewedBy": payload["reviewed_by"]}
+
+    monkeypatch.setattr(app, "save_admin_resource", fake_save_admin_resource, raising=False)
+
+    response = client.post(
+        "/api/admin/predictions",
+        json={"id": "scan-1", "status": "approved"},
+        headers=bearer("admin"),
+    )
+
+    assert response.status_code == 200
+    assert captured["resource"] == "predictions"
+    assert captured["payload"]["reviewed_by"] == "admin-1"
+    assert captured["payload"]["reviewed_at"]
+    assert response.json()["data"]["reviewedBy"] == "admin-1"
+
 def test_admin_delete_blocks_reward_category_in_use(monkeypatch):
     class FakeCursor:
         def __enter__(self):

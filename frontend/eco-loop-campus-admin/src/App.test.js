@@ -2988,6 +2988,27 @@ test("scans page normalizes dirty query filter params", async () => {
   expect(await screen.findByText("scan-query-low")).toBeInTheDocument();
   expect(screen.queryByText("scan-query-high")).not.toBeInTheDocument();
 });
+
+test("scans page shows the volunteer who verified an approved student scan", async () => {
+  mockTables.users = [
+    ...mockTables.users,
+    { id: "VOL001", name: "Trần Tình Nguyện", email: "volunteer@school.edu.vn", role: "volunteer", group: "Đội xanh", points: 0, status: "active" },
+  ];
+  mockTables.predictions = [
+    { id: "scan-confirmed", class: "plastic", confidence: 0.91, source: "mobile", timestamp: "2026-07-07T09:00:00.000Z", bin_group: "Tái chế", status: "approved", user_id: "SV001", bin_id: "BIN-A1-RECYCLE" },
+  ];
+  mockTables.recycling_submissions = [
+    { id: "sub-confirmed", prediction_id: "scan-confirmed", user_id: "SV001", bin_id: "BIN-A1-RECYCLE", waste_type_id: "plastic-bottle", quantity: 1, actual_quantity: 1, status: "POINT_CONFIRMED", verified_by: "VOL001", verified_at: "2026-07-07T09:05:00.000Z" },
+  ];
+  window.location.hash = "#/scans";
+
+  render(<App />);
+
+  const scanRow = (await screen.findByText("scan-confirmed")).closest("tr");
+  expect(within(scanRow).getByText("Trần Tình Nguyện")).toBeInTheDocument();
+  expect(within(scanRow).queryByText("Chưa duyệt")).not.toBeInTheDocument();
+});
+
 test.skip("scan status update failure falls back to localStorage and warns admins", async () => {
   window.location.hash = "#/scans";
 

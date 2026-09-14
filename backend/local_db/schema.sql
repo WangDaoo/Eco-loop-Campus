@@ -66,6 +66,8 @@ create table if not exists predictions (
   image_name text,
   image_url text,
   thumbnail_url text,
+  reviewed_at timestamptz,
+  reviewed_by text references users(id) on delete set null,
   corrected_class text,
   corrected_waste_type_id text references waste_types(id) on delete set null
 );
@@ -183,6 +185,8 @@ create unique index if not exists idx_users_student_code_ci
 
 alter table predictions add column if not exists corrected_class text;
 alter table predictions add column if not exists corrected_waste_type_id text references waste_types(id) on delete set null;
+alter table predictions add column if not exists reviewed_at timestamptz;
+alter table predictions add column if not exists reviewed_by text references users(id) on delete set null;
 
 update users u
 set "group" = f.name,

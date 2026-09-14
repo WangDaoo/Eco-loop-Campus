@@ -428,6 +428,9 @@ function fromPrediction(row = {}) {
     imageName: row.imageName || row.image_name,
     imageUrl: absoluteAssetUrl(row.imageUrl || row.image_url || ""),
     thumbnailUrl: absoluteAssetUrl(row.thumbnailUrl || row.thumbnail_url || ""),
+    reviewedBy: row.reviewedBy || row.reviewed_by || "",
+    reviewedAt: row.reviewedAt || row.reviewed_at || "",
+    reviewerName: row.reviewerName || row.reviewer_name || "",
   });
 }
 
@@ -446,6 +449,8 @@ function toPrediction(record) {
     image_name: normalized.imageName,
     image_url: normalized.imageUrl || null,
     thumbnail_url: normalized.thumbnailUrl || null,
+    reviewed_by: normalized.reviewedBy || null,
+    reviewed_at: normalized.reviewedAt || null,
   };
 }
 
@@ -778,6 +783,36 @@ function enrichRecyclingSubmissions(submissions, users, bins, wasteTypes, proofI
   });
 }
 
+function reviewerDisplayName(user, fallbackId) {
+  if (!fallbackId) return "";
+  if (String(user?.role || "").trim().toLowerCase() === "admin") return "Admin";
+  return user?.name || fallbackId;
+}
+
+function enrichPredictions(predictions, users, submissions) {
+  const submissionsByPrediction = submissions.reduce((lookup, item) => {
+    if (!item.predictionId || !item.verifiedBy) return lookup;
+    const current = lookup.get(item.predictionId);
+    const currentTime = new Date(current?.verifiedAt || current?.createdAt || 0).getTime();
+    const itemTime = new Date(item.verifiedAt || item.createdAt || 0).getTime();
+    if (!current || itemTime >= currentTime) lookup.set(item.predictionId, item);
+    return lookup;
+  }, new Map());
+
+  return predictions.map(item => {
+    const linkedSubmission = submissionsByPrediction.get(item.id);
+    const reviewerId = item.reviewedBy || item.verifiedBy || linkedSubmission?.verifiedBy || "";
+    const reviewer = users.find(row => row.id === reviewerId);
+    return {
+      ...item,
+      verifiedBy: item.verifiedBy || linkedSubmission?.verifiedBy || "",
+      verifiedAt: item.verifiedAt || linkedSubmission?.verifiedAt || "",
+      reviewerName: item.reviewerName || reviewerDisplayName(reviewer, reviewerId),
+      reviewerGroup: item.reviewerGroup || reviewer?.group || "",
+    };
+  });
+}
+
 function buildPointHistoryRecord(record, rule) {
   const timestamp = new Date().toISOString();
   return {
@@ -888,8 +923,16 @@ export async function getAdminProfile(user) {
 }
 
 export async function listPredictions() {
-  const rows = await listResource("predictions", fromPrediction);
-  return result([...rows.data].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)), rows.source, rows.error);
+  const [rows, users, submissions] = await Promise.all([
+    listResource("predictions", fromPrediction),
+    listResource("users", fromUser),
+    listResource("recycling-submissions", fromRecyclingSubmission),
+  ]);
+  const sources = [rows, users, submissions];
+  const error = sources.find(item => item.error)?.error || null;
+  const data = enrichPredictions(rows.data, users.data, submissions.data)
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  return result(data, BACKEND, error);
 }
 
 export async function savePredictionRecord(record) {

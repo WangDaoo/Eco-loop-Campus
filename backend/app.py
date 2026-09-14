@@ -933,8 +933,8 @@ ADMIN_RESOURCES = {
     },
     "predictions": {
         "table": "predictions",
-        "columns": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url", "corrected_class", "corrected_waste_type_id"],
-        "writable": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url", "corrected_class", "corrected_waste_type_id"],
+        "columns": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url", "reviewed_at", "reviewed_by", "corrected_class", "corrected_waste_type_id"],
+        "writable": ["id", "class", "confidence", "source", "timestamp", "bin_group", "status", "user_id", "bin_id", "image_name", "image_url", "thumbnail_url", "reviewed_at", "reviewed_by", "corrected_class", "corrected_waste_type_id"],
         "order": "timestamp desc",
     },
     "reward-redemptions": {
@@ -1588,6 +1588,8 @@ def admin_save_resource(resource: str, payload: dict, authorization: str | None 
     user = require_admin_user(authorization)
     validate_admin_resource_write(resource, payload)
     if resource == "reward-redemptions" and str(payload_value(payload, "status") or "").strip().lower() in {"rejected", "fulfilled", "expired", "cancelled"}:
+        payload = {**payload, "reviewed_by": user["id"], "reviewed_at": payload_value(payload, "reviewed_at") or datetime.now(timezone.utc)}
+    if resource == "predictions" and str(payload_value(payload, "status") or "").strip().lower() in {"approved", "rejected"}:
         payload = {**payload, "reviewed_by": user["id"], "reviewed_at": payload_value(payload, "reviewed_at") or datetime.now(timezone.utc)}
     return {"data": save_admin_resource(resource, payload)}
 
