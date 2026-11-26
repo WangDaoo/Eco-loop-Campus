@@ -3,7 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Card } from '../components/Card';
 import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
-import { getStationStatusLabel } from '../services/stationPresentation';
+import { getPendingDutySubmissions } from '../services/scannerFlow';
+import { getStationStatusLabel, isStationAcceptingWaste } from '../services/stationPresentation';
 import { QRScanLog } from '../types';
 import { colors, radius } from '../theme/colors';
 
@@ -29,9 +30,7 @@ function qrResultText(result: QRScanLog['result']) {
 
 export default function VolunteerDutyScreen() {
   const { currentUser, qrScanLogs, stations, submissions, dutyStationId, setDutyStation } = useAppContext();
-  const activeSubmissions = submissions.filter(
-    item => item.binId === dutyStationId && (item.status === 'CREATED' || item.status === 'QR_SCANNED')
-  );
+  const activeSubmissions = getPendingDutySubmissions(submissions, dutyStationId);
   const selectedStation = stations.find(item => item.id === dutyStationId);
   const recentQrScanLogs = qrScanLogs
     .filter(item => item.stationId === dutyStationId || item.scannedBy === currentUser.id)
@@ -39,24 +38,42 @@ export default function VolunteerDutyScreen() {
 
   return (
     <Screen scroll>
-      <Text style={styles.kicker}>{currentUser.group}</Text>
+      <Text style={styles.kicker}>{currentUser.group || 'Tình nguyện viên'}</Text>
       <Text style={styles.title}>Ca trực tình nguyện viên</Text>
       <Card style={styles.summary}>
         <Text style={styles.summaryLabel}>Trạm đang trực</Text>
         <Text style={styles.summaryStation}>{selectedStation?.name ?? 'Chưa chọn trạm'}</Text>
+        {!selectedStation ? (
+          <Text style={styles.summaryHint}>Chọn một trạm đang hoạt động bên dưới để bắt đầu quét QR gửi rác.</Text>
+        ) : !isStationAcceptingWaste(selectedStation) ? (
+          <Text style={styles.summaryHint}>Trạm đang {getStationStatusLabel(selectedStation.status).toLowerCase()}, sinh viên tạm thời chưa tạo được mã QR mới tại đây.</Text>
+        ) : null}
         <Text style={styles.summaryLabel}>Giao dịch đang chờ xử lý</Text>
         <Text style={styles.summaryValue}>{activeSubmissions.length}</Text>
       </Card>
       <Text style={styles.section}>Trạm phụ trách</Text>
-      {stations.map(station => (
-        <Pressable key={station.id} onPress={() => setDutyStation(station.id)}>
-          <Card style={[styles.station, station.id === dutyStationId && styles.stationActive]}>
-            <Text style={styles.stationTitle}>{station.name}</Text>
-            <Text style={styles.stationMeta}>{station.location} - {getStationStatusLabel(station.status)} - {station.capacity}% sức chứa</Text>
-            <Text style={styles.stationHint}>{station.id === dutyStationId ? 'Đang chọn' : 'Chạm để nhận ca'}</Text>
-          </Card>
-        </Pressable>
-      ))}
+      {stations.map(station => {
+        const isSelected = station.id === dutyStationId;
+        const accepting = isStationAcceptingWaste(station);
+        const canPick = accepting && !isSelected;
+        return (
+          <Pressable key={station.id} disabled={!canPick} onPress={() => setDutyStation(station.id)}>
+            <Card style={[styles.station, isSelected && styles.stationActive, !accepting && !isSelected && styles.stationInactive]}>
+              <Text style={styles.stationTitle}>{station.name}</Text>
+              <Text style={styles.stationMeta}>{station.location} - {getStationStatusLabel(station.status)} - {station.capacity}% sức chứa</Text>
+              <Text style={[styles.stationHint, !accepting && styles.stationHintMuted]}>
+                {isSelected
+                  ? accepting
+                    ? 'Đang chọn'
+                    : 'Đang chọn - trạm tạm ngưng nhận rác'
+                  : accepting
+                    ? 'Chạm để nhận ca'
+                    : `Trạm ${getStationStatusLabel(station.status).toLowerCase()} - chưa nhận ca`}
+              </Text>
+            </Card>
+          </Pressable>
+        );
+      })}
 
       <Text style={styles.section}>Log quét QR gần đây</Text>
       {recentQrScanLogs.length ? (
@@ -83,6 +100,7 @@ const styles = StyleSheet.create({
   summary: { backgroundColor: colors.green, marginBottom: 18 },
   summaryLabel: { color: colors.mint, fontWeight: '800' },
   summaryStation: { color: colors.white, fontSize: 20, fontWeight: '900', marginTop: 4, marginBottom: 12 },
+  summaryHint: { color: colors.white, fontWeight: '700', marginTop: -6, marginBottom: 12 },
   summaryValue: { color: colors.white, fontSize: 46, fontWeight: '900', marginTop: 4 },
   section: { color: colors.ink, fontSize: 21, fontWeight: '900', marginBottom: 10 },
   station: { marginBottom: 10 },
@@ -90,6 +108,8 @@ const styles = StyleSheet.create({
   stationTitle: { color: colors.ink, fontSize: 17, fontWeight: '900' },
   stationMeta: { color: colors.muted, marginTop: 4, fontWeight: '700' },
   stationHint: { color: colors.coralDark, marginTop: 8, fontWeight: '900' },
+  stationInactive: { opacity: 0.6 },
+  stationHintMuted: { color: colors.muted },
   logCard: { marginBottom: 10 },
   logRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   logToken: { color: colors.ink, flex: 1, fontSize: 16, fontWeight: '900' },

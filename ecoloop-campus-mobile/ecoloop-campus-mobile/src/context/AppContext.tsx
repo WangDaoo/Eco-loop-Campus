@@ -1,5 +1,6 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   AvatarPreset,
   BinStation,
@@ -22,7 +23,8 @@ import {
   UserProfile,
   WasteType
 } from '../types';
-import { createBackendMobileStore } from '../services/backendMobileStore';
+import { createBackendMobileStore, isSessionExpiredError } from '../services/backendMobileStore';
+import { loadDutyStationPreference, resolveDutyStationId, saveDutyStationPreference } from '../services/dutyStation';
 import { resolveWalletPoints } from '../services/walletPoints';
 import { resolveRemoteHydrationState } from './remoteHydration';
 
@@ -59,6 +61,7 @@ type AppContextValue = {
   requestRewardBatch: (items: Array<{ rewardId: string; quantity: number }>) => Promise<boolean>;
   cancelRewardRedemption: (batchId: string) => Promise<boolean>;
   createSubmission: (input: CreateSubmissionInput) => Promise<RecyclingSubmission>;
+  uploadSubmissionPhoto: (input: { imageUri: string; imageName?: string; mimeType?: string }) => Promise<string>;
   saveAiPrediction: (input: SavePredictionInput) => Promise<PredictionRecord | undefined>;
   submitFeedback: (input: CreateFeedbackInput) => Promise<Feedback | undefined>;
   setDutyStation: (stationId: string) => void;
@@ -115,6 +118,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [dutyStationId, setDutyStationId] = useState('');
   const remoteStore = useMemo(() => createBackendMobileStore(), []);
+  // Mỗi lần hydrate có số thứ tự; dữ liệu trả về muộn (đã có lần tải mới hơn,
+  // vừa có thao tác ghi, hoặc đã đăng xuất) sẽ bị bỏ qua để không ghi đè state mới.
+  const hydrationSequenceRef = useRef(0);
+  const hydrationInFlightRef = useRef(0);
+  const mutationVersionRef = useRef(0);
+  const stationsRef = useRef<BinStation[]>([]);
+  const persistedDutyStationRef = useRef('');
 
   useEffect(() => {
     let active = true;
@@ -130,20 +140,57 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [remoteStore]);
 
+  const clearSessionState = (message = '') => {
+    hydrationSequenceRef.current += 1;
+    mutationVersionRef.current += 1;
+    stationsRef.current = [];
+    persistedDutyStationRef.current = '';
+    setIsAuthenticated(false);
+    setCurrentUser(EMPTY_USER);
+    setUsers([]);
+    setAiPredictions([]);
+    setSubmissions([]);
+    setPointTransactions([]);
+    setRewards([]);
+    setRewardRedemptions([]);
+    setQrScanLogs([]);
+    setMissions([]);
+    setFeedbacks([]);
+    setAvatarOptions([]);
+    setStations([]);
+    setWasteTypes([]);
+    setDutyStationId('');
+    setSyncSource('backend');
+    setSyncError(message);
+  };
+
+  const markLocalMutation = () => {
+    mutationVersionRef.current += 1;
+  };
+
   const failRemoteMutation = (error: unknown): never => {
     const message = messageOf(error);
-    setSyncError(message);
+    if (isSessionExpiredError(error)) clearSessionState(message);
+    else setSyncError(message);
     throw error instanceof Error ? error : new Error(message);
   };
 
   const hydrateRemoteData = useCallback(
-    async (profile: UserProfile) => {
+    async (profile: UserProfile, options: { background?: boolean } = {}) => {
+      // Polling nền không chồng thêm request khi lần tải trước chưa xong (mạng chậm).
+      if (options.background && hydrationInFlightRef.current > 0) return;
+      const sequence = ++hydrationSequenceRef.current;
+      const mutationVersion = mutationVersionRef.current;
+      const isStale = () => sequence !== hydrationSequenceRef.current || mutationVersion !== mutationVersionRef.current;
+      hydrationInFlightRef.current += 1;
       try {
         const schemaHealth = await remoteStore.checkSchema();
         if (!schemaHealth.ok) throw new Error(schemaHealth.message);
 
         const data = await remoteStore.loadInitialData(profile);
+        if (isStale()) return;
         const state = resolveRemoteHydrationState(data, remoteStore.getOperatingReadiness(data));
+        stationsRef.current = state.stations;
         setUsers(state.users);
         const refreshedProfile = data.currentUser ?? state.users.find(item => item.id === profile.id);
         if (refreshedProfile) setCurrentUser(current => current.id === refreshedProfile.id ? { ...current, ...refreshedProfile } : current);
@@ -158,29 +205,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setRewards(state.rewards);
         setRewardRedemptions(state.rewardRedemptions);
         setQrScanLogs(state.qrScanLogs);
-        setDutyStationId(current => current || state.dutyStationId);
+        setDutyStationId(current => resolveDutyStationId(state.stations, { current, persisted: persistedDutyStationRef.current }));
         setSyncSource(state.syncSource);
         setSyncError(state.syncError);
       } catch (error) {
-        setUsers([]);
-        setStations([]);
-        setWasteTypes([]);
-        setAiPredictions([]);
-        setSubmissions([]);
-        setPointTransactions([]);
-        setFeedbacks([]);
-        setAvatarOptions([]);
-        setMissions([]);
-        setRewards([]);
-        setRewardRedemptions([]);
-        setQrScanLogs([]);
-        setDutyStationId('');
+        if (isStale()) return;
+        if (isSessionExpiredError(error)) {
+          clearSessionState(messageOf(error));
+          return;
+        }
+        // Giữ nguyên dữ liệu đã tải gần nhất: mất mạng tạm thời không được làm trống ví điểm, QR đang chờ hay danh sách trạm.
         setSyncSource('backend');
         setSyncError(messageOf(error));
+      } finally {
+        hydrationInFlightRef.current = Math.max(0, hydrationInFlightRef.current - 1);
       }
     },
     [remoteStore]
   );
+
+  useEffect(() => {
+    let active = true;
+    persistedDutyStationRef.current = '';
+    if (!currentUser.id) return undefined;
+    loadDutyStationPreference(AsyncStorage, currentUser.id).then(stationId => {
+      if (!active) return;
+      persistedDutyStationRef.current = stationId;
+      setDutyStationId(current => resolveDutyStationId(stationsRef.current, { current, persisted: stationId }));
+    });
+    return () => {
+      active = false;
+    };
+  }, [currentUser.id]);
 
   useEffect(() => {
     let active = true;
@@ -213,7 +269,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated || !currentUser.id || currentUser.requiresProfileCompletion) return undefined;
     const timer = setInterval(() => {
-      void hydrateRemoteData(currentUser);
+      void hydrateRemoteData(currentUser, { background: true });
     }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [currentUser.id, currentUser.role, currentUser.requiresProfileCompletion, hydrateRemoteData, isAuthenticated]);
@@ -221,7 +277,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated || !currentUser.id || currentUser.requiresProfileCompletion) return undefined;
     const subscription = AppState.addEventListener('change', nextState => {
-      if (nextState === 'active') void hydrateRemoteData(currentUser);
+      if (nextState === 'active') void hydrateRemoteData(currentUser, { background: true });
     });
     return () => {
       subscription.remove();
@@ -270,24 +326,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       await remoteStore.signOut();
-      setIsAuthenticated(false);
-      setCurrentUser(EMPTY_USER);
-      setUsers([]);
-      setAiPredictions([]);
-      setSubmissions([]);
-      setPointTransactions([]);
-      setRewards([]);
-      setRewardRedemptions([]);
-      setQrScanLogs([]);
-      setMissions([]);
-      setFeedbacks([]);
-      setAvatarOptions([]);
-      setStations([]);
-      setWasteTypes([]);
-      setDutyStationId('');
-      setSyncSource('backend');
-      setSyncError('');
+    } catch {
+      // Token cục bộ đã được xóa trong store; lỗi mạng khi báo đăng xuất không được giữ người dùng ở lại phiên cũ.
     } finally {
+      clearSessionState('');
       setIsLoading(false);
     }
   };
@@ -296,6 +338,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để đổi avatar.');
       const nextUser = await remoteStore.updateAvatar(currentUser.id, avatarKey);
+      markLocalMutation();
       setCurrentUser(nextUser);
       setUsers(items => items.map(item => (item.id === nextUser.id ? nextUser : item)));
     } catch (error) {
@@ -318,6 +361,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) return false;
       const redemption = await remoteStore.requestReward(currentUser.id, reward);
+      markLocalMutation();
       setRewardRedemptions(items => [redemption, ...items.filter(item => item.id !== redemption.id)]);
       return true;
     } catch (error) {
@@ -329,6 +373,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) return undefined;
       const prediction = await remoteStore.saveAiPrediction(currentUser.id, input);
+      markLocalMutation();
       setAiPredictions(items => [prediction, ...items.filter(item => item.id !== prediction.id)]);
       return prediction;
     } catch (error) {
@@ -340,8 +385,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để tạo QR giao dịch.');
       const submission = await remoteStore.createSubmission(currentUser.id, input, wasteTypes);
+      markLocalMutation();
       setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
       return submission;
+    } catch (error) {
+      return failRemoteMutation(error);
+    }
+  };
+
+  const uploadSubmissionPhoto = async (input: { imageUri: string; imageName?: string; mimeType?: string }) => {
+    try {
+      if (!isAuthenticated) throw new Error('Cần đăng nhập backend để lưu ảnh rác.');
+      return await remoteStore.uploadSubmissionPhoto(input);
     } catch (error) {
       return failRemoteMutation(error);
     }
@@ -353,6 +408,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để gửi phản hồi.');
       const feedback = await remoteStore.submitFeedback(currentUser, input);
+      markLocalMutation();
       setFeedbacks(items => [feedback, ...items.filter(item => item.id !== feedback.id)]);
       await hydrateRemoteData(currentUser);
       return feedback;
@@ -363,6 +419,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setDutyStation = (stationId: string) => {
     setDutyStationId(stationId);
+    persistedDutyStationRef.current = stationId;
+    void saveDutyStationPreference(AsyncStorage, currentUser.id, stationId);
   };
 
   const findSubmissionByQr = (qrToken: string) => submissions.find(item => item.qrToken.trim().toUpperCase() === qrToken.trim().toUpperCase());
@@ -371,6 +429,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để quét QR giao dịch.');
       const outcome = await remoteStore.markSubmissionScanned(qrToken, currentUser.id, dutyStationId);
+      markLocalMutation();
       if (outcome.submission) setSubmissions(items => [outcome.submission!, ...items.filter(item => item.id !== outcome.submission!.id)]);
       return outcome;
     } catch (error) {
@@ -380,12 +439,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const confirmSubmission = async (submissionId: string, actualQuantity: number, volunteerNote?: string) => {
     try {
-      const submission = submissions.find(item => item.id === submissionId);
-      const wasteType = wasteTypes.find(item => item.id === submission?.wasteTypeId);
-      if (!submission || !wasteType) return;
-
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để xác nhận QR.');
       const result = await remoteStore.confirmSubmission(submissionId, actualQuantity, currentUser.id, volunteerNote, wasteTypes);
+      markLocalMutation();
       setSubmissions(items => [result.submission, ...items.filter(item => item.id !== result.submission.id)]);
       setPointTransactions(items => [result.point, ...items.filter(item => item.id !== result.point.id)]);
     } catch (error) {
@@ -397,6 +453,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để từ chối QR.');
       const submission = await remoteStore.rejectSubmission(submissionId, currentUser.id, volunteerNote);
+      markLocalMutation();
       setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
     } catch (error) {
       failRemoteMutation(error);
@@ -407,6 +464,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để yêu cầu kiểm tra lại.');
       const submission = await remoteStore.requestReview(submissionId, currentUser.id, volunteerNote);
+      markLocalMutation();
       setSubmissions(items => [submission, ...items.filter(item => item.id !== submission.id)]);
     } catch (error) {
       failRemoteMutation(error);
@@ -417,6 +475,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để lưu ảnh minh chứng.');
       const proofImage = await remoteStore.attachProofImage(submissionId, input);
+      markLocalMutation();
       let updatedSubmission: RecyclingSubmission | undefined;
       setSubmissions(items => {
         const next = applyProofImage(items, proofImage);
@@ -445,6 +504,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated || !items.length) return false;
       const redemption = await remoteStore.requestRewardBatch(currentUser.id, items, rewards);
+      markLocalMutation();
       setRewardRedemptions(current => [redemption, ...current.filter(item => item.id !== redemption.id)]);
       return true;
     } catch (error) {
@@ -456,6 +516,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để hủy mã đổi thưởng.');
       const redemption = await remoteStore.cancelRewardRedemption(batchId);
+      markLocalMutation();
       setRewardRedemptions(current => [redemption, ...current.filter(item => item.id !== redemption.id)]);
       await hydrateRemoteData(currentUser);
       return true;
@@ -468,6 +529,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isAuthenticated) throw new Error('Cần đăng nhập backend để quét mã đổi thưởng.');
       await remoteStore.scanRewardRedemption(qrToken);
+      markLocalMutation();
       await hydrateRemoteData(currentUser);
       return true;
     } catch (error) {
@@ -507,6 +569,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       requestRewardBatch,
       cancelRewardRedemption,
       createSubmission,
+      uploadSubmissionPhoto,
       saveAiPrediction,
       submitFeedback,
       setDutyStation,
@@ -515,8 +578,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       confirmSubmission,
       rejectSubmission,
       requestReview,
-       attachProofImage,
-       scanRewardRedemption
+      attachProofImage,
+      scanRewardRedemption
     }),
     [
       currentUser,

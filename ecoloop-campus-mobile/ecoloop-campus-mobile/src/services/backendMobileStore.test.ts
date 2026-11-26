@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createBackendMobileStore } from './backendMobileStore';
+import { createBackendMobileStore, isSessionExpiredError } from './backendMobileStore';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -306,4 +306,118 @@ test('backend mobile store maps proof image backend error to a helpful QR messag
     () => store.createSubmission('student-1', { binId: 'bin-1', wasteTypeId: 'paper', quantity: 1 }, []),
     /Hãy chụp ảnh hoặc tải ảnh rác lên trước khi tạo mã QR/
   );
+});
+
+test('backend mobile store translates reward and scan business error codes into Vietnamese', async () => {
+  const codes: Record<string, RegExp> = {
+    ACTIVE_REWARD_BATCH_EXISTS: /đang có một mã đổi thưởng/i,
+    REWARD_OUT_OF_STOCK: /hết hàng/i,
+    INSUFFICIENT_POINTS: /không đủ Ecopoint/i,
+    INVALID_SUBMISSION_STATUS: /trạng thái/i,
+    SUBMISSION_ACTOR_MISMATCH: /tình nguyện viên khác/i,
+  };
+  for (const [code, pattern] of Object.entries(codes)) {
+    const store = createBackendMobileStore({
+      baseUrl: 'https://api.example.test',
+      storage: memoryStorage(),
+      initialToken: 'token-1',
+      fetcher: async () => response({ detail: code }, false, 409),
+    });
+    await assert.rejects(() => store.requestRewardBatch('student-1', [{ rewardId: 'r1', quantity: 1 }], []), pattern);
+    await assert.rejects(
+      () => store.requestRewardBatch('student-1', [{ rewardId: 'r1', quantity: 1 }], []),
+      (error: unknown) => {
+        const failure = error as { code?: string; status?: number; message: string };
+        assert.equal(failure.code, code);
+        assert.equal(failure.status, 409);
+        assert.doesNotMatch(failure.message, new RegExp(code));
+        return true;
+      }
+    );
+  }
+});
+
+test('backend mobile store marks expired sessions and clears the stored token on 401', async () => {
+  const storage = memoryStorage();
+  await storage.setItem('ecoloop_backend_token', 'token-1');
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage,
+    fetcher: async () => response({ detail: 'Invalid token' }, false, 401),
+  });
+
+  await assert.rejects(() => store.loadInitialData({ id: 'student-1', role: 'student' } as any), (error: unknown) => {
+    assert.equal(isSessionExpiredError(error), true);
+    assert.match((error as Error).message, /Phiên đăng nhập đã hết hạn/);
+    return true;
+  });
+  assert.equal(await storage.getItem('ecoloop_backend_token'), null);
+});
+
+test('backend mobile store keeps wrong-password login errors separate from session expiry', async () => {
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage: memoryStorage(),
+    fetcher: async () => response({ detail: 'Sai email hoặc mật khẩu' }, false, 401),
+  });
+
+  await assert.rejects(() => store.signIn('student', 'a@b.vn', 'x'), (error: unknown) => {
+    assert.equal(isSessionExpiredError(error), false);
+    assert.match((error as Error).message, /Sai email hoặc mật khẩu/);
+    return true;
+  });
+});
+
+test('backend mobile store gives up on hung requests with a friendly timeout error', async () => {
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage: memoryStorage(),
+    initialToken: 'token-1',
+    requestTimeoutMs: 20,
+    fetcher: (_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })));
+    }),
+  });
+
+  await assert.rejects(() => store.checkSchema(), /Máy chủ phản hồi quá lâu/);
+});
+
+test('backend mobile store sends proof image paths relative to the backend', async () => {
+  const bodies: any[] = [];
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test/',
+    storage: memoryStorage(),
+    initialToken: 'token-1',
+    fetcher: async (_url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return response({ data: { id: 'sub-1', qrToken: 'ECL-SUB-1', status: 'CREATED' } }, true, 201);
+    },
+  });
+
+  await store.createSubmission('student-1', {
+    binId: 'bin-1',
+    wasteTypeId: 'paper',
+    quantity: 1,
+    proofImageUrl: 'https://api.example.test/uploads/predictions/2026-11-26/bottle.jpg',
+  }, []);
+
+  assert.equal(bodies[0].proofImageUrl, '/uploads/predictions/2026-11-26/bottle.jpg');
+});
+
+test('backend mobile store uploads a submission photo without requiring an AI prediction', async () => {
+  const calls: string[] = [];
+  const store = createBackendMobileStore({
+    baseUrl: 'https://api.example.test',
+    storage: memoryStorage(),
+    initialToken: 'token-1',
+    fetcher: async (url) => {
+      calls.push(String(url));
+      return response({ data: { imageUrl: '/uploads/predictions/2026-11-26/can.jpg' } }, true, 201);
+    },
+  });
+
+  const imageUrl = await store.uploadSubmissionPhoto({ imageUri: 'file:///tmp/can.jpg', imageName: 'can.jpg', mimeType: 'image/jpeg' });
+
+  assert.equal(imageUrl, '/uploads/predictions/2026-11-26/can.jpg');
+  assert.deepEqual(calls, ['https://api.example.test/api/uploads/predictions']);
 });

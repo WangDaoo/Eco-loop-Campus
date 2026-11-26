@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -9,9 +9,18 @@ import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
 import { launchImageLibraryWithFallback } from '../services/imagePickerFallback';
 import { extractRewardRedemptionQrToken, extractSubmissionQrToken } from '../services/qrPayload';
+import { canVolunteerActOnSubmission, getPendingDutySubmissions } from '../services/scannerFlow';
 import { getSubmissionStatusLabel, getWasteTypeDisplayName } from '../services/submissionPresentation';
 import { colors, radius } from '../theme/colors';
 import type { RecyclingSubmission } from '../types';
+
+type BusyAction = '' | 'accept' | 'reject' | 'review';
+
+const BUSY_LABELS: Record<Exclude<BusyAction, ''>, string> = {
+  accept: 'Đang xác nhận và cộng điểm...',
+  reject: 'Đang từ chối giao dịch...',
+  review: 'Đang gửi yêu cầu kiểm tra lại...'
+};
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -26,6 +35,7 @@ export default function ScannerScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const {
     confirmSubmission,
+    currentUser,
     dutyStationId,
     markSubmissionScanned,
     rejectSubmission,
@@ -34,6 +44,7 @@ export default function ScannerScreen() {
     scanRewardRedemption,
     stations,
     submissions,
+    users,
     wasteTypes
   } = useAppContext();
   const [enabled, setEnabled] = useState(false);
@@ -42,15 +53,22 @@ export default function ScannerScreen() {
   const [actualQuantity, setActualQuantity] = useState('');
   const [volunteerNote, setVolunteerNote] = useState('');
   const [proofImageUri, setProofImageUri] = useState('');
+  const [loadingQr, setLoadingQr] = useState(false);
+  const [busyAction, setBusyAction] = useState<BusyAction>('');
+  const scanLockRef = useRef(false);
+  const busyRef = useRef(false);
+  const isBusy = busyAction !== '';
   const selectedSubmission = submissions.find(item => item.id === selectedSubmissionId);
-  const canConfirmSubmission = selectedSubmission?.status === 'QR_SCANNED';
-  const selectedStation = stations.find(item => item.id === (selectedSubmission?.binId ?? dutyStationId));
+  const canConfirmSubmission = selectedSubmission?.status === 'QR_SCANNED' && canVolunteerActOnSubmission(selectedSubmission, currentUser);
+  const dutyStation = stations.find(item => item.id === dutyStationId);
   const selectedWasteName = selectedSubmission ? getWasteTypeDisplayName(wasteTypes, selectedSubmission.wasteTypeId) : '';
+  const selectedStudent = selectedSubmission ? users.find(item => item.id === selectedSubmission.userId) : undefined;
+  const selectedStudentLabel = selectedStudent
+    ? [selectedStudent.name, selectedStudent.studentCode].filter(Boolean).join(' - ')
+    : selectedSubmission?.userId ?? '';
   const scannerSize = Math.max(220, Math.min(300, windowWidth - 96));
   const scanFrameSize = Math.min(210, scannerSize - 48);
-  const pendingAtDuty = submissions.filter(
-    item => item.binId === dutyStationId && (item.status === 'CREATED' || item.status === 'QR_SCANNED')
-  );
+  const pendingAtDuty = getPendingDutySubmissions(submissions, dutyStationId);
 
   const isFocused = useIsFocused();
 
@@ -120,12 +138,34 @@ export default function ScannerScreen() {
     setProofImageUri('');
   };
 
+  const closeSubmissionReview = () => {
+    if (busyRef.current) return;
+    clearSubmissionReview();
+  };
+
   const openPendingSubmission = async (submission: RecyclingSubmission) => {
     if (submission.status === 'QR_SCANNED') {
+      if (!canVolunteerActOnSubmission(submission, currentUser)) {
+        Alert.alert('QR đang được xử lý', 'Giao dịch này đã được một tình nguyện viên khác quét và đang chờ họ xác nhận.');
+        return;
+      }
       openSubmissionForReview(submission);
       return;
     }
-    await loadQr(submission.qrToken);
+    await runQrLoad(submission.qrToken);
+  };
+
+  /** Serialises QR loads so a camera that fires several barcode events only scans once. */
+  const runQrLoad = async (rawValue: string) => {
+    if (scanLockRef.current) return;
+    scanLockRef.current = true;
+    setLoadingQr(true);
+    try {
+      await loadQr(rawValue);
+    } finally {
+      scanLockRef.current = false;
+      setLoadingQr(false);
+    }
   };
 
   const loadQr = async (qrToken: string) => {
@@ -145,8 +185,12 @@ export default function ScannerScreen() {
       Alert.alert('Chưa có QR', 'Nhập hoặc quét QR giao dịch.');
       return;
     }
+    if (!dutyStationId) {
+      Alert.alert('Chưa chọn trạm trực', 'Vào tab Ca trực và chọn trạm bạn đang trực trước khi quét QR gửi rác.');
+      return;
+    }
     const scannedPending = submissions.find(item => item.qrToken.trim().toUpperCase() === token && item.status === 'QR_SCANNED');
-    if (scannedPending) {
+    if (scannedPending && canVolunteerActOnSubmission(scannedPending, currentUser)) {
       openSubmissionForReview(scannedPending);
       return;
     }
@@ -168,7 +212,14 @@ export default function ScannerScreen() {
     } else if (outcome.result === 'WRONG_STATION') {
       Alert.alert('QR sai trạm', 'Giao dịch này thuộc trạm khác. Không thể xác nhận tại ca trực hiện tại.');
     } else if (outcome.result === 'ALREADY_USED') {
-      Alert.alert('QR đã được sử dụng', 'Giao dịch này đã được xử lý trước đó.');
+      if (submission.status === 'QR_SCANNED' && canVolunteerActOnSubmission(submission, currentUser)) {
+        // Re-scanning a QR this volunteer already scanned resumes the unfinished review.
+        openSubmissionForReview(submission);
+      } else if (submission.status === 'QR_SCANNED') {
+        Alert.alert('QR đã được sử dụng', 'Giao dịch này đang được một tình nguyện viên khác xử lý.');
+      } else {
+        Alert.alert('QR đã được sử dụng', 'Giao dịch này đã được xử lý trước đó.');
+      }
     } else if (outcome.result === 'INVALID_TOKEN') {
       Alert.alert('QR không hợp lệ', outcome.note);
     } else if (outcome.result !== 'SUCCESS' || submission.status !== 'QR_SCANNED') {
@@ -203,36 +254,69 @@ export default function ScannerScreen() {
     }
   };
 
-  const handleAccept = async () => {
-    if (!selectedSubmission) return;
-    const parsedQuantity = Number(actualQuantity.replace(',', '.'));
-    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
-      Alert.alert('Số lượng chưa đúng', 'Nhập số lượng thực tế lớn hơn 0.');
-      return;
-    }
-    if (!(await ensureProofImageSafely())) return;
+  /** Runs one review action at a time so double taps cannot send duplicate requests. */
+  const runBusyAction = async (action: Exclude<BusyAction, ''>, task: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusyAction(action);
     try {
-      await confirmSubmission(selectedSubmission.id, parsedQuantity, volunteerNote);
-      Alert.alert('Đã xác nhận', 'Ecopoint đã được cộng sau khi xác nhận.');
-      setSelectedSubmissionId(null);
-    } catch (error) {
-      Alert.alert('Không xác nhận được', messageOf(error));
+      await task();
+    } finally {
+      busyRef.current = false;
+      setBusyAction('');
     }
   };
 
-  const handleReject = async () => {
-    if (!selectedSubmission) return;
-    await rejectSubmission(selectedSubmission.id, volunteerNote || 'Không đạt điều kiện tiếp nhận');
-    Alert.alert('Đã từ chối', 'Giao dịch đã được cập nhật trạng thái.');
-    setSelectedSubmissionId(null);
+  const handleAccept = () =>
+    runBusyAction('accept', async () => {
+      if (!selectedSubmission) return;
+      const parsedQuantity = Number(actualQuantity.replace(',', '.'));
+      if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+        Alert.alert('Số lượng chưa đúng', 'Nhập số lượng thực tế lớn hơn 0.');
+        return;
+      }
+      if (!(await ensureProofImageSafely())) return;
+      try {
+        await confirmSubmission(selectedSubmission.id, parsedQuantity, volunteerNote);
+        Alert.alert('Đã xác nhận', 'Ecopoint đã được cộng sau khi xác nhận.');
+        clearSubmissionReview();
+      } catch (error) {
+        Alert.alert('Không xác nhận được', messageOf(error));
+      }
+    });
+
+  const rejectSelectedSubmission = () =>
+    runBusyAction('reject', async () => {
+      if (!selectedSubmission) return;
+      try {
+        await rejectSubmission(selectedSubmission.id, volunteerNote.trim() || 'Không đạt điều kiện tiếp nhận');
+        Alert.alert('Đã từ chối', 'Giao dịch đã được cập nhật trạng thái.');
+        clearSubmissionReview();
+      } catch (error) {
+        Alert.alert('Không từ chối được', messageOf(error));
+      }
+    });
+
+  const handleReject = () => {
+    if (!selectedSubmission || busyRef.current) return;
+    Alert.alert('Từ chối giao dịch?', 'Sinh viên sẽ không được cộng Ecopoint cho lượt gửi rác này.', [
+      { text: 'Hủy', style: 'cancel' },
+      { text: 'Từ chối', style: 'destructive', onPress: () => void rejectSelectedSubmission() }
+    ]);
   };
 
-  const handleRequestReview = async () => {
-    if (!selectedSubmission) return;
-    if (!(await ensureProofImageSafely())) return;
-    await requestReview(selectedSubmission.id, volunteerNote || 'Yêu cầu review vì nghi ngờ sai loại hoặc số lượng');
-    Alert.alert('Đã yêu cầu review', 'Giao dịch đã được chuyển sang pending review.');
-  };
+  const handleRequestReview = () =>
+    runBusyAction('review', async () => {
+      if (!selectedSubmission) return;
+      if (!(await ensureProofImageSafely())) return;
+      try {
+        await requestReview(selectedSubmission.id, volunteerNote.trim() || 'Yêu cầu review vì nghi ngờ sai loại hoặc số lượng');
+        Alert.alert('Đã yêu cầu kiểm tra lại', 'Giao dịch đã được chuyển cho quản trị viên kiểm tra.');
+        clearSubmissionReview();
+      } catch (error) {
+        Alert.alert('Không gửi được yêu cầu kiểm tra', messageOf(error));
+      }
+    });
 
   return (
     <Screen scroll style={styles.container}>
@@ -241,21 +325,30 @@ export default function ScannerScreen() {
 
       <Card style={styles.tip}>
         <Text style={styles.tipTitle}>Trạm trực</Text>
-        <Text style={styles.tipText}>{selectedStation?.name ?? 'Chưa chọn trạm'} - {pendingAtDuty.length} giao dịch đang chờ</Text>
+        {dutyStation ? (
+          <Text style={styles.tipText}>{dutyStation.name} - {pendingAtDuty.length} giao dịch đang chờ</Text>
+        ) : (
+          <Text style={styles.warningText}>Chưa chọn trạm trực. Vào tab Ca trực để chọn trạm trước khi quét QR gửi rác.</Text>
+        )}
       </Card>
 
       {pendingAtDuty.length > 0 && (
         <View style={styles.pendingList}>
           <Text style={styles.section}>Đang chờ tại trạm</Text>
-          {pendingAtDuty.map(item => (
-            <Pressable key={item.id} onPress={() => void openPendingSubmission(item)} style={({ pressed }) => [styles.pendingChip, pressed && styles.pressed]}>
-              <View style={styles.pendingTopRow}>
-                <Text style={styles.pendingText} numberOfLines={1} ellipsizeMode="middle">{item.qrToken}</Text>
-                <Text style={styles.pendingStatus}>{getSubmissionStatusLabel(item.status)}</Text>
-              </View>
-              <Text style={styles.pendingAction}>Kiểm tra giao dịch</Text>
-            </Pressable>
-          ))}
+          {pendingAtDuty.map(item => {
+            const scannedByOther = item.status === 'QR_SCANNED' && !canVolunteerActOnSubmission(item, currentUser);
+            return (
+              <Pressable key={item.id} disabled={loadingQr} onPress={() => void openPendingSubmission(item)} style={({ pressed }) => [styles.pendingChip, pressed && styles.pressed]}>
+                <View style={styles.pendingTopRow}>
+                  <Text style={styles.pendingText} numberOfLines={1} ellipsizeMode="middle">{item.qrToken}</Text>
+                  <Text style={styles.pendingStatus}>{getSubmissionStatusLabel(item.status)}</Text>
+                </View>
+                <Text style={[styles.pendingAction, scannedByOther && styles.pendingActionMuted]}>
+                  {scannedByOther ? 'Tình nguyện viên khác đang xử lý' : 'Kiểm tra giao dịch'}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       )}
 
@@ -266,8 +359,9 @@ export default function ScannerScreen() {
             ratio="1:1"
             barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
             onBarcodeScanned={({ data }) => {
+              if (scanLockRef.current) return;
               setEnabled(false);
-              void loadQr(data);
+              void runQrLoad(data);
             }}
           >
             <View style={styles.overlay}>
@@ -293,25 +387,28 @@ export default function ScannerScreen() {
         )}
       </View>
 
-      {!enabled && <AppButton title="Bắt đầu quét QR" onPress={startScan} />}
+      {!enabled && <AppButton title={loadingQr ? 'Đang tải giao dịch...' : 'Bắt đầu quét QR'} disabled={loadingQr} onPress={startScan} />}
 
       <Card style={styles.manualCard}>
         <Text style={styles.tipTitle}>Nhập mã QR thủ công</Text>
         <TextInput value={manualQrToken} onChangeText={setManualQrToken} autoCapitalize="characters" style={styles.input} placeholder="ECL-SUB-20260823120000-123456" placeholderTextColor={colors.muted} />
-        <AppButton title="Tải giao dịch" variant="light" onPress={() => void loadQr(manualQrToken)} />
+        <AppButton title={loadingQr ? 'Đang tải...' : 'Tải giao dịch'} variant="light" disabled={loadingQr} onPress={() => void runQrLoad(manualQrToken)} />
       </Card>
 
-      <Modal visible={!!selectedSubmission} animationType="slide" transparent onRequestClose={() => setSelectedSubmissionId(null)}>
+      <Modal visible={!!selectedSubmission} animationType="slide" transparent onRequestClose={closeSubmissionReview}>
         <View style={styles.modalOverlay}>
           {selectedSubmission && (
             <Card style={styles.modalCard}>
               <ScrollView contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
                 <Text style={styles.detailTitle}>Kiểm tra giao dịch</Text>
-                <Text style={styles.detailText}>Sinh viên: {selectedSubmission.userId}</Text>
+                <Text style={styles.detailText}>Sinh viên: {selectedStudentLabel}</Text>
                 <Text style={styles.detailText} numberOfLines={1} ellipsizeMode="middle">QR: {selectedSubmission.qrToken}</Text>
                 <Text style={styles.detailText}>Loại rác khai báo: {selectedWasteName}</Text>
                 <Text style={styles.detailText}>Số lượng khai báo: {selectedSubmission.quantity} {selectedSubmission.unit}</Text>
                 <Text style={styles.detailStatus}>Trạng thái: {getSubmissionStatusLabel(selectedSubmission.status)}</Text>
+                {!canConfirmSubmission ? (
+                  <Text style={styles.warningText}>Giao dịch không còn chờ bạn xác nhận. Đóng cửa sổ này và quét lại nếu cần.</Text>
+                ) : null}
 
                 <Text style={styles.label}>Số lượng thực tế ({selectedSubmission.unit})</Text>
                 <TextInput value={actualQuantity} onChangeText={setActualQuantity} keyboardType="decimal-pad" style={styles.input} />
@@ -320,18 +417,20 @@ export default function ScannerScreen() {
                 <TextInput value={volunteerNote} onChangeText={setVolunteerNote} multiline style={[styles.input, styles.noteInput]} placeholder="Bất thường, sai loại..." placeholderTextColor={colors.muted} />
 
                 <View style={styles.proofActions}>
-                  <AppButton title={proofImageUri ? 'Chụp lại minh chứng' : 'Bắt buộc: Chụp ảnh minh chứng'} variant={proofImageUri ? 'light' : 'primary'} onPress={() => void captureProofImage()} />
+                  <AppButton title={proofImageUri ? 'Chụp lại minh chứng' : 'Bắt buộc: Chụp ảnh minh chứng'} variant={proofImageUri ? 'light' : 'primary'} disabled={isBusy} onPress={() => void captureProofImage()} />
                   {proofImageUri ? <Image source={{ uri: proofImageUri }} style={styles.proofPreview} /> : null}
                 </View>
 
+                {busyAction ? <Text style={styles.busyText}>{BUSY_LABELS[busyAction]}</Text> : null}
+
                 <View style={styles.actionRow}>
-                  <AppButton title="Từ chối" variant="light" onPress={handleReject} />
-                  <AppButton title={canConfirmSubmission ? 'Xác nhận & Cộng điểm' : 'Chưa scan hợp lệ'} disabled={!canConfirmSubmission} onPress={handleAccept} />
-                  <AppButton title="Yêu cầu kiểm tra lại" variant="light" onPress={handleRequestReview} />
+                  <AppButton title="Từ chối" variant="light" disabled={!canConfirmSubmission || isBusy} onPress={handleReject} />
+                  <AppButton title={canConfirmSubmission ? 'Xác nhận & Cộng điểm' : 'Chưa scan hợp lệ'} disabled={!canConfirmSubmission || isBusy} onPress={() => void handleAccept()} />
+                  <AppButton title="Yêu cầu kiểm tra lại" variant="light" disabled={!canConfirmSubmission || isBusy} onPress={() => void handleRequestReview()} />
                 </View>
 
-                <Pressable style={styles.closeModalButton} onPress={() => setSelectedSubmissionId(null)}>
-                  <Text style={styles.closeModalText}>Đóng</Text>
+                <Pressable style={styles.closeModalButton} disabled={isBusy} onPress={closeSubmissionReview}>
+                  <Text style={[styles.closeModalText, isBusy && styles.closeModalTextDisabled]}>Đóng</Text>
                 </Pressable>
               </ScrollView>
             </Card>
@@ -362,6 +461,9 @@ const styles = StyleSheet.create({
   pendingText: { color: colors.coralDark, fontWeight: '900', flex: 1 },
   pendingStatus: { color: colors.green, fontWeight: '900', fontSize: 12 },
   pendingAction: { color: colors.green, fontWeight: '900', marginTop: 6 },
+  pendingActionMuted: { color: colors.muted },
+  warningText: { color: colors.coralDark, fontWeight: '800', marginTop: 4 },
+  busyText: { color: colors.green, fontWeight: '900', textAlign: 'center', marginTop: 6 },
   detailTitle: { color: colors.ink, fontSize: 21, fontWeight: '900' },
   detailText: { color: colors.muted, fontWeight: '800' },
   detailStatus: { color: colors.green, fontWeight: '900', marginTop: 4 },
@@ -386,5 +488,6 @@ const styles = StyleSheet.create({
   modalScrollContent: { padding: 20, paddingBottom: 32, gap: 12 },
   closeModalButton: { marginTop: 4, paddingVertical: 12, alignItems: 'center' },
   closeModalText: { color: colors.muted, fontWeight: '900', fontSize: 16 },
+  closeModalTextDisabled: { opacity: 0.4 },
   pressed: { opacity: 0.78 }
 });

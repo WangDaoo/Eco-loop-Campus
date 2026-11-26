@@ -257,6 +257,13 @@ test('maps reward catalog rows from Supabase into mobile rewards', () => {
 
   assert.equal(mapRewardRow({ id: 'old', cost_points: 100, status: 'disabled' }).status, 'inactive');
 });
+
+test('maps tracked reward stock and leaves unlimited rewards without a stock value', () => {
+  assert.equal(mapRewardRow({ id: 'mug', cost_points: 200, stock: 0 }).stock, 0);
+  assert.equal(mapRewardRow({ id: 'mug', cost_points: 200, stock: '7' }).stock, 7);
+  assert.equal(mapRewardRow({ id: 'mug', cost_points: 200, stock: null }).stock, undefined);
+  assert.equal('stock' in mapRewardRow({ id: 'mug', cost_points: 200 }), false);
+});
 test('maps mission catalog and merges student mission progress', () => {
   const mission = mapMissionRow({
     id: 'submit-3',

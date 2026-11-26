@@ -16,7 +16,6 @@ type RemoteHydrationState = {
   rewardRedemptions: RewardRedemption[];
   qrScanLogs: QRScanLog[];
   avatarOptions: AvatarPreset[];
-  dutyStationId: string;
 };
 
 export function resolveRemoteHydrationState(data: MobileInitialData, readiness: OperatingReadiness): RemoteHydrationState {
@@ -34,7 +33,6 @@ export function resolveRemoteHydrationState(data: MobileInitialData, readiness: 
     rewards: data.rewards,
     rewardRedemptions: data.rewardRedemptions,
     qrScanLogs: data.qrScanLogs,
-    avatarOptions: data.avatarOptions,
-    dutyStationId: data.stations[0]?.id ?? ''
+    avatarOptions: data.avatarOptions
   };
 }

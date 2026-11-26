@@ -12,7 +12,17 @@ import { colors, radius } from '../theme/colors';
 import { predictionService, suggestWasteTypeFromClass } from '../services/predictionService';
 import { getSubmissionExpiryInfo } from '../services/submissionExpiry';
 import { getSubmissionStatusLabel, getWasteTypeDisplayName, getWasteUnitDisplayLabel, isSubmissionQrActive } from '../services/submissionPresentation';
-import { buildSubmitAiSuggestion, SubmitAiSuggestion } from './submitAiFlow';
+import {
+  buildSubmitAiSuggestion,
+  ensureSubmissionPhotoUrl,
+  estimateSubmissionPoints,
+  findRestorableSubmission,
+  MISSING_SUBMISSION_PHOTO_MESSAGE,
+  SubmissionPhoto,
+  SubmitAiSuggestion,
+  toSubmissionPhoto
+} from './submitAiFlow';
+import { getStationStatusLabel, isStationAcceptingWaste } from '../services/stationPresentation';
 import { buildSubmissionQrPayload, extractStationQrCandidates } from '../services/qrPayload';
 import { launchImageLibraryWithFallback } from '../services/imagePickerFallback';
 
@@ -41,13 +51,13 @@ function aiRuntimeLabel(suggestion: AiSuggestion) {
 }
 
 export default function SubmitScreen({ route }: any) {
-  const { stations, wasteTypes, submissions, createSubmission, saveAiPrediction, submitFeedback, isLoading, syncSource } = useAppContext();
+  const { currentUser, stations, wasteTypes, submissions, createSubmission, uploadSubmissionPhoto, saveAiPrediction, submitFeedback } = useAppContext();
   const scrollRef = useRef<ScrollView>(null);
   const feedbackCardRef = useRef<View>(null);
   const [stationCameraPermission, requestStationCameraPermission] = useCameraPermissions();
   const isFocused = useIsFocused();
   const { width: windowWidth } = useWindowDimensions();
-  const [stationId, setStationId] = useState(stations[0]?.id ?? '');
+  const [stationId, setStationId] = useState(() => (stations.find(isStationAcceptingWaste) ?? stations[0])?.id ?? '');
   const [wasteTypeId, setWasteTypeId] = useState(wasteTypes[0]?.id ?? '');
   const [quantity, setQuantity] = useState('1');
   const [latestSubmission, setLatestSubmission] = useState<RecyclingSubmission | null>(null);
@@ -55,32 +65,48 @@ export default function SubmitScreen({ route }: any) {
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AiSuggestion | null>(null);
+  const [photo, setPhoto] = useState<SubmissionPhoto | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [sendingFeedback, setSendingFeedback] = useState(false);
+  const creatingRef = useRef(false);
+  const sendingFeedbackRef = useRef(false);
+  const photoRequestRef = useRef(0);
   const [stationScannerEnabled, setStationScannerEnabled] = useState(false);
   const [stationScannerPaused, setStationScannerPaused] = useState(false);
   const [stationDropdownOpen, setStationDropdownOpen] = useState(false);
   const [stationScanMessage, setStationScanMessage] = useState('Đưa QR trên trạm vào khung vuông để chọn trạm tự động.');
   const [clockNow, setClockNow] = useState(new Date());
 
-  const selectedStation = useMemo(() => stations.find(item => item.id === stationId) ?? stations[0], [stationId, stations]);
+  const selectedStation = useMemo(() => stations.find(item => item.id === stationId), [stationId, stations]);
+  const selectedStationAccepting = isStationAcceptingWaste(selectedStation);
   const activeWasteTypes = useMemo(() => wasteTypes.filter(item => item.status === 'active'), [wasteTypes]);
   const selectedWaste = useMemo(
     () => activeWasteTypes.find(item => item.id === wasteTypeId) ?? activeWasteTypes[0],
     [activeWasteTypes, wasteTypeId]
   );
   const quantityNumber = Number(quantity.replace(',', '.'));
-  const estimatedPoints = selectedWaste && Number.isFinite(quantityNumber) ? Math.max(0, Math.round(quantityNumber * selectedWaste.pointPerUnit)) : 0;
+  const estimatedPoints = estimateSubmissionPoints(quantityNumber, selectedWaste?.pointPerUnit);
   const displayedSubmission = useMemo(
     () => latestSubmission ? submissions.find(item => item.id === latestSubmission.id) ?? latestSubmission : null,
     [latestSubmission, submissions]
   );
+  const restorableSubmission = useMemo(() => findRestorableSubmission(submissions, currentUser.id), [currentUser.id, submissions]);
   const qrExpiryInfo = displayedSubmission ? getSubmissionExpiryInfo(displayedSubmission.expiredAt, clockNow) : null;
   const stationScannerSize = Math.max(220, Math.min(300, windowWidth - 96));
   const stationScanFrameSize = Math.min(210, stationScannerSize - 48);
 
   useEffect(() => {
     if (!stations.length) return;
-    if (!stations.some(station => station.id === stationId)) setStationId(stations[0].id);
+    // Mặc định chọn trạm đang nhận rác; giữ nguyên lựa chọn của sinh viên nếu trạm vẫn còn (kể cả khi tạm đầy, để báo cáo sự cố).
+    if (!stations.some(station => station.id === stationId)) {
+      setStationId((stations.find(isStationAcceptingWaste) ?? stations[0]).id);
+    }
   }, [stationId, stations]);
+
+  useEffect(() => {
+    // Mở lại app vẫn thấy mã QR còn hiệu lực thay vì phải tạo mã mới.
+    if (!latestSubmission && restorableSubmission) setLatestSubmission(restorableSubmission);
+  }, [latestSubmission, restorableSubmission]);
 
   useEffect(() => {
     if (!activeWasteTypes.length) {
@@ -111,7 +137,7 @@ export default function SubmitScreen({ route }: any) {
     setClockNow(new Date());
     const timer = setInterval(() => setClockNow(new Date()), 15000);
     return () => clearInterval(timer);
-  }, [latestSubmission]);
+  }, [latestSubmission?.id]);
 
   useEffect(() => {
     if (!route?.params?.focusFeedback || !isFocused) return;
@@ -146,7 +172,11 @@ export default function SubmitScreen({ route }: any) {
     if (station) {
       setStationId(station.id);
       setStationDropdownOpen(false);
-      setStationScanMessage(`Đã chọn ${station.name}`);
+      setStationScanMessage(
+        isStationAcceptingWaste(station)
+          ? `Đã chọn ${station.name}`
+          : `${station.name} đang ở trạng thái "${getStationStatusLabel(station.status)}", chưa nhận rác. Bạn vẫn có thể báo cáo sự cố cho trạm này.`
+      );
     } else {
       setStationScanMessage('QR này chưa khớp trạm Eco-loop trong dữ liệu app.');
     }
@@ -154,34 +184,50 @@ export default function SubmitScreen({ route }: any) {
   };
 
   const handleCreate = async () => {
-    if (!stationId || !wasteTypeId || !selectedWaste) {
+    if (creatingRef.current) return;
+    if (!selectedStation || !wasteTypeId || !selectedWaste) {
       Alert.alert('Thiếu dữ liệu', 'Hãy chọn trạm và loại rác.');
+      return;
+    }
+    if (!selectedStationAccepting) {
+      Alert.alert('Trạm chưa nhận rác', `${selectedStation.name} đang ở trạng thái "${getStationStatusLabel(selectedStation.status)}". Hãy chọn trạm khác đang hoạt động.`);
       return;
     }
     if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) {
       Alert.alert('Số lượng chưa đúng', 'Nhập số lượng lớn hơn 0.');
       return;
     }
-    if (!aiSuggestion?.sourceUri) {
-      Alert.alert('Chưa có ảnh rác', 'Hãy chụp ảnh hoặc tải ảnh rác lên trước khi tạo mã QR.');
+    if (!photo) {
+      Alert.alert('Chưa có ảnh rác', MISSING_SUBMISSION_PHOTO_MESSAGE);
       return;
     }
 
+    creatingRef.current = true;
+    setCreating(true);
     try {
+      const proofImageUrl = await ensureSubmissionPhotoUrl(photo, uploadSubmissionPhoto);
+      setPhoto(current => (current?.localUri === photo.localUri ? { ...current, uploadedUrl: proofImageUrl } : current));
       const submission = await createSubmission({
-        binId: stationId,
+        binId: selectedStation.id,
         wasteTypeId,
         quantity: quantityNumber,
-        proofImageUrl: aiSuggestion.sourceUri,
-        predictionId: aiSuggestion.predictionId,
+        proofImageUrl,
+        predictionId: aiSuggestion?.predictionId,
       });
       setLatestSubmission(submission);
     } catch (error) {
       Alert.alert('Không tạo được QR', messageOf(error));
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
   };
 
   const runAiPrediction = async (asset: ImagePicker.ImagePickerAsset, source: 'camera' | 'upload') => {
+    // Ảnh vừa chọn luôn là minh chứng, kể cả khi AI không chạy được.
+    const requestId = ++photoRequestRef.current;
+    setPhoto(toSubmissionPhoto(asset));
+    setAiSuggestion(null);
     setAiLoading(true);
     try {
       const suggestion = await buildSubmitAiSuggestion({
@@ -194,15 +240,21 @@ export default function SubmitScreen({ route }: any) {
         suggestWasteTypeFromClass,
         messageOf
       });
+      if (requestId !== photoRequestRef.current) return;
       setAiSuggestion(suggestion);
+      if (suggestion.sourceUri) {
+        setPhoto(current => (current?.localUri === asset.uri ? { ...current, uploadedUrl: suggestion.sourceUri } : current));
+      }
       if (suggestion.saveWarning) {
-        Alert.alert('AI đã nhận diện', suggestion.saveWarning);
+        Alert.alert('AI đã nhận diện', `${suggestion.saveWarning}
+Ảnh rác sẽ được tải lên lại khi bạn tạo mã QR.`);
       }
     } catch (error) {
+      if (requestId !== photoRequestRef.current) return;
       Alert.alert('AI chưa xử lý được ảnh', `${messageOf(error)}
-Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
+Ảnh vẫn được dùng làm minh chứng. Hãy chọn loại rác thủ công rồi tạo mã QR.`);
     } finally {
-      setAiLoading(false);
+      if (requestId === photoRequestRef.current) setAiLoading(false);
     }
   };
 
@@ -249,8 +301,19 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
   };
 
   const handleFeedback = async () => {
+    if (sendingFeedbackRef.current) return;
+    if (!feedbackMessage.trim()) {
+      Alert.alert('Chưa có nội dung', 'Nhập nội dung phản hồi trước khi gửi.');
+      return;
+    }
+    if (!selectedStation) {
+      Alert.alert('Chưa chọn trạm', 'Hãy quét QR hoặc chọn trạm cần báo cáo sự cố.');
+      return;
+    }
+    sendingFeedbackRef.current = true;
+    setSendingFeedback(true);
     try {
-      const feedback = await submitFeedback({ stationId, type: feedbackType, message: feedbackMessage });
+      const feedback = await submitFeedback({ stationId: selectedStation.id, type: feedbackType, message: feedbackMessage });
       if (!feedback) {
         Alert.alert('Chưa có nội dung', 'Nhập nội dung phản hồi trước khi gửi.');
         return;
@@ -259,6 +322,9 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
       Alert.alert('Đã gửi phản hồi', 'Tình nguyện viên sẽ xử lý trong ca trực.');
     } catch (error) {
       Alert.alert('Không gửi được phản hồi', messageOf(error));
+    } finally {
+      sendingFeedbackRef.current = false;
+      setSendingFeedback(false);
     }
   };
 
@@ -315,7 +381,11 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
             >
               <View style={styles.stationDropdownTextGroup}>
                 <Text style={styles.stationDropdownValue} numberOfLines={1}>{selectedStation?.name ?? 'Chọn trạm'}</Text>
-                <Text style={styles.stationDropdownMeta} numberOfLines={1}>{selectedStation?.location ?? 'Chưa có vị trí trạm'}</Text>
+                <Text style={styles.stationDropdownMeta} numberOfLines={1}>
+                  {selectedStation
+                    ? `${selectedStation.location}${selectedStationAccepting ? '' : ` · ${getStationStatusLabel(selectedStation.status)}`}`
+                    : 'Chưa có vị trí trạm'}
+                </Text>
               </View>
               <Text style={styles.stationDropdownIcon}>{stationDropdownOpen ? '▲' : '▼'}</Text>
             </Pressable>
@@ -323,30 +393,45 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
               <View style={styles.stationDropdownMenu}>
                 {stations.map(station => {
                   const isActive = stationId === station.id;
+                  const accepting = isStationAcceptingWaste(station);
                   return (
                     <Pressable
                       key={station.id}
-                      style={[styles.stationDropdownOption, isActive && styles.stationDropdownOptionActive]}
+                      style={[styles.stationDropdownOption, isActive && styles.stationDropdownOptionActive, !accepting && !isActive && styles.stationDropdownOptionInactive]}
                       onPress={() => {
                         setStationId(station.id);
                         setStationDropdownOpen(false);
                       }}
                     >
                       <Text style={[styles.stationDropdownOptionTitle, isActive && styles.stationDropdownOptionTextActive]} numberOfLines={1}>{station.name}</Text>
-                      <Text style={[styles.stationDropdownOptionMeta, isActive && styles.stationDropdownOptionTextActive]} numberOfLines={1}>{station.location}</Text>
+                      <Text style={[styles.stationDropdownOptionMeta, isActive && styles.stationDropdownOptionTextActive]} numberOfLines={1}>
+                        {accepting ? station.location : `${station.location} · ${getStationStatusLabel(station.status)} - chưa nhận rác`}
+                      </Text>
                     </Pressable>
                   );
                 })}
               </View>
             )}
           </View>
+          {selectedStation && !selectedStationAccepting ? (
+            <Text style={styles.stationWarning}>
+              {selectedStation.name} đang ở trạng thái "{getStationStatusLabel(selectedStation.status)}" nên chưa nhận rác. Hãy chọn trạm khác để tạo mã QR; bạn vẫn có thể báo cáo sự cố cho trạm này.
+            </Text>
+          ) : null}
 
-          <Text style={styles.sectionTitle}>2. Phân loại AI (Tùy chọn)</Text>
+          <Text style={styles.sectionTitle}>2. Ảnh rác (bắt buộc) & Phân loại AI</Text>
           <View style={styles.aiContainer}>
              <View style={styles.aiButtonRow}>
-                <AppButton title={aiLoading ? 'Đang phân tích...' : 'Chụp ảnh AI'} onPress={handleAiCapture} disabled={aiLoading} />
-                <AppButton title="Tải ảnh" variant="light" onPress={handleAiPick} disabled={aiLoading} />
+                <AppButton title={aiLoading ? 'Đang phân tích...' : 'Chụp ảnh rác'} onPress={handleAiCapture} disabled={aiLoading || creating} />
+                <AppButton title="Tải ảnh" variant="light" onPress={handleAiPick} disabled={aiLoading || creating} />
              </View>
+
+             {photo ? (
+               <View style={styles.photoPreviewWrap}>
+                 <Image source={{ uri: photo.localUri }} style={styles.aiPreview} />
+                 <Text style={styles.photoPreviewText}>Ảnh minh chứng đã sẵn sàng</Text>
+               </View>
+             ) : null}
 
              {aiLoading ? (
                <View style={styles.aiLoadingOverlay}>
@@ -355,7 +440,6 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
                </View>
              ) : aiSuggestion ? (
                <View style={styles.aiResult}>
-                 {aiSuggestion.sourceUri && <Image source={{ uri: aiSuggestion.sourceUri }} style={styles.aiPreview} />}
                  <Text style={styles.aiLabel}>Nhận diện: {aiSuggestion.predictedClass} ({aiSuggestion.confidencePercent}%)</Text>
                  <Text style={styles.aiRuntime}>{aiRuntimeLabel(aiSuggestion)}</Text>
                  {aiSuggestion.predictionId ? <Text style={styles.aiSaved}>Đã lưu AI #{aiSuggestion.predictionId}</Text> : null}
@@ -364,8 +448,10 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
                    <Text style={styles.aiSuggestButtonText}>Áp dụng gợi ý này</Text>
                  </Pressable>
                </View>
+             ) : photo ? (
+               <Text style={styles.aiHint}>AI chưa có gợi ý cho ảnh này. Hãy chọn loại rác thủ công bên dưới.</Text>
              ) : (
-               <Text style={styles.aiHint}>Chụp ảnh để AI nhận diện tự động loại rác của bạn.</Text>
+               <Text style={styles.aiHint}>Chụp hoặc tải ảnh rác lên để làm minh chứng. AI sẽ gợi ý loại rác, bạn vẫn có thể chọn thủ công.</Text>
              )}
           </View>
 
@@ -408,7 +494,7 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
              <Text style={styles.summaryPoints}>{estimatedPoints} Ecopoint</Text>
           </View>
 
-          <AppButton title={isLoading ? 'Đang tạo...' : 'TẠO MÃ QR'} disabled={isLoading} onPress={handleCreate} />
+          <AppButton title={creating ? 'Đang tạo...' : 'TẠO MÃ QR'} disabled={creating || aiLoading} onPress={handleCreate} />
         </View>
 
         {displayedSubmission && qrExpiryInfo && (
@@ -434,7 +520,7 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
             <Text style={styles.qrMeta}>Điểm được cộng sau khi lượt gửi rác được xác nhận.</Text>
             <Text style={[styles.qrExpiryLabel, (qrExpiryInfo.expired || !isSubmissionQrActive(displayedSubmission.status)) && styles.qrExpiryExpired]}>{qrExpiryInfo.label}</Text>
             <Text style={styles.qrMeta}>{qrExpiryInfo.detail}</Text>
-            {isSubmissionQrActive(displayedSubmission.status) && qrExpiryInfo.expired && <AppButton title="Tạo mã QR mới" variant="light" disabled={isLoading} onPress={handleCreate} />}
+            {isSubmissionQrActive(displayedSubmission.status) && qrExpiryInfo.expired && <AppButton title={creating ? 'Đang tạo...' : 'Tạo mã QR mới'} variant="light" disabled={creating || aiLoading} onPress={handleCreate} />}
           </View>
         )}
 
@@ -459,7 +545,7 @@ Bạn có thể thử lại sau hoặc chọn loại rác thủ công.`);
             placeholderTextColor="#9ca3af"
             style={styles.textArea}
           />
-          <AppButton title={isLoading ? 'Đang gửi...' : 'Gửi báo cáo'} variant="light" disabled={isLoading} onPress={handleFeedback} />
+          <AppButton title={sendingFeedback ? 'Đang gửi...' : 'Gửi báo cáo'} variant="light" disabled={sendingFeedback} onPress={handleFeedback} />
         </View>
 
       </View>
@@ -689,6 +775,29 @@ const styles = StyleSheet.create({
   },
   stationDropdownOptionActive: {
     backgroundColor: '#10b981',
+  },
+  stationDropdownOptionInactive: {
+    opacity: 0.55,
+  },
+  stationWarning: {
+    color: '#9a3412',
+    backgroundColor: '#fff7ed',
+    borderColor: '#fdba74',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontWeight: '700',
+    fontSize: 13,
+    marginTop: 10,
+  },
+  photoPreviewWrap: {
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  photoPreviewText: {
+    color: '#059669',
+    fontWeight: '800',
+    fontSize: 12,
   },
   stationDropdownOptionTitle: {
     color: '#1f2937',

@@ -25,3 +25,25 @@ test('RewardsScreen lets students cancel an active reward QR before it is scanne
   assert.match(source, /title="Hủy mã"/);
   assert.match(source, /Mã đổi thưởng đã được hủy/);
 });
+
+test('RewardsScreen reports redeem and cancel errors instead of failing silently', () => {
+  assert.match(source, /catch \(error\) \{\s*Alert\.alert\('Không thể tạo mã', messageOf\(error\)\)/);
+  assert.match(source, /catch \(error\) \{\s*Alert\.alert\('Không thể hủy mã'/);
+  assert.match(source, /if \(redeemingRef\.current\) return;/);
+  assert.match(source, /if \(cancellingRef\.current\) return;/);
+  assert.match(source, /Hủy mã đổi thưởng\?/);
+});
+
+test('RewardsScreen only offers active, in-stock rewards and explains why redeem is disabled', () => {
+  assert.match(source, /getRedeemableRewards\(rewards\)/);
+  assert.match(source, /isRewardOutOfStock\(reward\)/);
+  assert.match(source, /Hết hàng/);
+  assert.match(source, /getRedeemBlockReason\(selectedVoucher/);
+  assert.match(source, /disabled=\{Boolean\(selectedBlockReason\) \|\| redeeming\}/);
+  assert.match(source, /selectedBlockMessage/);
+});
+
+test('RewardsScreen shows pending codes past their deadline as expired in history', () => {
+  assert.match(source, /getRedemptionDisplayStatus\(item, now\)/);
+  assert.match(source, /redemptionStatusLabel\(displayStatus\)/);
+});
