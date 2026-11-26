@@ -31,6 +31,10 @@ export function getStationStatusLabel(status: BinStation['status']) {
   }
 }
 
+export function isStationAcceptingWaste(station: Pick<BinStation, 'status'> | undefined) {
+  return station?.status === 'open';
+}
+
 export function getStationCapacityLevel(station: Pick<BinStation, 'capacity' | 'status'>): StationCapacityLevel {
   if (station.status === 'full' || station.capacity >= 95) return 'full';
   if (station.capacity >= 85) return 'warning';

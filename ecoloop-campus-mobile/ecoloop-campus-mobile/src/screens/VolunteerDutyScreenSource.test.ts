@@ -17,3 +17,11 @@ test('VolunteerDutyScreen keeps Vietnamese UI text readable', () => {
   assert.match(source, /Hợp lệ/);
   assert.match(source, /Nghi gian lận/);
 });
+
+test('VolunteerDutyScreen only lets volunteers pick stations that accept waste and hides expired codes', () => {
+  assert.match(source, /getPendingDutySubmissions\(submissions, dutyStationId\)/);
+  assert.match(source, /isStationAcceptingWaste\(station\)/);
+  assert.match(source, /disabled=\{!canPick\}/);
+  assert.match(source, /chưa nhận ca/);
+  assert.match(source, /Chọn một trạm đang hoạt động/);
+});

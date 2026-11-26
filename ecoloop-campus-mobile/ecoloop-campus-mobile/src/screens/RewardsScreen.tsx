@@ -1,12 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { AppButton } from '../components/AppButton';
 import { Screen } from '../components/Screen';
 import { useAppContext } from '../context/AppContext';
+import { getRedeemBlockReason, getRedeemableRewards, getRedemptionDisplayStatus, isRewardOutOfStock } from '../services/rewardFlow';
 import { Reward, RewardRedemption } from '../types';
 import { colors } from '../theme/colors';
+
+function messageOf(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function redemptionStatusLabel(status: RewardRedemption['status']) {
   const labels: Record<RewardRedemption['status'], string> = {
@@ -44,13 +49,18 @@ export default function RewardsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVoucher, setSelectedVoucher] = useState<Reward | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [redeeming, setRedeeming] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const redeemingRef = useRef(false);
+  const cancellingRef = useRef(false);
+  const redeemableRewards = useMemo(() => getRedeemableRewards(rewards), [rewards]);
 
   const categories = useMemo(() => {
-    const names = rewards
+    const names = redeemableRewards
       .map(reward => reward.categoryName?.trim())
       .filter((name): name is string => Boolean(name));
     return ['Tất cả', ...Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, 'vi'))];
-  }, [rewards]);
+  }, [redeemableRewards]);
 
   const activeRedemption = rewardRedemptions.find(item =>
     (item.status === 'pending' || item.status === 'requested') && item.qrToken && item.expiresAt && item.expiresAt.getTime() > now
@@ -63,28 +73,73 @@ export default function RewardsScreen() {
   }, [activeRedemption?.id]);
 
   const redeem = async (reward: Reward) => {
+    if (redeemingRef.current) return;
+    if (activeRedemption) {
+      Alert.alert('Đang có mã đổi thưởng', 'Dùng hoặc hủy mã đổi thưởng hiện tại trước khi đổi quà mới.');
+      return;
+    }
+    if (isRewardOutOfStock(reward)) {
+      Alert.alert('Không thể đổi quà', 'Phần thưởng này đã hết hàng.');
+      return;
+    }
     if (reward.costPoints > points) {
       Alert.alert('Không thể đổi quà', `Bạn cần thêm ${reward.costPoints - points} Ecopoint.`);
       return;
     }
-    const ok = await requestReward(reward);
-    Alert.alert(
-      ok ? 'Đã tạo mã đổi thưởng' : 'Không thể tạo mã',
-      ok ? 'Đưa mã QR cho tình nguyện viên quét trong 15 phút. Điểm chỉ bị trừ sau khi xác nhận.' : 'Phần thưởng đã hết hàng hoặc dữ liệu không hợp lệ.'
-    );
-    if (ok) setSelectedVoucher(null);
+    redeemingRef.current = true;
+    setRedeeming(true);
+    try {
+      const ok = await requestReward(reward);
+      Alert.alert(
+        ok ? 'Đã tạo mã đổi thưởng' : 'Không thể tạo mã',
+        ok ? 'Đưa mã QR cho tình nguyện viên quét trong 15 phút. Điểm chỉ bị trừ sau khi xác nhận.' : 'Bạn cần đăng nhập và đủ Ecopoint để đổi phần thưởng này.'
+      );
+      if (ok) setSelectedVoucher(null);
+    } catch (error) {
+      Alert.alert('Không thể tạo mã', messageOf(error));
+    } finally {
+      redeemingRef.current = false;
+      setRedeeming(false);
+    }
   };
 
-  const cancelActiveRedemption = async () => {
-    if (!activeRedemption) return;
-    const ok = await cancelRewardRedemption(activeRedemption.id);
-    Alert.alert(
-      ok ? 'Mã đổi thưởng đã được hủy' : 'Không thể hủy mã',
-      ok ? 'Bạn có thể tạo mã đổi thưởng mới.' : 'Mã này có thể đã được xử lý hoặc hết hạn.'
-    );
+  const cancelRedemption = async (redemptionId: string) => {
+    if (cancellingRef.current) return;
+    cancellingRef.current = true;
+    setCancelling(true);
+    try {
+      await cancelRewardRedemption(redemptionId);
+      Alert.alert('Mã đổi thưởng đã được hủy', 'Bạn có thể tạo mã đổi thưởng mới.');
+    } catch (error) {
+      Alert.alert('Không thể hủy mã', messageOf(error) || 'Mã này có thể đã được xử lý hoặc hết hạn.');
+    } finally {
+      cancellingRef.current = false;
+      setCancelling(false);
+    }
   };
 
-  const filteredRewards = rewards.filter(reward => {
+  const cancelActiveRedemption = () => {
+    if (!activeRedemption || cancellingRef.current) return;
+    const redemptionId = activeRedemption.id;
+    Alert.alert('Hủy mã đổi thưởng?', 'Mã QR hiện tại sẽ không dùng được nữa. Điểm của bạn không bị trừ.', [
+      { text: 'Giữ mã', style: 'cancel' },
+      { text: 'Hủy mã', style: 'destructive', onPress: () => void cancelRedemption(redemptionId) }
+    ]);
+  };
+
+  const selectedBlockReason = selectedVoucher
+    ? getRedeemBlockReason(selectedVoucher, { points, hasActiveCode: Boolean(activeRedemption) })
+    : '';
+  const selectedBlockMessage =
+    selectedBlockReason === 'active-code'
+      ? 'Bạn đang có một mã đổi thưởng chưa dùng. Dùng hoặc hủy mã đó trước khi đổi quà mới.'
+      : selectedBlockReason === 'out-of-stock'
+        ? 'Phần thưởng này đã hết hàng.'
+        : selectedBlockReason === 'not-enough-points' && selectedVoucher
+          ? `Bạn cần thêm ${(selectedVoucher.costPoints - points).toLocaleString('vi-VN')} Ecopoint để đổi quà này.`
+          : '';
+
+  const filteredRewards = redeemableRewards.filter(reward => {
     if (searchQuery && !reward.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     if (activeCategory !== 'Tất cả' && reward.categoryName !== activeCategory) return false;
     return true;
@@ -98,7 +153,8 @@ export default function RewardsScreen() {
           <QRCode value={JSON.stringify({ type: 'eco-loop-reward-redemption', version: 1, qrToken: activeRedemption.qrToken })} size={180} />
           <Text style={styles.qrCountdown}>Còn {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}</Text>
           <Text style={styles.detailsText}>Đưa mã này cho tình nguyện viên quét. Điểm chỉ bị trừ sau khi xác nhận.</Text>
-          <AppButton title="Hủy mã" variant="light" onPress={cancelActiveRedemption} />
+          {cancelling ? <Text style={styles.detailsText}>Đang hủy mã...</Text> : null}
+          <AppButton title="Hủy mã" variant="light" disabled={cancelling} onPress={cancelActiveRedemption} />
         </View>
       )}
       <View style={styles.headerCard}>
@@ -143,10 +199,11 @@ export default function RewardsScreen() {
           <View style={styles.grid}>
             {filteredRewards.map(reward => {
               const icon = getIconForReward(reward);
+              const soldOut = isRewardOutOfStock(reward);
               return (
                 <Pressable
                   key={reward.id}
-                  style={({ pressed }) => [styles.voucherCard, pressed && styles.pressed]}
+                  style={({ pressed }) => [styles.voucherCard, soldOut && styles.voucherCardSoldOut, pressed && styles.pressed]}
                   onPress={() => setSelectedVoucher(reward)}
                 >
                   <View style={[styles.voucherIconBox, { backgroundColor: icon.bg }]}>
@@ -162,6 +219,11 @@ export default function RewardsScreen() {
                       </View>
                       <Text style={styles.voucherCost}>{reward.costPoints.toLocaleString('vi-VN')}</Text>
                     </View>
+                    {soldOut ? (
+                      <Text style={styles.soldOutText}>Hết hàng</Text>
+                    ) : typeof reward.stock === 'number' ? (
+                      <Text style={styles.stockText}>Còn {reward.stock.toLocaleString('vi-VN')}</Text>
+                    ) : null}
                   </View>
                 </Pressable>
               );
@@ -179,15 +241,19 @@ export default function RewardsScreen() {
       {rewardRedemptions.length > 0 && (
         <View style={styles.historySection}>
           <Text style={styles.sectionTitle}>Yêu cầu đổi thưởng</Text>
-          {rewardRedemptions.map(item => (
-            <View key={item.id} style={styles.historyCard}>
-              <View style={styles.historyInfo}>
-                <Text style={styles.historyTitle}>{item.rewardLabel}</Text>
-                <Text style={styles.historyMeta}>{item.costPoints} Ecopoint - {item.requestedAt.toLocaleDateString('vi-VN')}</Text>
+          {rewardRedemptions.map(item => {
+            const displayStatus = getRedemptionDisplayStatus(item, now);
+            const inactive = displayStatus === 'expired' || displayStatus === 'cancelled' || displayStatus === 'rejected';
+            return (
+              <View key={item.id} style={styles.historyCard}>
+                <View style={styles.historyInfo}>
+                  <Text style={styles.historyTitle}>{item.rewardLabel}</Text>
+                  <Text style={styles.historyMeta}>{item.costPoints.toLocaleString('vi-VN')} Ecopoint - {item.requestedAt.toLocaleDateString('vi-VN')}</Text>
+                </View>
+                <Text style={[styles.historyStatus, inactive && styles.historyStatusMuted]}>{redemptionStatusLabel(displayStatus)}</Text>
               </View>
-              <Text style={styles.historyStatus}>{redemptionStatusLabel(item.status)}</Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
 
@@ -225,7 +291,9 @@ export default function RewardsScreen() {
               </ScrollView>
 
               <View style={styles.modalFooter}>
-                <AppButton title="Đổi" onPress={() => void redeem(selectedVoucher)} disabled={Boolean(activeRedemption)} />
+                {selectedBlockMessage ? <Text style={styles.redeemHint}>{selectedBlockMessage}</Text> : null}
+                {redeeming ? <Text style={styles.redeemHint}>Đang tạo mã đổi thưởng...</Text> : null}
+                <AppButton title="Đổi" onPress={() => void redeem(selectedVoucher)} disabled={Boolean(selectedBlockReason) || redeeming} />
               </View>
             </View>
           </View>
@@ -447,6 +515,30 @@ const styles = StyleSheet.create({
   historyStatus: {
     color: colors.green,
     fontWeight: '900',
+  },
+  historyStatusMuted: {
+    color: colors.muted,
+  },
+  voucherCardSoldOut: {
+    opacity: 0.55,
+  },
+  soldOutText: {
+    color: colors.coralDark,
+    fontWeight: '900',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  stockText: {
+    color: '#659bad',
+    fontWeight: '800',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  redeemHint: {
+    color: colors.coralDark,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 10,
   },
   modalOverlay: {
     flex: 1,

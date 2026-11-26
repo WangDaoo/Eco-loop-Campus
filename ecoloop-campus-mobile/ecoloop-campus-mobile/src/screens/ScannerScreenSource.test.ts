@@ -27,7 +27,7 @@ test('ScannerScreen disables accept action until the QR scan is valid', () => {
   assert.match(source, /canConfirmSubmission/);
   assert.match(source, /selectedSubmission\?\.status === 'QR_SCANNED'/);
   assert.match(source, /title=\{canConfirmSubmission \? 'Xác nhận & Cộng điểm' : 'Chưa scan hợp lệ'\}/);
-  assert.match(source, /disabled=\{!canConfirmSubmission\}/);
+  assert.match(source, /disabled=\{!canConfirmSubmission \|\| isBusy\}/);
 });
 
 test('ScannerScreen reopens QR_SCANNED pending submissions without scanning the QR again', () => {
@@ -75,4 +75,40 @@ test('ScannerScreen reports proof upload errors instead of failing silently befo
   assert.match(source, /return await ensureProofImage\(\)/);
   assert.match(source, /Không lưu được ảnh minh chứng/);
   assert.match(source, /if \(!\(await ensureProofImageSafely\(\)\)\) return;/);
+});
+
+test('ScannerScreen locks QR loading so repeated camera events only scan once', () => {
+  assert.match(source, /scanLockRef = useRef\(false\)/);
+  assert.match(source, /if \(scanLockRef\.current\) return;/);
+  assert.match(source, /void runQrLoad\(data\)/);
+  assert.match(source, /void runQrLoad\(manualQrToken\)/);
+  assert.doesNotMatch(source, /void loadQr\(data\)/);
+});
+
+test('ScannerScreen requires a duty station and hides expired QR codes from the pending list', () => {
+  assert.match(source, /getPendingDutySubmissions\(submissions, dutyStationId\)/);
+  assert.match(source, /if \(!dutyStationId\) \{/);
+  assert.match(source, /Chưa chọn trạm trực/);
+});
+
+test('ScannerScreen resumes a review the same volunteer already started', () => {
+  assert.match(source, /canVolunteerActOnSubmission\(submission, currentUser\)/);
+  assert.match(source, /submission\.status === 'QR_SCANNED' && canVolunteerActOnSubmission/);
+  assert.match(source, /tình nguyện viên khác/);
+});
+
+test('ScannerScreen reports reject and review failures and guards every action against double taps', () => {
+  assert.match(source, /runBusyAction\('accept'/);
+  assert.match(source, /runBusyAction\('reject'/);
+  assert.match(source, /runBusyAction\('review'/);
+  assert.match(source, /Không từ chối được/);
+  assert.match(source, /Không gửi được yêu cầu kiểm tra/);
+  assert.match(source, /Từ chối giao dịch\?/);
+  assert.match(source, /if \(busyRef\.current\) return;/);
+});
+
+test('ScannerScreen closes the review after requesting a recheck and shows the student name', () => {
+  assert.match(source, /await requestReview\([\s\S]*?clearSubmissionReview\(\);/);
+  assert.match(source, /users\.find\(item => item\.id === selectedSubmission\.userId\)/);
+  assert.doesNotMatch(source, /Sinh viên: \{selectedSubmission\.userId\}/);
 });

@@ -103,6 +103,34 @@ test('SubmitScreen can open directly on the real feedback form from a mission sh
 
 test('SubmitScreen requires a captured or uploaded waste image before creating a QR submission', () => {
   assert.match(source, /Chưa có ảnh rác/);
-  assert.match(source, /aiSuggestion\?\.sourceUri/);
-  assert.match(source, /proofImageUrl:\s*aiSuggestion\.sourceUri/);
+  assert.match(source, /if \(!photo\) \{/);
+  assert.match(source, /ensureSubmissionPhotoUrl\(photo, uploadSubmissionPhoto\)/);
+  assert.match(source, /proofImageUrl,\s*predictionId: aiSuggestion\?\.predictionId/);
+});
+
+test('SubmitScreen keeps the waste photo as proof even when AI cannot classify it', () => {
+  assert.match(source, /setPhoto\(toSubmissionPhoto\(asset\)\)/);
+  assert.doesNotMatch(source, /if \(!aiSuggestion\?\.sourceUri\)/);
+  assert.match(source, /Ảnh vẫn được dùng làm minh chứng/);
+  assert.match(source, /<Image source=\{\{ uri: photo\.localUri \}\}/);
+});
+
+test('SubmitScreen only creates QR codes for stations that are accepting waste', () => {
+  assert.match(source, /isStationAcceptingWaste/);
+  assert.match(source, /if \(!selectedStationAccepting\) \{/);
+  assert.match(source, /Trạm chưa nhận rác/);
+  assert.match(source, /chưa nhận rác/);
+});
+
+test('SubmitScreen guards against double submits and mirrors backend point rounding', () => {
+  assert.match(source, /if \(creatingRef\.current\) return;/);
+  assert.match(source, /if \(sendingFeedbackRef\.current\) return;/);
+  assert.match(source, /disabled=\{creating \|\| aiLoading\}/);
+  assert.match(source, /estimateSubmissionPoints\(quantityNumber, selectedWaste\?\.pointPerUnit\)/);
+  assert.doesNotMatch(source, /Math\.round\(quantityNumber/);
+});
+
+test('SubmitScreen restores the active QR after the app is reopened', () => {
+  assert.match(source, /findRestorableSubmission\(submissions, currentUser\.id\)/);
+  assert.match(source, /if \(!latestSubmission && restorableSubmission\) setLatestSubmission\(restorableSubmission\)/);
 });

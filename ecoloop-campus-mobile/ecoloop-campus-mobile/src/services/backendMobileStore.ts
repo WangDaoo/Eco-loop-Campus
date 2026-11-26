@@ -90,6 +90,7 @@ export type BackendMobileStore = {
   updateAvatar(userId: string, avatarKey: string): Promise<UserProfile>;
   createSubmission(userId: string, input: CreateSubmissionInput, wasteTypes: WasteType[]): Promise<RecyclingSubmission>;
   saveAiPrediction(userId: string, input: SavePredictionInput): Promise<PredictionRecord>;
+  uploadSubmissionPhoto(input: { imageUri: string; imageName?: string; mimeType?: string }): Promise<string>;
   markSubmissionScanned(qrToken: string, volunteerId: string, stationId?: string): Promise<QRScanOutcome>;
   confirmSubmission(
     submissionId: string,
@@ -155,7 +156,75 @@ const BACKEND_ERROR_MESSAGES: Record<string, string> = {
   INVALID_STATION: 'Trạm không hợp lệ hoặc đang tạm dừng.',
   INVALID_WASTE_TYPE: 'Loại rác không hợp lệ hoặc chưa được bật.',
   INVALID_QUANTITY: 'Số lượng chưa đúng.',
+  INVALID_STUDENT: 'Tài khoản sinh viên chưa được kích hoạt.',
+  INVALID_VOLUNTEER: 'Tài khoản tình nguyện viên chưa được kích hoạt.',
+  BIN_NOT_FOUND: 'Không tìm thấy trạm thu gom.',
+  WASTE_TYPE_NOT_FOUND: 'Không tìm thấy loại rác.',
+  SUBMISSION_NOT_FOUND: 'Không tìm thấy giao dịch này. Hãy quét lại mã QR.',
+  INVALID_SUBMISSION_STATUS: 'Giao dịch không còn ở trạng thái chờ xác nhận. Hãy tải lại danh sách.',
+  SUBMISSION_ACTOR_MISMATCH: 'Giao dịch này đang được một tình nguyện viên khác xử lý.',
+  REWARD_ITEMS_REQUIRED: 'Hãy chọn phần thưởng muốn đổi.',
+  ACTIVE_REWARD_BATCH_EXISTS: 'Bạn đang có một mã đổi thưởng chưa dùng. Hãy dùng hoặc hủy mã đó trước.',
+  REWARD_NOT_FOUND: 'Phần thưởng không còn mở để đổi.',
+  REWARD_OUT_OF_STOCK: 'Phần thưởng đã hết hàng.',
+  DUPLICATE_REWARD_ITEM: 'Phần thưởng bị chọn trùng.',
+  REWARD_TOTAL_INVALID: 'Tổng điểm đổi thưởng không hợp lệ.',
+  INVALID_REWARD_QUANTITY: 'Số lượng phần thưởng chưa đúng.',
+  INVALID_REDEMPTION_ACTOR: 'Chỉ tình nguyện viên hoặc admin mới được xác nhận đổi thưởng.',
+  REWARD_BATCH_NOT_FOUND: 'Không tìm thấy mã đổi thưởng.',
+  REWARD_BATCH_ALREADY_PROCESSED: 'Mã đổi thưởng đã được xử lý trước đó.',
+  REWARD_BATCH_EXPIRED: 'Mã đổi thưởng đã hết hạn. Sinh viên cần tạo mã mới.',
+  INSUFFICIENT_POINTS: 'Sinh viên không đủ Ecopoint để đổi phần thưởng này.',
+  INVALID_REDEMPTION_STATUS: 'Mã đổi thưởng không còn ở trạng thái chờ.',
+  USER_NOT_FOUND: 'Không tìm thấy tài khoản.',
+  POINT_BALANCE_WOULD_BE_NEGATIVE: 'Số dư Ecopoint không đủ.',
 };
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 20000;
+const UPLOAD_REQUEST_TIMEOUT_MS = 60000;
+const TIMEOUT_MESSAGE = 'Máy chủ phản hồi quá lâu. Kiểm tra kết nối mạng rồi thử lại.';
+const SESSION_EXPIRED_MESSAGE = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+const AUTH_ENTRY_PATHS = ['/api/auth/login', '/api/auth/register', '/api/auth/change-password'];
+
+export class SessionExpiredError extends Error {
+  readonly code = 'SESSION_EXPIRED';
+
+  constructor(message = SESSION_EXPIRED_MESSAGE) {
+    super(message);
+    this.name = 'SessionExpiredError';
+  }
+}
+
+/**
+ * Error raised for a non-2xx backend response. The message is the Vietnamese text shown to users,
+ * while the raw backend code stays on `code` (and in the string form) for logs and contract checks.
+ */
+export class BackendRequestError extends Error {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = 'BackendRequestError';
+    this.code = code;
+    this.status = status;
+  }
+
+  toString() {
+    return this.code && this.code !== this.message ? `${this.name} [${this.code}]: ${this.message}` : `${this.name}: ${this.message}`;
+  }
+}
+
+export function isSessionExpiredError(error: unknown) {
+  return error instanceof SessionExpiredError || (error as { code?: string } | null)?.code === 'SESSION_EXPIRED';
+}
+
+export function toBackendRelativeAssetPath(url: string | undefined, baseUrl: string) {
+  const value = String(url ?? '').trim();
+  const base = normalizedBaseUrl(baseUrl);
+  if (base && value.startsWith(`${base}/uploads/`)) return value.slice(base.length);
+  return value;
+}
 
 function friendlyBackendErrorMessage(value: unknown) {
   const code = String(value ?? '').trim();
@@ -163,12 +232,15 @@ function friendlyBackendErrorMessage(value: unknown) {
 }
 
 async function readError(response: { status?: number; json(): Promise<unknown> }) {
+  const status = response.status ?? 0;
+  const unavailable = `Backend chưa sẵn sàng (${status})`;
   try {
     const payload = (await response.json()) as Row;
-    const message = payload.detail ?? payload.error ?? payload.message ?? payload.code;
-    return friendlyBackendErrorMessage(message ?? `Backend chưa sẵn sàng (${response.status ?? 0})`);
+    const raw = payload.detail ?? payload.error ?? payload.message ?? payload.code;
+    const code = typeof raw === 'string' ? raw.trim() : '';
+    return new BackendRequestError(friendlyBackendErrorMessage(raw ?? unavailable), code, status);
   } catch {
-    return `Backend chưa sẵn sàng (${response.status ?? 0})`;
+    return new BackendRequestError(unavailable, '', status);
   }
 }
 
@@ -207,7 +279,8 @@ export function createBackendMobileStore({
   fetcher = fetch as FetchLike,
   storage = AsyncStorage as StorageLike,
   initialToken = '',
-}: { baseUrl?: string; fetcher?: FetchLike; storage?: StorageLike; initialToken?: string } = {}): BackendMobileStore {
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+}: { baseUrl?: string; fetcher?: FetchLike; storage?: StorageLike; initialToken?: string; requestTimeoutMs?: number } = {}): BackendMobileStore {
   const endpointBaseUrl = normalizedBaseUrl(baseUrl);
   let token = initialToken;
 
@@ -224,15 +297,48 @@ export function createBackendMobileStore({
   }
 
   async function request(path: string, init: any = {}) {
-    const headers: Record<string, string> = { ...(init.headers ?? {}) };
-    if (init.body !== undefined && !(typeof FormData !== 'undefined' && init.body instanceof FormData)) {
+    const { timeoutMs, ...fetchInit } = init;
+    const headers: Record<string, string> = { ...(fetchInit.headers ?? {}) };
+    const isFormData = typeof FormData !== 'undefined' && fetchInit.body instanceof FormData;
+    if (fetchInit.body !== undefined && !isFormData) {
       headers['Content-Type'] = 'application/json';
-      init.body = JSON.stringify(init.body);
+      fetchInit.body = JSON.stringify(fetchInit.body);
     }
     const currentToken = await getToken();
     if (currentToken) headers.Authorization = `Bearer ${currentToken}`;
-    const response = await fetcher(`${endpointBaseUrl}${path}`, { ...init, headers });
-    if (!response.ok) throw new Error(await readError(response));
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : undefined;
+    const limitMs = Number(timeoutMs ?? (isFormData ? Math.max(requestTimeoutMs, UPLOAD_REQUEST_TIMEOUT_MS) : requestTimeoutMs));
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller?.abort();
+        reject(new Error(TIMEOUT_MESSAGE));
+      }, limitMs);
+    });
+
+    let response: Awaited<ReturnType<FetchLike>>;
+    try {
+      response = await Promise.race([
+        fetcher(`${endpointBaseUrl}${path}`, { ...fetchInit, headers, signal: controller?.signal }),
+        timeout,
+      ]);
+    } catch (error) {
+      if (timedOut) throw new Error(TIMEOUT_MESSAGE);
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+      if (response.status === 401 && currentToken && !AUTH_ENTRY_PATHS.includes(path)) {
+        await setToken('');
+        throw new SessionExpiredError();
+      }
+      throw await readError(response);
+    }
     return response.json() as Promise<Row>;
   }
 
@@ -309,7 +415,7 @@ export function createBackendMobileStore({
       try {
         await request('/api/auth/logout', { method: 'POST' });
       } catch (error) {
-        if (!messageOf(error).includes('401')) throw error;
+        if (!isSessionExpiredError(error) && !messageOf(error).includes('401')) throw error;
       } finally {
         await setToken('');
       }
@@ -361,8 +467,25 @@ export function createBackendMobileStore({
     },
 
     async createSubmission(_userId, input) {
-      const payload = await request('/api/mobile/recycling-submissions', { method: 'POST', body: input });
+      const body = input.proofImageUrl
+        ? { ...input, proofImageUrl: toBackendRelativeAssetPath(input.proofImageUrl, endpointBaseUrl) }
+        : input;
+      const payload = await request('/api/mobile/recycling-submissions', { method: 'POST', body });
       return mapSubmissionRow(payload.data ?? {});
+    },
+
+    async uploadSubmissionPhoto(input) {
+      const upload = await uploadPredictionImage({
+        className: '',
+        confidence: 0,
+        source: 'upload',
+        imageUri: input.imageUri,
+        imageName: input.imageName,
+        mimeType: input.mimeType,
+      } as SavePredictionInput);
+      const imageUrl = String(upload.imageUrl ?? '').trim();
+      if (!imageUrl) throw new Error('Không lưu được ảnh rác lên máy chủ.');
+      return imageUrl;
     },
 
     async saveAiPrediction(_userId, input) {

@@ -1,5 +1,5 @@
 import { aiClassDisplayName, PredictionResult } from '../services/predictionService';
-import { PredictionRecord, PredictionSource, SavePredictionInput, WasteType } from '../types';
+import { PredictionRecord, PredictionSource, RecyclingSubmission, SavePredictionInput, WasteType } from '../types';
 
 export type SubmitAiAsset = {
   uri: string;
@@ -74,4 +74,48 @@ export async function buildSubmitAiSuggestion({
     note,
     saveWarning
   };
+}
+
+export const MISSING_SUBMISSION_PHOTO_MESSAGE = 'Hãy chụp ảnh hoặc tải ảnh rác lên trước khi tạo mã QR.';
+
+export type SubmissionPhoto = {
+  localUri: string;
+  imageName: string;
+  mimeType: string;
+  uploadedUrl?: string;
+};
+
+export function toSubmissionPhoto(asset: SubmitAiAsset): SubmissionPhoto {
+  return {
+    localUri: asset.uri,
+    imageName: asset.fileName ?? 'waste-capture.jpg',
+    mimeType: asset.mimeType ?? 'image/jpeg'
+  };
+}
+
+/**
+ * Ảnh rác là minh chứng bắt buộc nhưng không phụ thuộc AI: nếu AI đã lưu ảnh thì dùng lại đường dẫn đó,
+ * nếu AI lỗi hoặc chưa lưu được thì tải ảnh gốc lên máy chủ ngay khi tạo mã QR.
+ */
+export async function ensureSubmissionPhotoUrl(
+  photo: SubmissionPhoto | null | undefined,
+  upload: (input: { imageUri: string; imageName?: string; mimeType?: string }) => Promise<string>
+) {
+  if (!photo?.localUri) throw new Error(MISSING_SUBMISSION_PHOTO_MESSAGE);
+  if (photo.uploadedUrl) return photo.uploadedUrl;
+  return upload({ imageUri: photo.localUri, imageName: photo.imageName, mimeType: photo.mimeType });
+}
+
+/** Cùng công thức với backend: ceil(số lượng × điểm/đơn vị), loại bỏ sai số dấu phẩy động. */
+export function estimateSubmissionPoints(quantity: number, pointPerUnit: number | undefined) {
+  if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(pointPerUnit ?? NaN)) return 0;
+  return Math.max(0, Math.ceil(Number((quantity * (pointPerUnit as number)).toFixed(6))));
+}
+
+/** Mã QR còn hiệu lực gần nhất của sinh viên, dùng để hiện lại sau khi mở lại app. */
+export function findRestorableSubmission(submissions: RecyclingSubmission[], userId: string, now: Date = new Date()) {
+  if (!userId) return undefined;
+  return submissions
+    .filter(item => item.userId === userId && (item.status === 'CREATED' || item.status === 'QR_SCANNED') && item.expiredAt.getTime() > now.getTime())
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
 }

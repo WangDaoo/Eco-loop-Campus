@@ -474,8 +474,16 @@ export function mergeMissionProgress(missions: Mission[], progressRows: UserMiss
     };
   });
 }
+function optionalStock(value: unknown) {
+  if (value === null || value === undefined || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : undefined;
+}
+
 export function mapRewardRow(row: Row): Reward {
   const status = text(row.status, 'active').trim().toLowerCase();
+  // A null stock means the reward is unlimited; only expose stock when the backend tracks it.
+  const stock = optionalStock(row.stock);
   return {
     id: text(row.id),
     title: text(row.title, 'Qua tang Eco-loop'),
@@ -484,7 +492,8 @@ export function mapRewardRow(row: Row): Reward {
     categoryName: text(row.categoryName ?? row.category_name) || undefined,
     costPoints: number(row.costPoints ?? row.cost_points),
     status: status === 'active' ? 'active' : 'inactive',
-    color: text(row.color, '#2F8F5B')
+    color: text(row.color, '#2F8F5B'),
+    ...(stock !== undefined ? { stock } : {})
   };
 }
 export function mapRewardRedemptionRow(row: Row): RewardRedemption {
